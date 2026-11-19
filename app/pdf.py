@@ -173,7 +173,9 @@ def render(report):
         story.append(_kv([("On-site time", _hm(sm["on_site_minutes"])),
                           ("Drive time", _hm(sm["drive_minutes"])),
                           ("Approximate miles", f"{sm['miles_approx']} mi (approximate)"),
-                          ("Stops confirmed", str(sm["stops_confirmed"]))], st))
+                          ("Stops confirmed", str(sm["stops_confirmed"]))]
+                         + ([("Work day", f"{day.get('day_start') or '—'} to {day.get('day_end') or '—'}")]
+                            if day.get("day_start") or day.get("day_end") else []), st))
         if not day["stops"]:
             story.append(Spacer(1, 4))
             story.append(_p("No confirmed stops.", st["base"]))

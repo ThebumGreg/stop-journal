@@ -36,6 +36,8 @@ class Config:
     work_end: str = "17:00"
     alert_repeat_min: int = 0
     backup_keep: int = 14
+    alert_drafts: str = "on"
+    alert_low_stock: str = "on"
 
     @classmethod
     def from_env(cls):
@@ -69,4 +71,6 @@ class Config:
             work_end=e("WORK_END", "17:00"),
             alert_repeat_min=_int("ALERT_REPEAT_MIN", 0),
             backup_keep=_int("BACKUP_KEEP", 14),
+            alert_drafts=e("ALERT_DRAFTS", "on"),
+            alert_low_stock=e("ALERT_LOW_STOCK", "on"),
         )

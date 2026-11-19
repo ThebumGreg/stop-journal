@@ -194,6 +194,41 @@ def redetect(conn, cfg, date, kept, run_cfg):
     materialize(conn, cfg, date, kept, run_cfg)
 
 
+# ---- day start / end marks -----------------------------------------------
+def day_marks(conn, cfg, date):
+    r = conn.execute("SELECT * FROM day_marks WHERE date=?", (date,)).fetchone()
+    s, e = (r["start_utc"], r["end_utc"]) if r else (None, None)
+    return {"start": fmt_time(cfg, s) if s else "", "end": fmt_time(cfg, e) if e else "",
+            "start_ts": s, "end_ts": e}
+
+
+def set_mark(conn, cfg, date, which, time_text=None, clear=False):
+    """Record when the work day started or ended. Time defaults to now (today only)."""
+    if which not in ("start", "end"):
+        raise EditError("Choose start or end.")
+    col = f"{which}_utc"
+    if clear:
+        conn.execute("UPDATE day_marks SET %s=NULL WHERE date=?" % col, (date,))
+        conn.commit()
+        return date
+    if time_text:
+        ts = parse_time(cfg, date, time_text)
+    else:
+        now = int(time.time())
+        lo, hi = day_range(date, cfg.app_tz)
+        if not lo <= now <= hi:
+            raise EditError("Enter a time for days other than today.")
+        ts = now
+    cur = day_marks(conn, cfg, date)
+    other = cur["end_ts"] if which == "start" else cur["start_ts"]
+    if other and ((which == "start" and ts >= other) or (which == "end" and ts <= other)):
+        raise EditError("The day must end after it starts.")
+    conn.execute("INSERT INTO day_marks(date) VALUES (?) ON CONFLICT(date) DO NOTHING", (date,))
+    conn.execute("UPDATE day_marks SET %s=? WHERE date=?" % col, (ts, date))
+    conn.commit()
+    return date
+
+
 # ---- one-tap confirm for saved places -----------------------------------
 def suggestion(conn, s):
     """The saved place a Draft stop sits on (or is already filled in from), if any."""
@@ -540,7 +575,8 @@ def day_payload(conn, cfg, date, include_path=False):
         "notes": r["notes"] or "", "edited": bool(r["edited"]),
     } for r in conn.execute("SELECT * FROM drives WHERE date=? ORDER BY seq", (date,))]
     out = {"date": date, "tz": cfg.app_tz, "stops": stops, "drives": drives,
-           "totals": totals(stops, drives), "undo": undo_available(conn, date)}
+           "totals": totals(stops, drives), "undo": undo_available(conn, date),
+           "marks": day_marks(conn, cfg, date)}
     if include_path:
         pts = kept_points(conn, cfg, date)
         out["path"] = [[p["lat"], p["lon"]] for p in pts]

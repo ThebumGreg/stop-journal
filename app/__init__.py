@@ -181,6 +181,16 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         return mutate(lambda conn, cfg, i: service.confirm_known(
             conn, cfg, service._stop(conn, i)["date"], i), sid)
 
+    @app.post("/api/day/<date>/mark")
+    def day_mark(date):
+        b = request.get_json(silent=True) or {}
+
+        def go(conn, cfg):
+            check_date(date)
+            service.set_mark(conn, cfg, date, b.get("which"), b.get("time"), bool(b.get("clear")))
+            return payload(conn, cfg, date)
+        return with_conn(go)
+
     @app.post("/api/day/<date>/undo")
     def day_undo(date):
         def go(conn, cfg):

@@ -42,6 +42,7 @@ async function api(method, url, body) {
 
 function applyDay(d) {
   S.stops = d.stops; S.drives = d.drives; S.totals = d.totals; S.undo = d.undo || null;
+  S.marks = d.marks || {};
   if (d.path) S.path = d.path;
 }
 
@@ -373,6 +374,18 @@ function driveRow(dr) {
 function toolbar() {
   const bar = el('div', 'toolbar');
   const mk = (label, fn) => { const b = el('button', null, label); b.onclick = fn; bar.append(b); return b; };
+  const isToday = S.date === new Date().toLocaleDateString('en-CA');
+  const mk0 = S.marks || {};
+  if (isToday && !mk0.start) {
+    const b = mk('Start day', () => markNow('start'));
+    b.className = 'primary';
+  } else if (isToday && !mk0.end) {
+    const b = mk('End day (started ' + mk0.start + ')', () => markNow('end'));
+    b.className = 'primary';
+  } else {
+    mk(mk0.start || mk0.end ? 'Day ' + (mk0.start || '—') + '–' + (mk0.end || '—') : 'Day times…',
+       () => { S.tool = S.tool === 'day' ? null : 'day'; render(false); });
+  }
   mk('+ Add stop', () => { S.tool = S.tool === 'add' ? null : 'add'; render(false); });
   const ready = S.stops.filter(x => x.suggest).length;
   if (ready) {
@@ -403,6 +416,44 @@ function toolbar() {
   mk('Export…', () => { S.tool = S.tool === 'export' ? null : 'export'; render(false); });
   if (S.flash) bar.append(el('span', 'hint', S.flash));
   return bar;
+}
+
+async function markNow(which) {
+  try {
+    const d = await api('POST', '/api/day/' + S.date + '/mark', {which});
+    applyDay(d);
+    if (which === 'end') {
+      const n = S.totals.draft;
+      S.flash = n ? n + ' stop' + (n > 1 ? 's' : '') + ' still in Draft: review before exporting.'
+                  : 'Day ended. Everything is reviewed.';
+      S.tool = 'export';
+    } else S.flash = 'Day started.';
+    render(false);
+  } catch (e) { alert(e.message); }
+}
+
+function dayForm() {
+  const f = el('div', 'redo');
+  const m = S.marks || {};
+  const a = el('input'); a.type = 'time'; a.value = m.start || '';
+  const b = el('input'); b.type = 'time'; b.value = m.end || '';
+  const two = el('div', 'two'); two.append(labeled('Day started', a), labeled('Day ended', b));
+  const err = el('div', 'err');
+  const save = el('button', null, 'Save');
+  save.onclick = async () => {
+    try {
+      let d;
+      for (const [which, v, old] of [['start', a.value, m.start], ['end', b.value, m.end]]) {
+        if (v && v !== old) d = await api('POST', '/api/day/' + S.date + '/mark', {which, time: v});
+        else if (!v && old) d = await api('POST', '/api/day/' + S.date + '/mark', {which, clear: true});
+      }
+      if (d) applyDay(d);
+      S.tool = null; render(false);
+    } catch (e) { err.textContent = e.message; }
+  };
+  f.append(el('div', 'hint', 'When did your work day start and end? Used for the report and for no-data alerts. Optional.'),
+           two, save, err);
+  return f;
 }
 
 function addForm() {
@@ -478,6 +529,7 @@ function render(fit) {
   pathLayer.clearLayers(); candLayer.clearLayers(); markers = {};
   listEl.replaceChildren(toolbar());
   if (S.tool === 'add') listEl.append(addForm());
+  if (S.tool === 'day') listEl.append(dayForm());
   if (S.tool === 'redo') listEl.append(redoForm());
   if (S.tool === 'export') listEl.append(exportForm());
   const bounds = [];

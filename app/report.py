@@ -79,7 +79,9 @@ def build_day(payload, cfg):
         })
     drive_min = sum(s["drive_from_previous_stop"]["minutes"] for s in out_stops if s["drive_from_previous_stop"])
     miles = sum(s["drive_from_previous_stop"]["miles_approx"] for s in out_stops if s["drive_from_previous_stop"])
+    marks = payload.get("marks") or {}
     return {"date": payload["date"],
+            "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
                         "drive_minutes": drive_min, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded)},

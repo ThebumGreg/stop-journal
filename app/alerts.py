@@ -62,6 +62,48 @@ def no_data_conditions(cfg, in_window, window_start, last_tst, recorder_error, n
     return [Condition("no_data", age >= cfg.alert_no_data_min, "JobHub – no location data", msg, 0), off[1]]
 
 
+def today_marks(conn, cfg, now):
+    date = datetime.fromtimestamp(now, ZoneInfo(cfg.app_tz)).date().isoformat()
+    r = conn.execute("SELECT start_utc, end_utc FROM day_marks WHERE date=?", (date,)).fetchone()
+    return {"date": date, "start": r["start_utc"] if r else None, "end": r["end_utc"] if r else None}
+
+
+def draft_conditions(conn, cfg, now, marks, in_work_day):
+    """Remind me to review stops once the day is over (End day tapped, or 30 min past work end)."""
+    off = [Condition("drafts", False, "", "", 0)]
+    if cfg.alert_drafts != "on":
+        return off
+    local = datetime.fromtimestamp(now, ZoneInfo(cfg.app_tz))
+    try:
+        end_min = _t(cfg.work_end)
+    except ValueError:
+        end_min = 17 * 60
+    if marks["end"]:
+        due = now >= marks["end"] + 300
+    else:
+        due = in_work_day and local.hour * 60 + local.minute >= end_min + 30
+    n = conn.execute("SELECT COUNT(*) FROM stops WHERE date=? AND status='Draft' AND kind='stop'",
+                     (marks["date"],)).fetchone()[0]
+    if not (due and n):
+        return off
+    return [Condition("drafts", True, "JobHub – review today's stops",
+                      f"{n} stop{'s' if n != 1 else ''} from today still need review. "
+                      "Open JobHub to confirm them before exporting.", 0)]
+
+
+def low_stock_conditions(conn, cfg):
+    off = [Condition("low_stock", False, "", "", 0)]
+    if cfg.alert_low_stock != "on":
+        return off
+    n = conn.execute("SELECT COUNT(*) FROM parts WHERE tracked=1 AND active=1 "
+                     "AND reorder_at IS NOT NULL AND COALESCE(on_hand,0) <= reorder_at").fetchone()[0]
+    if not n:
+        return off
+    return [Condition("low_stock", True, "JobHub – truck stock low",
+                      f"{n} truck part{'s are' if n != 1 else ' is'} at or below the reorder level. "
+                      "Open the Truck page to review.", 0)]
+
+
 def apply(conn, cfg, cond, now, send):
     """Send/re-arm for one condition. Returns True if a notification was delivered."""
     conn.execute("BEGIN IMMEDIATE")
@@ -98,6 +140,12 @@ def run_once(base, client, now=None, send=notify.send):
     try:
         cfg = settings.effective(base, conn)
         in_window, start = work_window(cfg, now)
+        in_work_day = in_window or _is_work_day(cfg, now)
+        marks = today_marks(conn, cfg, now)
+        if marks["end"]:
+            in_window = False                      # day ended: no more no-data alerts
+        elif marks["start"]:
+            in_window, start = True, marks["start"]  # day started: watch from then on
         last = err = None
         if (cfg.alert_no_data == "on" and notify.configured(cfg) and in_window
                 and cfg.recorder_url and cfg.recorder_user and cfg.recorder_device):
@@ -105,10 +153,22 @@ def run_once(base, client, now=None, send=notify.send):
                 last = client.last_tst()
             except Exception as e:  # unreachable Recorder is itself worth an alert
                 err = type(e).__name__
-        for cond in no_data_conditions(cfg, in_window, start, last, err, now):
+        conds = list(no_data_conditions(cfg, in_window, start, last, err, now))
+        if notify.configured(cfg):
+            conds += draft_conditions(conn, cfg, now, marks, in_work_day)
+            conds += low_stock_conditions(conn, cfg)
+        for cond in conds:
             apply(conn, cfg, cond, now, send)
     finally:
         conn.close()
+
+
+def _is_work_day(cfg, now):
+    try:
+        days = settings.parse_days(cfg.work_days)
+    except ValueError:
+        days = set(range(5))
+    return datetime.fromtimestamp(now, ZoneInfo(cfg.app_tz)).weekday() in days
 
 
 def start(base, client, interval=60):
