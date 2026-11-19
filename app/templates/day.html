@@ -51,7 +51,7 @@
   <button id="prev" aria-label="Previous day">&larr;</button>
   <input type="date" id="date" value="{{ date }}">
   <button id="next" aria-label="Next day">&rarr;</button>
-  <span class="tz">{{ tz }}</span>
+  <span class="tz">{{ tz }} · <a href="/settings">Settings</a></span>
 </header>
 <main>
   <div id="list"></div>
@@ -98,10 +98,12 @@ async function loadCands(s, box, q) {
   if (!d.candidates.length) box.append(el('div', 'a', 'No matches. Try the search box.'));
   d.candidates.forEach(c => {
     const row = el('div', 'cand');
-    row.append(el('div', 'n', c.name + (c.source === 'known' ? '  ★ known' : '')),
+    row.append(el('div', 'n', c.name + (c.source === 'known' ? '  ★ known' : c.source === 'google' ? '  (Google)' : '')),
       el('div', 'a', [c.address, c.category, Math.round(c.distance_m) + ' m'].filter(Boolean).join(' · ')));
     row.onclick = () => {
       candLayer.clearLayers();
+      // Google's terms don't allow Places content on non-Google maps, so no pin for those.
+      if (c.source === 'google') return;
       const m = L.marker([c.lat, c.lon]).addTo(candLayer).bindPopup(c.name).openPopup();
       map.panTo(m.getLatLng());
     };

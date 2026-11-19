@@ -2,6 +2,10 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+class PlacesError(Exception):
+    """Provider failure whose message is safe to show the user (never has secrets)."""
+
+
 @dataclass
 class Candidate:
     name: str

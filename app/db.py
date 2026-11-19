@@ -39,6 +39,18 @@ CREATE TABLE IF NOT EXISTS place_cache (
   fetched_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS api_usage (
+  day TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, provider)
+);
+
 CREATE TABLE IF NOT EXISTS stops (
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL,

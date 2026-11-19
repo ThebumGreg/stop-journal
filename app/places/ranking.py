@@ -30,8 +30,15 @@ def _key_value(cat):
     return k, v
 
 
+GOOGLE_NON_BUSINESS = {"parking", "route", "street_address", "premise", "subpremise",
+                       "locality", "neighborhood", "political", "postal_code",
+                       "intersection", "plus_code", "park", "parking_lot"}
+
+
 def _is_business(cat):
     k, v = _key_value(cat)
+    if k == "google":
+        return v not in GOOGLE_NON_BUSINESS
     if k in BUSINESS_KEYS:
         return True
     return k == "amenity" and v not in NON_BUSINESS_AMENITY

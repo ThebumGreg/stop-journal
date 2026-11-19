@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stop Journal – Settings</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --line:#d8dee4; --sel:#e8f1ff; --acc:#0b66d0; --err:#d1242f; --ok:#1a7f37; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181d; --fg:#e6e9ec; --muted:#98a2ad; --line:#2c333b; --sel:#1d2b3f; --acc:#5aa2ff; --err:#ff7b72; --ok:#56d364; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.4 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); }
+  header a { color:var(--acc); text-decoration:none; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h2 { font-size:16px; margin:24px 0 8px; }
+  .field { margin:12px 0; }
+  label { display:block; font-weight:600; margin-bottom:4px; }
+  input, select { width:100%; font:inherit; padding:8px 10px; background:var(--bg); color:var(--fg);
+                  border:1px solid var(--line); border-radius:8px; }
+  .help { color:var(--muted); font-size:13px; margin-top:3px; }
+  .err { color:var(--err); font-size:13px; margin-top:3px; }
+  .ok { color:var(--ok); }
+  .box { background:var(--sel); border-radius:8px; padding:10px 12px; margin:10px 0; font-size:14px; }
+  button { font:inherit; padding:9px 16px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .chk { display:flex; gap:6px; align-items:center; font-weight:400; margin-top:6px; }
+  .chk input { width:auto; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">&larr; Day view</a>
+  <strong>Settings</strong>
+  {% if has_password %}<form method="post" action="/logout" style="margin-left:auto"><button type="submit">Sign out</button></form>{% endif %}
+</header>
+<main>
+  {% if saved %}<div class="box ok">Settings saved.</div>{% endif %}
+  {% if errors %}<div class="box err">Some values need fixing – see below. Nothing was saved.</div>{% endif %}
+  {% if not has_password %}
+  <div class="box">No <code>APP_PASSWORD</code> is set, so anyone who can reach this page can change these settings. Set one in your <code>.env</code> before using this beyond localhost.</div>
+  {% endif %}
+
+  <form method="post">
+    {% for group, fields in spec %}
+      <h2>{{ group }}</h2>
+      {% for f in fields %}
+        <div class="field">
+          <label for="{{ f.key }}">{{ f.label }}</label>
+          {% if f.kind == 'choice' %}
+            <select id="{{ f.key }}" name="{{ f.key }}">
+              <option value="" {% if not values[f.key] %}selected{% endif %}>Default ({{ defaults[f.key] }})</option>
+              {% for c in f.choices %}<option value="{{ c }}" {% if values[f.key] == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+          {% else %}
+            <input id="{{ f.key }}" name="{{ f.key }}" value="{{ values[f.key] }}"
+                   placeholder="Default: {{ defaults[f.key] }}" {% if f.kind == 'int' %}inputmode="numeric"{% endif %}>
+          {% endif %}
+          <div class="help">{{ f.help }} Leave blank to use the default.</div>
+          {% if errors.get(f.key) %}<div class="err">{{ errors[f.key] }}</div>{% endif %}
+        </div>
+      {% endfor %}
+      {% if group == 'Business suggestions' %}
+        <div class="field">
+          <label for="google_places_key">Google Places API key</label>
+          <input id="google_places_key" name="google_places_key" type="password" autocomplete="off"
+                 placeholder="Paste a key to set or replace it">
+          <div class="help">Currently: <strong>{{ key_hint }}</strong>{% if key_from_env %} (from environment){% endif %}. The key is never shown again after saving.</div>
+          <label class="chk"><input type="checkbox" name="clear_google_places_key" value="1"> Remove the saved key</label>
+        </div>
+        <div class="box">
+          Google requests today (UTC): <strong>{{ usage }}</strong> of <strong>{{ cap }}</strong> allowed.
+          Active provider: <strong>{{ provider }}</strong>.
+          <div class="row" style="margin-top:8px">
+            <button type="button" id="testg">Test Google key (1 request)</button>
+            <span id="testmsg"></span>
+          </div>
+          <div class="help">Needs the <em>Places API (New)</em> enabled on a billing-enabled Google Cloud project. Restrict the key to that API and set a budget alert in Google Cloud.</div>
+        </div>
+      {% endif %}
+    {% endfor %}
+    <div class="row" style="margin-top:20px"><button class="primary" type="submit">Save settings</button></div>
+  </form>
+  <p class="help" style="margin-top:24px">Recorder address, timezone and the app password are set in <code>.env</code> and not editable here.</p>
+</main>
+<script>
+document.getElementById('testg').onclick = async () => {
+  const out = document.getElementById('testmsg');
+  out.className = ''; out.textContent = 'Testing…';
+  try {
+    const r = await fetch('/settings/test-google', {method: 'POST'});
+    const d = await r.json();
+    out.className = d.ok ? 'ok' : 'err';
+    out.textContent = d.message;
+  } catch (e) { out.className = 'err'; out.textContent = 'Request failed.'; }
+};
+</script>
+</body>
+</html>

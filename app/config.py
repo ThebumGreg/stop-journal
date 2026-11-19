@@ -24,6 +24,7 @@ class Config:
     data_dir: str
     places_radius_m: int = 150
     overpass_url: str = "https://overpass-api.de/api/interpreter"
+    google_daily_cap: int = 100
 
     @classmethod
     def from_env(cls):
@@ -45,4 +46,5 @@ class Config:
             data_dir=e("DATA_DIR", "/data"),
             places_radius_m=_int("PLACES_RADIUS_M", 150),
             overpass_url=e("OVERPASS_URL", "https://overpass-api.de/api/interpreter"),
+            google_daily_cap=_int("GOOGLE_DAILY_CAP", 100),
         )
