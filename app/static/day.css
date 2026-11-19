@@ -123,3 +123,5 @@ select { padding:8px 10px; width:100%; min-height:40px; -webkit-appearance:menul
          border-color:var(--acc); min-height:36px; }
 .toolbar .primary { background:var(--acc); color:#fff; border-color:var(--acc); }
 .toolbar .undo { color:var(--err); border-color:var(--err); }
+.usual { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0; }
+.usual .quick { margin-top:0; }

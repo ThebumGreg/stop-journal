@@ -164,6 +164,16 @@ function partsBlock(s, err) {
     row.append(q, b, x);
     box.append(row);
   });
+  if ((s.usual || []).length) {
+    const u = el('div', 'usual');
+    u.append(el('span', 'hint', 'Usual here:'));
+    s.usual.forEach(p => {
+      const b = el('button', 'quick', '+ ' + p.name + ' × ' + p.qty); b.type = 'button';
+      b.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/parts', {part_id: p.part_id, qty: p.qty}), err, () => { loadParts(); });
+      u.append(b);
+    });
+    box.append(u);
+  }
   const add = el('div', 'prow add');
   const name = el('input'); name.setAttribute('list', 'partlist'); name.placeholder = 'Add part (name or part #)';
   const qty = el('input'); qty.type = 'number'; qty.step = 'any'; qty.min = '0'; qty.value = '1'; qty.title = 'Quantity';

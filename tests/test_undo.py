@@ -97,3 +97,22 @@ def test_confirm_known_single_and_bulk_with_undo(tmp_path):
     assert c.post(f"/api/day/{D}/confirm-known").status_code == 400   # nothing left
     c.post(f"/api/day/{D}/undo")
     assert next(x for x in day(c)["stops"] if x["id"] == second["id"])["status"] == "Draft"
+
+
+def test_usual_parts_by_business(tmp_path):
+    c, _ = make(tmp_path)
+    ids = stop_ids(c)
+    pid = part(c, name="Valve", sku="V1", on_hand="10")["id"]
+    other = part(c, name="Tape", sku="T1", on_hand="10")["id"]
+    for sid in ids[:2]:
+        c.patch(f"/api/stops/{sid}", json={"business_name": "Acme"})
+    c.post(f"/api/stops/{ids[0]}/parts", json={"part_id": pid, "qty": 2})
+    c.post(f"/api/stops/{ids[0]}/parts", json={"part_id": other, "qty": 1})
+    stops = day(c)["stops"]
+    assert stops[0]["usual"] == []                       # nothing from earlier visits yet
+    assert [u["name"] for u in stops[1]["usual"]] == ["Valve", "Tape"] or \
+        {u["name"] for u in stops[1]["usual"]} == {"Valve", "Tape"}
+    valve = next(u for u in stops[1]["usual"] if u["name"] == "Valve")
+    assert valve["qty"] == 2
+    c.post(f"/api/stops/{ids[1]}/parts", json={"part_id": pid, "qty": 1})
+    assert [u["name"] for u in day(c)["stops"][1]["usual"]] == ["Tape"]   # already added

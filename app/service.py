@@ -564,6 +564,7 @@ def day_payload(conn, cfg, date, include_path=False):
         "status": r["status"] or "Draft", "known_site_id": r["known_site_id"],
         "hubspot_company_id": r["hubspot_company_id"] or "",
         "edited": bool(r["edited"]), "suggest": suggestion(conn, r),
+        "usual": parts.usual_for(conn, r) if r["status"] != "Personal" else [],
     } for r in _ordered(conn, date)]
     drives = [{
         "id": r["id"], "from_stop_id": r["from_stop_id"], "to_stop_id": r["to_stop_id"],

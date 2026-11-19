@@ -386,3 +386,27 @@ def for_day(conn, date):
     for r in rows:
         out.setdefault(r["stop_id"], []).append(stop_part_dict(r))
     return out
+
+
+def usual_for(conn, stop, limit=5):
+    """Parts most often used at this business before (not already on this stop).
+    Matches by saved place, else by business name. Quantity is the one used last time."""
+    if stop["known_site_id"]:
+        where, arg = "s.known_site_id=?", stop["known_site_id"]
+    elif stop["business_name"]:
+        where, arg = "lower(s.business_name)=lower(?)", stop["business_name"]
+    else:
+        return []
+    rows = conn.execute(
+        f"SELECT sp.part_id, sp.name, sp.sku, sp.qty, sp.id AS last_id "
+        f"FROM stop_parts sp JOIN stops s ON s.id=sp.stop_id "
+        f"JOIN parts p ON p.id=sp.part_id AND p.active=1 "
+        f"WHERE {where} AND s.id != ? AND sp.part_id NOT IN "
+        f"(SELECT part_id FROM stop_parts WHERE stop_id=? AND part_id IS NOT NULL) "
+        f"ORDER BY sp.id DESC", (arg, stop["id"], stop["id"])).fetchall()
+    agg = {}
+    for r in rows:   # newest first: first sighting carries the latest quantity
+        a = agg.setdefault(r["part_id"], {"part_id": r["part_id"], "name": r["name"],
+                                          "sku": r["sku"], "qty": r["qty"], "times": 0})
+        a["times"] += 1
+    return sorted(agg.values(), key=lambda a: -a["times"])[:limit]
