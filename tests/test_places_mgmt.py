@@ -184,3 +184,35 @@ def test_save_stop_as_place_fills_blank_address(tmp_path):
     sid = day["stops"][0]["id"]
     c.post(f"/api/stops/{sid}/save-place", json={"kind": "home", "name": "Home"})
     assert c.get("/api/places?kind=home").json["places"][0]["address"] == "9 Sample Ave, Testville, CA, 90001"
+
+
+def test_live_status_shape_and_place_name(tmp_path):
+    import time
+    from app import live
+    now = int(time.time())
+    pts = [{"tst": now - 1800 + i * 60, "lat": 34.0, "lon": -118.0, "acc": 5} for i in range(30)]
+    pts = [{"tst": now - 3600, "lat": 34.05, "lon": -118.0, "acc": 5}] + pts   # arrived from elsewhere
+    st = live.status(pts, now, 100)
+    assert 1700 <= st["here_s"] <= 1860 and not st["moving"] and st["last_update_s"] < 90
+    assert live.status([], now, 100) is None
+    one = live.status([{"tst": now, "lat": 1, "lon": 1, "acc": 5}], now, 100)
+    assert one["moving"]
+    bad = live.status([{"tst": now, "lat": 1, "lon": 1, "acc": 500}], now, 100)
+    assert bad is None
+
+
+def test_live_endpoint(tmp_path):
+    import time
+    now = int(time.time())
+    pts = [{"tst": now - 600 + i * 60, "lat": HOME[0], "lon": HOME[1], "acc": 5, "batt": 77}
+           for i in range(10)]
+    c, _ = make(tmp_path, points=pts)
+    place(c, name="Home", kind="home")
+    d = c.get("/api/live").json
+    assert d["place"] == "Home" and d["kind"] == "home" and d["batt"] == 77 and d["here_s"] >= 500
+    c2, _ = make(tmp_path / "x", points=[{"tst": now, "lat": 5.0, "lon": 5.0, "acc": 5}] * 1 +
+                 [{"tst": now - 400, "lat": 5.0, "lon": 5.0, "acc": 5}])
+    d2 = c2.get("/api/live").json
+    assert d2["place"] == "" and d2["address"].startswith("9 Sample Ave")
+    e, _ = make(tmp_path / "e", points=[])
+    assert e.get("/api/live").status_code == 404

@@ -1,14 +1,15 @@
 import hmac
 import json
 import os
+import time
 from dataclasses import asdict, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from flask import (Flask, Response, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
 
-from . import alerts, backup, db, notify, parts, pdf, places, points, sample, service, settings
+from . import alerts, backup, db, live, notify, parts, pdf, places, points, sample, service, settings
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
@@ -407,6 +408,38 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return prov.reverse(lat, lon)
         except Exception:
             return ""
+
+    @app.get("/api/live")
+    def live_status():
+        """Where the phone last reported and how long it has been there."""
+        cfg = eff()
+        if not (cfg.recorder_url and cfg.recorder_user and cfg.recorder_device):
+            return jsonify(error="Set up the Recorder first: Settings → Recorder."), 400
+        now = int(time.time())
+        try:
+            pts = client.fetch(datetime.fromtimestamp(now - live.LOOKBACK_S, timezone.utc),
+                               datetime.fromtimestamp(now, timezone.utc))
+            if not pts:
+                lp = client.last_point()
+                pts = [lp] if lp else []
+        except Exception as e:
+            return jsonify(error=f"Could not reach the Recorder ({type(e).__name__})."), 502
+        st = live.status(pts, now, cfg.stop_radius_m, cfg.max_acc_m)
+        if st is None:
+            return jsonify(error="No location data yet. Open OwnTracks on your phone."), 404
+        conn = db.connect(base.data_dir)
+        try:
+            site = known.match_any(conn, st["lat"], st["lon"])
+        finally:
+            conn.close()
+        st["place"] = site["name"] if site else ""
+        st["kind"] = (site["kind"] if site else "") or ""
+        st["address"] = ""
+        if not site and not st["moving"]:
+            st["address"] = reverse_address(st["lat"], st["lon"])
+        st["now"] = now
+        st["tz"] = cfg.app_tz
+        return jsonify(st)
 
     @app.post("/api/places/from-last")
     def places_from_last():

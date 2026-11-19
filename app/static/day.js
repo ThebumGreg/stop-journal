@@ -556,3 +556,51 @@ dateEl.onchange = load;
 
 loadParts();
 load();
+
+
+// ---- live status: last known position and time spent there ---------------
+(function () {
+  const box = document.getElementById('live');
+  let data = null, got = 0;
+  const mins = s => {
+    const m = Math.floor(s / 60);
+    if (m < 1) return 'under a minute';
+    if (m < 60) return m + ' min';
+    const h = Math.floor(m / 60), r = m % 60;
+    if (h < 48) return h + ' h ' + String(r).padStart(2, '0') + ' min';
+    return Math.floor(h / 24) + ' days';
+  };
+  function draw() {
+    if (!data) return;
+    const skew = Math.floor((Date.now() - got) / 1000);   // seconds since we fetched
+    const here = data.here_s + skew, age = data.last_update_s + skew;
+    const place = data.place || data.address || (data.moving ? 'On the move' : 'Unnamed location');
+    const t = new Date((data.now + skew - here) * 1000)
+      .toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', timeZone: data.tz});
+    const where = el('span', 'where', place);
+    const dur = el('span', 'dur', data.moving ? 'just arrived / moving' : 'here ' + mins(here) + ' (since ' + t + ')');
+    const link = el('a', null, 'Map');
+    link.href = 'https://maps.google.com/?q=' + data.lat + ',' + data.lon;
+    link.target = '_blank'; link.rel = 'noopener';
+    const sub = el('div', 'sub' + (age > 1800 ? ' stale' : ''),
+      'Last update ' + (age < 60 ? 'just now' : mins(age) + ' ago') +
+      (data.batt != null ? ' · battery ' + data.batt + '%' : '') +
+      (age > 1800 ? ' · phone has not reported for a while' : ''));
+    box.replaceChildren(el('span', null, '\u{1F4CD}'), where, dur, link, sub);
+    box.hidden = false;
+  }
+  async function poll() {
+    if (document.hidden) return;
+    try {
+      const r = await fetch('/api/live');
+      if (r.status === 401) return;
+      const d = await r.json();
+      if (!r.ok) { data = null; box.replaceChildren(el('span', 'sub stale', d.error || 'Live status unavailable')); box.hidden = false; return; }
+      data = d; got = Date.now(); draw();
+    } catch (e) { /* offline: keep showing the last status */ }
+  }
+  poll();
+  setInterval(poll, 60000);
+  setInterval(draw, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+})();

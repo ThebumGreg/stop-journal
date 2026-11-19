@@ -168,6 +168,16 @@ def delete_site(conn, sid):
     conn.commit()
 
 
+def match_any(conn, lat, lon):
+    """Nearest known place of any kind (clients included) whose radius covers the point."""
+    best, best_d = None, None
+    for r in conn.execute("SELECT * FROM known_sites WHERE lat IS NOT NULL"):
+        d = haversine_m(lat, lon, r["lat"], r["lon"])
+        if d <= (r["radius_m"] or DEFAULT_SITE_RADIUS_M) and (best is None or d < best_d):
+            best, best_d = r, d
+    return best
+
+
 def match_place(conn, lat, lon):
     """Nearest home/office/vendor place whose own radius covers the point, or None."""
     best, best_d = None, None
