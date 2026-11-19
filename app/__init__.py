@@ -398,6 +398,16 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         b = request.get_json(silent=True) or {}
         return catalog(lambda conn: known.site_dict(known.get_site(conn, known.create_site(conn, b))))
 
+    def reverse_address(lat, lon):
+        """Best-effort street address for a coordinate (OSM); "" if unavailable."""
+        try:
+            prov = provider.get("osm") if isinstance(provider, dict) else provider
+            if prov is None or not hasattr(prov, "reverse"):
+                prov = places.get_provider(eff(), "osm")
+            return prov.reverse(lat, lon)
+        except Exception:
+            return ""
+
     @app.post("/api/places/from-last")
     def places_from_last():
         """Save wherever the phone is right now (handy when standing at the office)."""
@@ -407,7 +417,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             lat, lon = current_position(conn)
             kind = b.get("kind") or "vendor"
             name = str(b.get("name") or "").strip() or known.KIND_LABEL.get(kind, "Place")
-            sid = known.create_site(conn, {"name": name, "address": b.get("address", ""),
+            address = str(b.get("address") or "").strip() or reverse_address(lat, lon)
+            sid = known.create_site(conn, {"name": name, "address": address,
                                            "lat": lat, "lon": lon, "kind": kind})
             return known.site_dict(known.get_site(conn, sid))
         return catalog(go)
@@ -444,7 +455,14 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
 
     @app.post("/api/stops/<int:sid>/save-place")
     def stop_save_place(sid):
-        return mutate(service.save_place, sid, request.get_json(silent=True) or {})
+        b = request.get_json(silent=True) or {}
+
+        def go(conn, cfg):
+            s = conn.execute("SELECT address, lat, lon FROM stops WHERE id=?", (sid,)).fetchone()
+            if s and not (s["address"] or "").strip() and s["lat"] is not None:
+                b["address"] = reverse_address(s["lat"], s["lon"])
+            return service.save_place(conn, cfg, sid, b)
+        return mutate(go)
 
     @app.post("/api/known-sites")
     def teach():

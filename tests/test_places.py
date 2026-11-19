@@ -145,3 +145,18 @@ def test_text_search_prefers_nearby_over_far(tmp_path):
     c = create_app(cfg, client=object(), provider=p).test_client()
     r = c.get(f"/api/suggest?lat={LAT}&lon={LON}&q=hardware").json
     assert r["candidates"][0]["lat"] == 34.06
+
+
+def test_osm_reverse_formats_and_caches(tmp_path):
+    class S:
+        calls = 0
+
+        def get(self, url, **kw):
+            S.calls += 1
+            assert url.endswith("/reverse")
+            return FakeResp({"address": {"house_number": "12", "road": "Main St", "town": "Testville",
+                                         "state": "California", "postcode": "90001"}})
+    p = OsmProvider(PlaceCache(str(tmp_path)), session=S(), min_interval=0)
+    assert p.reverse(34.05, -118.25) == "12 Main St, Testville, California, 90001"
+    p.reverse(34.05, -118.25)
+    assert S.calls == 1

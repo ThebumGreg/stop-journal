@@ -13,6 +13,7 @@ from .cache import PlaceCache
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 USER_AGENT = "stop-journal/0.1 (self-hosted personal job-site logger)"
 POI_KEYS = ["shop", "office", "amenity", "craft", "industrial",
             "healthcare", "tourism", "leisure"]
@@ -78,6 +79,25 @@ class OsmProvider(Provider):
                                  lat=la, lon=lo, category=_category(tags),
                                  source="osm"))
         return out
+
+    # -- address of a point (Nominatim reverse) --------------------------
+    def reverse(self, lat, lon):
+        """Street address for a coordinate, or "" when none is known. Cached."""
+        key = PlaceCache.key("nominatim-rev", round(lat, 5), round(lon, 5))
+        data = self.cache.get(key)
+        if data is None:
+            _throttle("nominatim", self.min_interval)
+            r = self.session.get(NOMINATIM_REVERSE_URL,
+                                 params={"lat": lat, "lon": lon, "format": "jsonv2",
+                                         "addressdetails": 1, "zoom": 18},
+                                 headers=self.headers, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+            self.cache.set(key, data)
+        a = data.get("address") or {}
+        street = " ".join(x for x in (a.get("house_number"), a.get("road")) if x)
+        city = a.get("city") or a.get("town") or a.get("village") or a.get("hamlet") or ""
+        return ", ".join(p for p in (street, city, a.get("state"), a.get("postcode")) if p)
 
     # -- text (Nominatim) ----------------------------------------------
     def search_text(self, query, lat, lon):

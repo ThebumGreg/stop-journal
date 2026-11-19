@@ -33,6 +33,9 @@ class _Osm:
 
     search_nearby = search_text
 
+    def reverse(self, lat, lon):
+        return "9 Sample Ave, Testville, CA, 90001"
+
 
 def place(c, **f):
     body = {"name": "X", "lat": HOME[0], "lon": HOME[1], "kind": "home"}
@@ -165,3 +168,19 @@ def test_pages_and_work_performed_label(tmp_path):
     locked = create_app(replace(CFG, data_dir=str(tmp_path / "l"), app_password="pw"),
                         client=sample.ListRecorder([])).test_client()
     assert locked.get("/places").status_code == 302 and locked.get("/api/places").status_code == 401
+
+
+def test_from_last_fills_in_the_address(tmp_path):
+    c, _ = make(tmp_path)
+    r = c.post("/api/places/from-last", json={"kind": "home", "name": "Home"})
+    assert r.json["address"] == "9 Sample Ave, Testville, CA, 90001"
+    kept = c.post("/api/places/from-last", json={"kind": "office", "name": "Shop", "address": "Typed St"})
+    assert kept.json["address"] == "Typed St"
+
+
+def test_save_stop_as_place_fills_blank_address(tmp_path):
+    c, _ = make(tmp_path)
+    day = c.get(f"/api/day/{D}").json
+    sid = day["stops"][0]["id"]
+    c.post(f"/api/stops/{sid}/save-place", json={"kind": "home", "name": "Home"})
+    assert c.get("/api/places?kind=home").json["places"][0]["address"] == "9 Sample Ave, Testville, CA, 90001"

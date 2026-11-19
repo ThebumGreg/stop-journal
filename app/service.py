@@ -342,8 +342,8 @@ def save_place(conn, cfg, sid, f):
     if kind not in ("home", "office", "vendor"):
         raise EditError("Choose Home, Office or Vendor.")
     name = str(f.get("name") or "").strip() or s["business_name"] or known.KIND_LABEL[kind]
-    site_id = known.create_site(conn, {"name": name, "address": s["address"] or "", "lat": s["lat"],
-                                       "lon": s["lon"], "kind": kind})
+    site_id = known.create_site(conn, {"name": name, "lat": s["lat"], "lon": s["lon"], "kind": kind,
+                                       "address": s["address"] or str(f.get("address") or "")})
     conn.execute("UPDATE stops SET business_name=?, known_site_id=?, category=?, edited=1 WHERE id=?",
                  (name, site_id, f"place={kind}", sid))
     apply_places(conn, s["date"])
