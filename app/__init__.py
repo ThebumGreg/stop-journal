@@ -188,34 +188,65 @@ def create_app(cfg=None, client=None, provider=None):
 
     @app.get("/api/suggest")
     def suggest():
-        """Ranked business candidates for a stop; optional free-text query q."""
+        """Ranked business candidates for a stop; optional free-text query q.
+
+        Cascade: known sites always; then OSM (modes osm, osm_google); Google only
+        in mode google, when forced with ?google=1, or in osm_google mode when no
+        known site is nearby and OSM found fewer than google_fallback_min
+        business-like places."""
         try:
             lat, lon = float(request.args["lat"]), float(request.args["lon"])
         except (KeyError, ValueError):
             return jsonify(error="lat and lon are required"), 400
         minutes = request.args.get("minutes", 0, type=int)
         qtext = request.args.get("q", "").strip()
+        force_google = request.args.get("google") == "1"
         cfg = eff()
         radius = cfg.places_radius_m
         conn = db.connect(base.data_dir)
         try:
             cands = known.nearby(conn, lat, lon, radius)
+            known_near = len(cands)
             if qtext:
                 cands += known.search(conn, qtext)
         finally:
             conn.close()
-        error = None
-        try:
-            prov = provider or places.get_provider(cfg)
-            cands += (prov.search_text(qtext, lat, lon) if qtext
-                      else prov.search_nearby(lat, lon, radius))
-        except PlacesError as e:  # message is safe to show; known sites still returned
-            error = str(e)
-        except Exception as e:
-            error = f"Place lookup failed ({type(e).__name__})"
+        errors, sources = [], ["your sites"]
+
+        def attempt(name):
+            try:
+                if isinstance(provider, dict):
+                    prov = provider[name]
+                else:
+                    prov = provider or places.get_provider(cfg, name)
+                found = (prov.search_text(qtext, lat, lon) if qtext
+                         else prov.search_nearby(lat, lon, radius))
+                sources.append(name)
+                return found
+            except PlacesError as e:  # message is safe to show
+                errors.append(str(e))
+            except Exception as e:
+                errors.append(f"{name} lookup failed ({type(e).__name__})")
+            return []
+
+        mode = cfg.places_provider
+        external = attempt("osm") if mode in ("osm", "osm_google") else []
+        if mode == "google":
+            want_google = True
+        else:
+            thin = (len(external) if qtext else
+                    sum(1 for c in external if ranking.is_business(c.category)))
+            want_google = force_google or (
+                mode == "osm_google" and not known_near and thin < cfg.google_fallback_min)
+        if want_google:
+            external += attempt("google")
+        cands += external
         ranked = ranking.rank(cands, lat, lon, minutes,
                               search_radius_m=radius if not qtext else TEXT_SEARCH_FALLOFF_M)
-        return jsonify(candidates=[asdict(c) for c in ranked[:25]], error=error)
+        return jsonify(candidates=[asdict(c) for c in ranked[:25]],
+                       error=" ".join(errors) or None, sources=sources,
+                       google_used="google" in sources,
+                       google_available=bool(cfg.google_places_key) or isinstance(provider, dict))
 
     @app.post("/api/known-sites")
     def teach():

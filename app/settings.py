@@ -24,12 +24,16 @@ SPEC = [
              help="GPS fixes with a larger error are ignored."),
     ]),
     ("Business suggestions", [
-        dict(key="places_provider", label="Provider", kind="choice", choices=["osm", "google"],
-             help="osm is free. google needs a key below and costs money per request."),
+        dict(key="places_provider", label="Provider", kind="choice", choices=["osm", "osm_google", "google"],
+             help="osm is free. osm_google tries your known sites and OSM first and only "
+                  "asks Google when they come up short. google needs a key and costs per request."),
         dict(key="places_radius_m", label="Search radius (m)", kind="int", lo=25, hi=1000,
              help="How far around a stop to look for businesses."),
         dict(key="overpass_url", label="Overpass URL (OSM)", kind="url",
              help="Public servers get overloaded; point this at a mirror if lookups fail."),
+        dict(key="google_fallback_min", label="Ask Google when OSM finds fewer than", kind="int", lo=0, hi=20,
+             help="osm_google mode: number of business-like OSM results below which Google is "
+                  "asked (only if no known site is nearby). 0 = only when you press the button."),
         dict(key="google_daily_cap", label="Google daily request cap", kind="int", lo=0, hi=10000,
              help="Hard stop on outgoing Google requests per UTC day. 0 blocks Google."),
     ]),

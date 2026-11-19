@@ -97,13 +97,14 @@ function addMarker(s, i) {
 }
 
 // ---- business lookup ---------------------------------------------------
-async function loadCands(s, box, q, pick) {
+async function loadCands(s, box, q, pick, google) {
   box.replaceChildren(el('div', 'hint', 'Looking up places…'));
   candLayer.clearLayers();
   const lat = s.lat != null ? s.lat : map.getCenter().lat;
   const lon = s.lon != null ? s.lon : map.getCenter().lng;
   const u = new URLSearchParams({lat, lon, minutes: s.minutes});
   if (q) u.set('q', q);
+  if (google) u.set('google', '1');
   let d;
   try { d = await api('GET', '/api/suggest?' + u); }
   catch (e) { box.replaceChildren(el('div', 'err', 'Lookup failed (' + e.message + ').')); return; }
@@ -122,6 +123,13 @@ async function loadCands(s, box, q, pick) {
     };
     box.append(row);
   });
+  box.append(el('div', 'hint', 'Searched: ' + d.sources.join(', ') + '.'));
+  if (d.google_available && !d.google_used) {
+    const g = el('button', null, 'Also search Google');
+    g.type = 'button';
+    g.onclick = () => loadCands(s, box, q, pick, true);
+    box.append(g);
+  }
 }
 
 // ---- stop card ---------------------------------------------------------
@@ -177,6 +185,8 @@ function buildEdit(edit, s, i) {
     const box = el('div');
     form.append(inp, go); panel.append(form, box);
     const pick = c => {
+      panel.remove(); panel = null;  // choosing a business closes the list
+      candLayer.clearLayers();
       remember('business_name', c.name); remember('address', c.address);
       remember('category', c.category);
       remember('known_site_id', c.source === 'known' ? c.known_site_id : null);

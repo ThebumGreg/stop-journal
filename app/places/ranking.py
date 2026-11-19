@@ -35,7 +35,7 @@ GOOGLE_NON_BUSINESS = {"parking", "route", "street_address", "premise", "subprem
                        "intersection", "plus_code", "park", "parking_lot"}
 
 
-def _is_business(cat):
+def is_business(cat):
     k, v = _key_value(cat)
     if k == "google":
         return v not in GOOGLE_NON_BUSINESS
@@ -50,7 +50,7 @@ def score(c, lat, lon, minutes, search_radius_m, w=WEIGHTS):
     if c.source == "known":
         s += w["W_KNOWN"] + min(c.times_confirmed, 10) * w["W_CONFIRMED"]
     s += w["W_DIST"] * max(0.0, 1 - c.distance_m / search_radius_m)
-    if _is_business(c.category):
+    if is_business(c.category):
         s += w["W_BUSINESS"]
     if c.address:
         s += w["W_ADDR"]
@@ -72,7 +72,14 @@ def rank(candidates, lat, lon, minutes=0, search_radius_m=150):
                and haversine_m(k.lat, k.lon, c.lat, c.lon) <= DEDUPE_RADIUS_M
                for k in known):
             continue
-        kept.append(c)
+        # same place from two providers: keep one, preferring the one with an address
+        twin = next((o for o in kept if o.source != "known"
+                     and o.name.lower() == c.name.lower()
+                     and haversine_m(o.lat, o.lon, c.lat, c.lon) <= DEDUPE_RADIUS_M), None)
+        if twin is None:
+            kept.append(c)
+        elif c.address and not twin.address:
+            kept[kept.index(twin)] = c
     for c in kept:
         score(c, lat, lon, minutes, search_radius_m)
     return sorted(kept, key=lambda c: -c.score)
