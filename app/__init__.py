@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from flask import (Flask, jsonify, redirect, render_template, request, session,
                    url_for)
 
-from . import db, detect, places, points, sample, settings
+from . import db, places, points, sample, service, settings
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
 from .recorder import RecorderClient
@@ -67,9 +67,6 @@ def create_app(cfg=None, client=None, provider=None):
         session.clear()
         return redirect(url_for("login"))
 
-    def iso(t):
-        return datetime.fromtimestamp(t, tz).isoformat(timespec="seconds")
-
     @app.get("/health")
     def health():
         return jsonify(ok=True)
@@ -84,39 +81,110 @@ def create_app(cfg=None, client=None, provider=None):
         datetime.fromisoformat(date)  # 400s on junk via ValueError -> 500; fine for v1
         return render_template("day.html", date=date, tz=base.app_tz)
 
-    @app.get("/api/day/<date>")
-    def day_api(date):
-        q = request.args
-        cfg = eff()
-        run_cfg = replace(
-            cfg,
-            stop_min_minutes=q.get("min", cfg.stop_min_minutes, type=int),
-            stop_radius_m=q.get("radius", cfg.stop_radius_m, type=int),
-            stop_max_gap_min=q.get("gap", cfg.stop_max_gap_min, type=int))
+    # ---- the editable day ---------------------------------------------
+    def with_conn(fn, *a, **kw):
+        """Run fn(conn, cfg, ...) with effective settings; EditError -> 400."""
         conn = db.connect(base.data_dir)
         try:
-            raw = points.load_day(conn, client, base, date,
-                                  refresh=q.get("refresh") == "1")
+            return fn(conn, settings.effective(base, conn), *a, **kw)
+        except service.EditError as e:
+            return jsonify(error=str(e)), 400
         finally:
             conn.close()
-        kept = points.filter_accuracy(raw, run_cfg.max_acc_m)
-        items, drives = detect.detect(kept, run_cfg)
-        return jsonify(
-            date=date, tz=base.app_tz,
-            params={"min": run_cfg.stop_min_minutes, "radius": run_cfg.stop_radius_m,
-                    "gap": run_cfg.stop_max_gap_min},
-            raw_count=len(raw), kept_count=len(kept),
-            path=[[p["lat"], p["lon"]] for p in kept],
-            stops=[{**{k: i[k] for k in ("index", "kind", "lat", "lon")},
-                    "arrive": iso(i["arrive"]), "depart": iso(i["depart"]),
-                    "minutes": round((i["depart"] - i["arrive"]) / 60)}
-                   for i in items],
-            drives=[{"from": d["from"], "to": d["to"],
-                     "depart": iso(d["depart"]), "arrive": iso(d["arrive"]),
-                     "minutes": round((d["arrive"] - d["depart"]) / 60),
-                     "miles_approx": round(d["distance_m"] / 1609.344, 1)}
-                    for d in drives],
-            totals=detect.totals(items, drives))
+
+    def check_date(date):
+        try:
+            datetime.fromisoformat(date)
+        except ValueError:
+            raise service.EditError("Dates look like 2026-11-18.")
+
+    def ensure_day(conn, cfg, date, refresh=False):
+        if refresh or not service.is_processed(conn, date):
+            points.load_day(conn, client, base, date, refresh=refresh)
+        if not service.is_processed(conn, date):
+            service.materialize(conn, cfg, date, service.kept_points(conn, cfg, date), cfg)
+
+    def payload(conn, cfg, date, path=False):
+        return jsonify(service.day_payload(conn, cfg, date, include_path=path))
+
+    @app.get("/api/day/<date>")
+    def day_api(date):
+        def go(conn, cfg):
+            check_date(date)
+            ensure_day(conn, cfg, date)
+            return payload(conn, cfg, date, path=True)
+        return with_conn(go)
+
+    @app.post("/api/day/<date>/sync")
+    def day_sync(date):
+        """Fetch new points from the Recorder and add stops detected since last time."""
+        def go(conn, cfg):
+            check_date(date)
+            ensure_day(conn, cfg, date)
+            points.load_day(conn, client, base, date, refresh=True)
+            n = service.sync_new(conn, cfg, date, service.kept_points(conn, cfg, date), cfg)
+            return jsonify({**service.day_payload(conn, cfg, date, include_path=True),
+                            "added": n})
+        return with_conn(go)
+
+    @app.post("/api/day/<date>/redetect")
+    def day_redetect(date):
+        """Discard detected stops and their edits; detect again with new thresholds."""
+        b = request.get_json(silent=True) or {}
+
+        def num(k, d):
+            try:
+                return int(b.get(k, d))
+            except (TypeError, ValueError):
+                raise service.EditError("Thresholds must be whole numbers.")
+
+        def go(conn, cfg):
+            check_date(date)
+            ensure_day(conn, cfg, date)
+            run = replace(cfg, stop_min_minutes=num("min", cfg.stop_min_minutes),
+                          stop_radius_m=num("radius", cfg.stop_radius_m),
+                          stop_max_gap_min=num("gap", cfg.stop_max_gap_min))
+            service.redetect(conn, cfg, date, service.kept_points(conn, run, date), run)
+            return payload(conn, cfg, date, path=True)
+        return with_conn(go)
+
+    @app.post("/api/day/<date>/stops")
+    def stop_add(date):
+        def go(conn, cfg):
+            check_date(date)
+            ensure_day(conn, cfg, date)
+            service.add_manual(conn, cfg, date, request.get_json(silent=True) or {})
+            return payload(conn, cfg, date)
+        return with_conn(go)
+
+    def mutate(fn, *args):
+        def go(conn, cfg):
+            date = fn(conn, cfg, *args)
+            return payload(conn, cfg, date)
+        return with_conn(go)
+
+    @app.patch("/api/stops/<int:sid>")
+    def stop_patch(sid):
+        return mutate(service.patch_stop, sid, request.get_json(silent=True) or {})
+
+    @app.delete("/api/stops/<int:sid>")
+    def stop_delete(sid):
+        return mutate(service.delete_stop, sid)
+
+    @app.post("/api/stops/<int:sid>/split")
+    def stop_split(sid):
+        return mutate(service.split_stop, sid, (request.get_json(silent=True) or {}).get("at", ""))
+
+    @app.post("/api/stops/merge")
+    def stop_merge():
+        ids = (request.get_json(silent=True) or {}).get("ids") or []
+        if len(ids) != 2:
+            return jsonify(error="Pick two stops to merge."), 400
+        return mutate(service.merge_stops, int(ids[0]), int(ids[1]))
+
+    @app.patch("/api/drives/<int:did>")
+    def drive_patch(did):
+        return mutate(service.patch_drive, did, request.get_json(silent=True) or {})
 
     @app.get("/api/suggest")
     def suggest():

@@ -62,7 +62,10 @@ CREATE TABLE IF NOT EXISTS stops (
   hubspot_company_id TEXT,
   notes TEXT,
   status TEXT DEFAULT 'Draft',
-  source TEXT DEFAULT 'detected'
+  source TEXT DEFAULT 'detected',
+  kind TEXT DEFAULT 'stop',
+  category TEXT,
+  edited INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS drives (
@@ -72,9 +75,27 @@ CREATE TABLE IF NOT EXISTS drives (
   from_stop_id INTEGER, to_stop_id INTEGER,
   depart_utc INTEGER, arrive_utc INTEGER,
   distance_m REAL,
-  notes TEXT
+  notes TEXT,
+  edited INTEGER DEFAULT 0
 );
 """
+
+
+# Columns added after the first release; applied to databases created earlier.
+MIGRATIONS = [
+    ("stops", "kind", "TEXT DEFAULT 'stop'"),
+    ("stops", "category", "TEXT"),
+    ("stops", "edited", "INTEGER DEFAULT 0"),
+    ("drives", "edited", "INTEGER DEFAULT 0"),
+]
+
+
+def _migrate(conn):
+    for table, col, decl in MIGRATIONS:
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    conn.commit()
 
 
 def connect(data_dir):
@@ -82,4 +103,5 @@ def connect(data_dir):
     conn = sqlite3.connect(os.path.join(data_dir, "stop_journal.db"))
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn

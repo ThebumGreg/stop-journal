@@ -1,0 +1,69 @@
+:root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --line:#d8dee4; --sel:#e8f1ff; --acc:#0b66d0;
+        --err:#d1242f; --ok:#1a7f37; --draft:#d1242f; --conf:#1a7f37; --pers:#8a8f98; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#14181d; --fg:#e6e9ec; --muted:#98a2ad; --line:#2c333b; --sel:#1d2b3f; --acc:#5aa2ff;
+          --err:#ff7b72; --ok:#56d364; --draft:#ff7b72; --conf:#56d364; --pers:#8a8f98; }
+}
+* { box-sizing:border-box; }
+body { margin:0; font:15px/1.4 system-ui,sans-serif; background:var(--bg); color:var(--fg);
+       display:flex; flex-direction:column; height:100vh; height:100dvh; }
+header { display:flex; gap:8px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); }
+header .tz { color:var(--muted); margin-left:auto; font-size:13px; }
+header a, .tz a { color:var(--acc); }
+button, input, textarea, select { font:inherit; color:var(--fg); background:var(--bg);
+       border:1px solid var(--line); border-radius:6px; }
+button { padding:6px 10px; cursor:pointer; }
+input, textarea { padding:6px 8px; width:100%; }
+textarea { min-height:70px; resize:vertical; }
+main { flex:1; display:flex; min-height:0; }
+#list { width:380px; overflow:auto; border-right:1px solid var(--line); }
+#map { flex:1; }
+.toolbar { display:flex; gap:6px; flex-wrap:wrap; padding:8px 12px; border-bottom:1px solid var(--line); }
+.toolbar button { font-size:13px; padding:4px 8px; }
+.redo { padding:8px 12px; border-bottom:1px solid var(--line); background:var(--sel); display:grid; gap:6px; }
+.redo .r { display:flex; gap:6px; align-items:center; font-size:13px; }
+.redo input { width:70px; }
+.card { border-bottom:1px solid var(--line); }
+.card.sel { background:var(--sel); }
+.head { display:flex; gap:8px; align-items:center; padding:10px 12px; cursor:pointer; }
+.num { min-width:24px; height:24px; border-radius:50%; color:#fff; font-size:12px; font-weight:700;
+       display:grid; place-items:center; background:var(--draft); }
+.st-Confirmed .num, .pin.st-Confirmed { background:var(--conf); }
+.st-Personal .num, .pin.st-Personal { background:var(--pers); }
+.card.short .num { opacity:.6; }
+.head .t { font-weight:600; }
+.head .m { color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.head .body { flex:1; min-width:0; }
+.chip { font-size:11px; border:1px solid var(--line); border-radius:4px; padding:0 5px; color:var(--muted); white-space:nowrap; }
+.edit { padding:0 12px 12px; display:grid; gap:8px; }
+.edit label { font-size:12px; color:var(--muted); display:block; margin-bottom:2px; }
+.two { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.seg { display:flex; }
+.seg button { flex:1; border-radius:0; }
+.seg button:first-child { border-radius:6px 0 0 6px; }
+.seg button:last-child { border-radius:0 6px 6px 0; }
+.seg button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+.acts { display:flex; gap:6px; flex-wrap:wrap; }
+.acts .primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+.acts .danger { color:var(--err); }
+.err { color:var(--err); font-size:13px; }
+.hint { color:var(--muted); font-size:12px; }
+.drive { padding:6px 12px 6px 20px; color:var(--muted); font-size:13px; border-bottom:1px solid var(--line); cursor:pointer; }
+.drive .edit { padding:8px 0 4px; }
+.panel { background:var(--sel); border-radius:6px; padding:8px; }
+.panel form { display:flex; gap:6px; margin-bottom:6px; }
+.cand { padding:6px 4px; border-top:1px solid var(--line); cursor:pointer; }
+.cand .n { font-weight:600; }
+.cand .a { color:var(--muted); font-size:12px; }
+.pin { width:26px; height:26px; border-radius:50%; background:var(--draft); color:#fff; font-weight:700; font-size:12px;
+       display:grid; place-items:center; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+.pin.short { opacity:.65; }
+.pin.sel { outline:3px solid var(--acc); }
+footer { padding:8px 12px; border-top:1px solid var(--line); font-size:13px; color:var(--muted); }
+#msg { padding:12px; color:var(--muted); }
+@media (max-width:700px) {
+  main { flex-direction:column-reverse; }
+  #list { width:100%; height:55%; border-right:0; border-top:1px solid var(--line); }
+  #map { height:45%; flex:none; }
+  button, input, textarea { min-height:38px; }
+}
