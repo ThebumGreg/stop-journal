@@ -62,11 +62,18 @@ class OsmProvider(Provider):
             around = f"(around:{int(radius_m)},{lat},{lon})"
             body = "".join(f'nwr{around}["name"]["{k}"];' for k in POI_KEYS)
             q = f"[out:json][timeout:15];({body});out center tags 80;"
-            _throttle("overpass", self.min_interval)
-            r = self.session.post(self.overpass_url, data={"data": q},
-                                  headers=self.headers, timeout=20)
-            r.raise_for_status()
-            data = r.json()
+            data, last_err = None, None
+            for url in [u.strip() for u in self.overpass_url.replace(",", " ").split() if u.strip()]:
+                _throttle("overpass", self.min_interval)
+                try:   # public Overpass servers are often overloaded: try the next mirror
+                    r = self.session.post(url, data={"data": q}, headers=self.headers, timeout=12)
+                    r.raise_for_status()
+                    data = r.json()
+                    break
+                except (requests.RequestException, ValueError) as e:
+                    last_err = e
+            if data is None:
+                raise last_err or requests.RequestException("no Overpass server configured")
             self.cache.set(key, data)
         out = []
         for el in data.get("elements", []):

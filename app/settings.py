@@ -67,7 +67,7 @@ SPEC = [
         dict(key="places_radius_m", label="Search radius (m)", kind="int", lo=25, hi=1000,
              help="How far around a stop to look for businesses."),
         dict(key="overpass_url", label="Overpass URL (OSM)", kind="url",
-             help="Public servers get overloaded; point this at a mirror if lookups fail."),
+             help="Public servers get overloaded. Several addresses can be separated by commas; they are tried in order."),
         dict(key="google_fallback_min", label="Ask Google when OSM finds fewer than", kind="int", lo=0, hi=20,
              help="osm_google mode: number of business-like OSM results below which Google is "
                   "asked (only if no known site is nearby). 0 = only when you press the button."),

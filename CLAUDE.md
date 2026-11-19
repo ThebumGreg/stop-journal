@@ -160,6 +160,18 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   unit cost, billable) in the stop block and in the "Records to update" table, because the
   HubSpot session needs the list of parts used.
 
+## Added after v1 scope (all built)
+- Recorder address/user/device/login are Settings-page values (env vars are only defaults); "Find on
+  Recorder" lists users/devices via `/api/0/list` and `/api/0/last`.
+- Daily SQLite snapshots in `/data/backups` (`BACKUP_KEEP`), Back up now + download in Settings.
+- Live status banner (`/api/live`): last position, place name or OSM address, time at the spot.
+- Day start/end marks (`day_marks`): optional; shown in the report (`day_start`, `day_end`, schema stays "1"),
+  and they override the work-hours window for no-data alerts. Day totals rules are unchanged.
+- Undo (`undo_log`, last 10 per day) for delete, merge, split, re-detect and Confirm all; one-tap confirm for
+  Draft stops that sit on a saved place; "usual parts" per business.
+- Alerts (Pushover, generic text only): no data, Recorder down, end-of-day Draft review, low truck stock.
+- Debug data download (`/api/debug/<date>.json`): raw points + stops + edits, for reviewing a day offline.
+
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.
 - Show each milestone working before starting the next.

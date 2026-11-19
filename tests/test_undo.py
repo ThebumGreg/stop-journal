@@ -116,3 +116,13 @@ def test_usual_parts_by_business(tmp_path):
     assert valve["qty"] == 2
     c.post(f"/api/stops/{ids[1]}/parts", json={"part_id": pid, "qty": 1})
     assert [u["name"] for u in day(c)["stops"][1]["usual"]] == ["Tape"]   # already added
+
+
+def test_debug_bundle(tmp_path):
+    c, _ = make(tmp_path)
+    r = c.get(f"/api/debug/{D}.json")
+    assert r.status_code == 200 and "attachment" in r.headers["Content-Disposition"]
+    j = r.get_json()
+    assert j["points"] and {"tst", "lat", "lon", "acc"} <= set(j["points"][0])
+    assert j["day"]["stops"] and j["settings"]["stop_radius_m"] == 100
+    assert "google_places_key" not in str(j) and "pushover" not in str(j)

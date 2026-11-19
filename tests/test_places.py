@@ -160,3 +160,21 @@ def test_osm_reverse_formats_and_caches(tmp_path):
     assert p.reverse(34.05, -118.25) == "12 Main St, Testville, California, 90001"
     p.reverse(34.05, -118.25)
     assert S.calls == 1
+
+
+def test_overpass_falls_back_to_next_mirror(tmp_path):
+    import requests
+
+    class S:
+        urls = []
+
+        def post(self, url, **kw):
+            S.urls.append(url)
+            if "bad" in url:
+                raise requests.ConnectionError("down")
+            return FakeResp({"elements": [{"type": "node", "lat": 1.0, "lon": 2.0,
+                                           "tags": {"name": "Acme", "shop": "hardware"}}]})
+    p = OsmProvider(PlaceCache(str(tmp_path)), session=S(), min_interval=0,
+                    overpass_url="https://bad.example/api, https://good.example/api")
+    assert [c.name for c in p.search_nearby(1.0, 2.0, 100)] == ["Acme"]
+    assert S.urls == ["https://bad.example/api", "https://good.example/api"]

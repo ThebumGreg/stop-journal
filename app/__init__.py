@@ -181,6 +181,33 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         return mutate(lambda conn, cfg, i: service.confirm_known(
             conn, cfg, service._stop(conn, i)["date"], i), sid)
 
+    @app.get("/api/debug/<date>.json")
+    def day_debug(date):
+        """Everything needed to review a day offline: raw points, what was detected and
+        edited, and the detection settings. Contains locations: share it deliberately."""
+        def go(conn, cfg):
+            check_date(date)
+            ensure_day(conn, cfg, date)
+            s, e = service.day_range(date, cfg.app_tz)
+            raw = [dict(r) for r in conn.execute(
+                "SELECT tst_utc AS tst, lat, lon, acc, raw_json FROM points "
+                "WHERE device=? AND tst_utc BETWEEN ? AND ? ORDER BY tst_utc",
+                (cfg.recorder_device, s, e))]
+            for r in raw:
+                try:
+                    j = json.loads(r.pop("raw_json") or "{}")
+                except ValueError:
+                    j = {}
+                r.update({k: j[k] for k in ("vel", "batt", "alt", "conn", "m") if k in j})
+            keys = ("stop_min_minutes", "stop_radius_m", "stop_max_gap_min", "stop_merge_gap_min",
+                    "max_acc_m", "app_tz", "places_provider", "places_radius_m", "work_days",
+                    "work_start", "work_end")
+            body = {"debug_version": 1, "date": date, "settings": {k: getattr(cfg, k) for k in keys},
+                    "points": raw, "day": service.day_payload(conn, cfg, date)}
+            return Response(json.dumps(body), mimetype="application/json", headers={
+                "Content-Disposition": f'attachment; filename="jobhub-debug-{date}.json"'})
+        return with_conn(go)
+
     @app.post("/api/day/<date>/mark")
     def day_mark(date):
         b = request.get_json(silent=True) or {}

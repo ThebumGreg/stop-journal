@@ -18,6 +18,10 @@ Single user. Your location data stays on your own server.
 - **Truck parts**: a catalog with stock levels, CSV import/export, reorder levels.
 - **Export**: a text-based PDF and a JSON twin for one day or a date range.
 - **Alerts** to your phone through Pushover (for example: no location data during work hours).
+- A **live status** box: where the phone is now and how long it has been there.
+- **Start day / End day** buttons, **one-tap confirm** for saved places (and Confirm all known),
+  "usual parts" per business, and **Undo** for delete, merge, split and re-detect.
+- Daily database **backups**, and a **Debug data** download of a day (raw points, stops, edits) for troubleshooting.
 - Works well on an iPhone and can be added to the Home Screen.
 
 ## Quick start (Docker)
@@ -86,7 +90,8 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `OVERPASS_URL` | public server | point at a mirror if lookups fail |
 | `PUSHOVER_TOKEN`, `PUSHOVER_USER` | | notifications; see Settings |
 | `APP_URL` | | address that notification taps open, e.g. `http://192.168.x.x:8000` |
-| `ALERT_NO_DATA`, `ALERT_NO_DATA_MIN`, `WORK_DAYS`, `WORK_START`, `WORK_END`, `ALERT_REPEAT_MIN` | on, 60, Mon-Fri, 07:00, 17:00, 0 | the no-data alert |
+| `ALERT_NO_DATA`, `ALERT_NO_DATA_MIN`, `WORK_DAYS`, `WORK_START`, `WORK_END`, `ALERT_REPEAT_MIN` | on, 60, Mon-Fri, 07:00, 17:00, 0 | the no-data alert (tapping Start/End day overrides the work hours for that day) |
+| `ALERT_DRAFTS`, `ALERT_LOW_STOCK` | on, on | end-of-day "stops still in Draft" reminder, low truck stock alert (generic text only) |
 | `BACKUP_KEEP` | 14 | daily database snapshots to keep (0 = off) |
 | `PUID`, `PGID` | 1000 | compose only: the user the container runs as |
 

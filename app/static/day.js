@@ -488,11 +488,13 @@ function exportForm() {
   const two = el('div', 'two'); two.append(labeled('From', from), labeled('To', to));
   const info = el('div', 'hint', 'Checking…');
   const pdf = el('a', 'btn primary', 'Download PDF'), js = el('a', 'btn', 'Download JSON');
-  const acts = el('div', 'acts'); acts.append(pdf, js);
+  const dbg = el('a', 'btn', 'Debug data');
+  dbg.title = 'Raw GPS points, detected stops and your edits for the “From” day (contains locations)';
+  const acts = el('div', 'acts'); acts.append(pdf, js, dbg);
   const q = () => 'from=' + from.value + '&to=' + (to.value || from.value);
   async function refresh() {
     info.className = 'hint'; info.textContent = 'Checking…';
-    pdf.removeAttribute('href'); js.removeAttribute('href');
+    pdf.removeAttribute('href'); js.removeAttribute('href'); dbg.removeAttribute('href');
     try {
       const c = await api('GET', '/api/export/check?' + q());
       const bits = [c.confirmed + ' confirmed stop' + (c.confirmed === 1 ? '' : 's') + ' will be included'];
@@ -501,6 +503,7 @@ function exportForm() {
       info.textContent = bits.join(' · ') + (c.not_confirmed ? '. Confirm them first if they belong in the report.' : '.');
       info.className = c.not_confirmed ? 'err' : 'hint';
       pdf.href = '/api/export.pdf?' + q(); js.href = '/api/export.json?' + q();
+      dbg.href = '/api/debug/' + from.value + '.json';
     } catch (e) { info.className = 'err'; info.textContent = e.message; }
   }
   from.onchange = () => { if (to.value < from.value) to.value = from.value; refresh(); };

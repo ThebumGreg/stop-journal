@@ -23,7 +23,7 @@ class Config:
     app_password: str
     data_dir: str
     places_radius_m: int = 150
-    overpass_url: str = "https://overpass-api.de/api/interpreter"
+    overpass_url: str = "https://overpass-api.de/api/interpreter, https://overpass.kumi.systems/api/interpreter"
     google_daily_cap: int = 100
     google_fallback_min: int = 3
     pushover_token: str = ""
@@ -58,7 +58,7 @@ class Config:
             app_password=e("APP_PASSWORD", ""),
             data_dir=e("DATA_DIR", "/data"),
             places_radius_m=_int("PLACES_RADIUS_M", 150),
-            overpass_url=e("OVERPASS_URL", "https://overpass-api.de/api/interpreter"),
+            overpass_url=e("OVERPASS_URL", "https://overpass-api.de/api/interpreter, https://overpass.kumi.systems/api/interpreter"),
             google_daily_cap=_int("GOOGLE_DAILY_CAP", 100),
             google_fallback_min=_int("GOOGLE_FALLBACK_MIN", 3),
             pushover_token=e("PUSHOVER_TOKEN", ""),
