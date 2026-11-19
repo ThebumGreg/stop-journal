@@ -26,6 +26,15 @@ class Config:
     overpass_url: str = "https://overpass-api.de/api/interpreter"
     google_daily_cap: int = 100
     google_fallback_min: int = 3
+    pushover_token: str = ""
+    pushover_user: str = ""
+    app_url: str = ""
+    alert_no_data: str = "on"
+    alert_no_data_min: int = 60
+    work_days: str = "Mon-Fri"
+    work_start: str = "07:00"
+    work_end: str = "17:00"
+    alert_repeat_min: int = 0
 
     @classmethod
     def from_env(cls):
@@ -49,4 +58,13 @@ class Config:
             overpass_url=e("OVERPASS_URL", "https://overpass-api.de/api/interpreter"),
             google_daily_cap=_int("GOOGLE_DAILY_CAP", 100),
             google_fallback_min=_int("GOOGLE_FALLBACK_MIN", 3),
+            pushover_token=e("PUSHOVER_TOKEN", ""),
+            pushover_user=e("PUSHOVER_USER", ""),
+            app_url=e("APP_URL", "").rstrip("/"),
+            alert_no_data=e("ALERT_NO_DATA", "on"),
+            alert_no_data_min=_int("ALERT_NO_DATA_MIN", 60),
+            work_days=e("WORK_DAYS", "Mon-Fri"),
+            work_start=e("WORK_START", "07:00"),
+            work_end=e("WORK_END", "17:00"),
+            alert_repeat_min=_int("ALERT_REPEAT_MIN", 0),
         )

@@ -91,6 +91,22 @@ CREATE TABLE IF NOT EXISTS inventory_log (
   note TEXT
 );
 
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  title TEXT,
+  message TEXT,
+  ok INTEGER NOT NULL,
+  error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS alert_state (
+  key TEXT PRIMARY KEY,
+  active INTEGER NOT NULL DEFAULT 0,
+  last_sent INTEGER,
+  last_attempt INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS stops (
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL,

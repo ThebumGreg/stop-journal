@@ -1,21 +1,26 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stop Journal</title>
+{% include "_head.html" %}
+<title>JobHub</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='day.css') }}">
 </head>
 <body>
 <header>
-  <button id="prev" aria-label="Previous day">&larr;</button>
-  <input type="date" id="date" value="{{ date }}">
-  <button id="next" aria-label="Next day">&rarr;</button>
-  <span class="tz">{{ tz }} · <a href="/truck">Truck</a> · <a href="/settings">Settings</a></span>
+  <div class="top">
+    <span class="brand">JobHub</span>
+    <nav><a href="/truck">Truck</a><a href="/settings">Settings</a></nav>
+  </div>
+  <div class="datebar">
+    <button id="prev" aria-label="Previous day">&larr;</button>
+    <input type="date" id="date" value="{{ date }}">
+    <button id="next" aria-label="Next day">&rarr;</button>
+  </div>
 </header>
-<main>
+<main id="main">
   <div id="list"></div>
+  <div id="split" role="separator" aria-label="Drag to resize the map" tabindex="0"><div class="grip"></div></div>
   <div id="map"></div>
 </main>
 <footer id="foot"></footer>

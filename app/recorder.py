@@ -40,6 +40,24 @@ class RecorderClient:
         return r.json().get("data", [])
 
 
+def _last_tst(self):
+    """Epoch seconds of the newest point the Recorder has for this device, or None."""
+    auth = None
+    if self.cfg.recorder_auth:
+        u, _, p = self.cfg.recorder_auth.partition(":")
+        auth = (u, p)
+    r = requests.get(f"{self.cfg.recorder_url}/api/0/last",
+                     params={"user": self.cfg.recorder_user, "device": self.cfg.recorder_device},
+                     auth=auth, timeout=15)
+    r.raise_for_status()
+    ts = [p["tst"] for p in r.json() if "tst" in p
+          and p.get("device", self.cfg.recorder_device) == self.cfg.recorder_device]
+    return max(ts) if ts else None
+
+
+RecorderClient.last_tst = _last_tst
+
+
 class FakeRecorder:
     """Serves points from a JSON fixture (same shape as the 'data' array)."""
 
@@ -50,6 +68,9 @@ class FakeRecorder:
     def fetch(self, start_utc, end_utc):
         s, e = start_utc.timestamp(), end_utc.timestamp()
         return [p for p in self.points if s <= p["tst"] <= e]
+
+    def last_tst(self):
+        return max((p["tst"] for p in self.points), default=None)
 
 
 def local_day_bounds(date_str, tz_name):

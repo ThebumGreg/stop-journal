@@ -79,7 +79,7 @@ function setOpen(id, open) {
 function addMarker(s, i) {
   if (s.lat == null) return;
   const faded = s.kind === 'short' && s.status !== 'Confirmed';
-  const icon = L.divIcon({className: '', iconSize: [26, 26], iconAnchor: [13, 13],
+  const icon = L.divIcon({className: '', iconSize: [30, 30], iconAnchor: [15, 15],
     html: '<div class="pin st-' + s.status + (faded ? ' short' : '') + (S.sel === s.id ? ' sel' : '') +
           '">' + (i + 1) + '</div>'});
   const m = L.marker([s.lat, s.lon], {icon, draggable: true}).addTo(pathLayer);
@@ -449,5 +449,60 @@ load();
 document.getElementById('prev').onclick = () => shift(-1);
 document.getElementById('next').onclick = () => shift(1);
 dateEl.onchange = load;
+
+// ---- resizable map: press the bar and drag --------------------------------
+// Phone layout (map above list): drag up/down. Wide layout: drag left/right.
+// The size is remembered per layout; double-tap the bar to reset.
+(function () {
+  const main = document.getElementById('main'), bar = document.getElementById('split');
+  const narrow = () => window.matchMedia('(max-width:700px)').matches;
+  const key = () => narrow() ? 'jobhub.mapPct' : 'jobhub.listPx';
+  const store = {
+    get() { try { return localStorage.getItem(key()); } catch (e) { return null; } },
+    set(v) { try { localStorage.setItem(key(), v); } catch (e) { /* private mode */ } },
+    del() { try { localStorage.removeItem(key()); } catch (e) { /* ignore */ } },
+  };
+  let raf = 0;
+  const refresh = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => map.invalidateSize({pan: false})); };
+  function apply(v) {
+    if (narrow()) main.style.setProperty('--map-h', Math.min(Math.max(v, 12), 80) + '%');
+    else main.style.setProperty('--list-w', Math.min(Math.max(v, 240), main.clientWidth - 240) + 'px');
+    refresh();
+  }
+  function reset() { main.style.removeProperty('--map-h'); main.style.removeProperty('--list-w'); store.del(); refresh(); }
+  function current() {
+    const r = main.getBoundingClientRect(), m = document.getElementById('map').getBoundingClientRect();
+    return narrow() ? m.height / r.height * 100 : document.getElementById('list').getBoundingClientRect().width;
+  }
+  const saved = store.get();
+  if (saved) apply(parseFloat(saved));
+
+  let dragging = false, moved = false, lastTap = 0;
+  bar.addEventListener('pointerdown', e => { dragging = true; moved = false; bar.setPointerCapture(e.pointerId); e.preventDefault(); });
+  bar.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    moved = true;
+    const r = main.getBoundingClientRect();
+    if (narrow()) apply((e.clientY - r.top) / r.height * 100);   // map is above the bar
+    else apply(e.clientX - r.left);
+  });
+  const stop = () => { if (dragging) { dragging = false; if (moved) store.set(String(current())); } };
+  bar.addEventListener('pointerup', () => {
+    const now = Date.now();
+    if (!moved && now - lastTap < 350) reset();   // double-tap (iOS has no reliable dblclick)
+    lastTap = moved ? 0 : now;
+    stop();
+  });
+  bar.addEventListener('pointercancel', stop);
+  bar.addEventListener('keydown', e => {   // keyboard: arrow keys nudge the split
+    const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -4 : e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 4 : 0;
+    if (!step) return;
+    e.preventDefault();
+    apply(current() + (narrow() ? step : step * 8)); store.set(String(current()));
+  });
+  window.addEventListener('resize', refresh);
+  window.addEventListener('orientationchange', refresh);
+})();
+
 loadParts();
 load();

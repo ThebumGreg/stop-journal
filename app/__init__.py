@@ -1,4 +1,5 @@
 import hmac
+import json
 import os
 from dataclasses import asdict, replace
 from datetime import datetime
@@ -7,7 +8,7 @@ from zoneinfo import ZoneInfo
 from flask import (Flask, Response, jsonify, redirect, render_template, request,
                    session, url_for)
 
-from . import db, parts, places, points, sample, service, settings
+from . import alerts, db, notify, parts, places, points, sample, service, settings
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
 from .recorder import RecorderClient
@@ -16,8 +17,9 @@ from .recorder import RecorderClient
 TEXT_SEARCH_FALLOFF_M = 50000  # free-text hits: nearer-to-stop still ranks first
 
 
-def create_app(cfg=None, client=None, provider=None):
+def create_app(cfg=None, client=None, provider=None, start_background=None):
     base = cfg or Config.from_env()
+    client_given = client is not None
     if client is None:
         if os.environ.get("SAMPLE_DATA") == "1":
             client = sample.ListRecorder(
@@ -26,6 +28,7 @@ def create_app(cfg=None, client=None, provider=None):
             client = RecorderClient(base)
     app = Flask(__name__)
     tz = ZoneInfo(base.app_tz)
+    app.jinja_env.filters["ts_local"] = lambda t: datetime.fromtimestamp(t, tz).strftime("%b %-d, %-I:%M %p")
     app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
                       MAX_CONTENT_LENGTH=4 * 1024 * 1024)
 
@@ -43,7 +46,7 @@ def create_app(cfg=None, client=None, provider=None):
 
     @app.before_request
     def gate():
-        if not base.app_password or request.endpoint in ("health", "login", "logout"):
+        if not base.app_password or request.endpoint in ("health", "login", "logout", "static", "manifest"):
             return None
         if session.get("auth") == 1:
             return None
@@ -354,16 +357,19 @@ def create_app(cfg=None, client=None, provider=None):
         conn = db.connect(base.data_dir)
         try:
             ov = settings.overrides(conn)
+            recent = notify.recent(conn)
         finally:
             conn.close()
         cfg = eff()
-        values = {k: ov.get(k, "") for k in settings.FIELDS}
-        defaults = {k: getattr(base, k) for k in settings.FIELDS}
-        return dict(spec=settings.SPEC, values=values, defaults=defaults,
-                    key_hint=settings.key_hint(cfg.google_places_key),
-                    key_from_env=bool(base.google_places_key) and not ov.get(settings.SECRET),
+        values = {k: ov.get(k, "") for k, f in settings.FIELDS.items() if f["kind"] != "secret"}
+        defaults = {k: getattr(base, k) for k, f in settings.FIELDS.items() if f["kind"] != "secret"}
+        secret_info = {k: {"hint": settings.key_hint(getattr(cfg, k)),
+                           "from_env": bool(getattr(base, k)) and not ov.get(k)}
+                       for k in settings.SECRETS}
+        return dict(spec=settings.SPEC, values=values, defaults=defaults, secret_info=secret_info,
                     usage=UsageCounter(base.data_dir, "google").count(),
                     cap=cfg.google_daily_cap, provider=cfg.places_provider,
+                    pushover_ready=notify.configured(cfg), recent=recent,
                     has_password=bool(base.app_password), **extra)
 
     @app.get("/settings")
@@ -380,7 +386,8 @@ def create_app(cfg=None, client=None, provider=None):
             conn.close()
         if errors:
             ctx = settings_context()
-            ctx["values"] = {k: request.form.get(k, "") for k in settings.FIELDS}
+            ctx["values"] = {k: request.form.get(k, "") for k, f in settings.FIELDS.items()
+                             if f["kind"] != "secret"}
             return render_template("settings.html", errors=errors, saved=None, **ctx), 400
         return redirect(url_for("settings_page", saved=1))
 
@@ -395,5 +402,38 @@ def create_app(cfg=None, client=None, provider=None):
             return jsonify(ok=False, message=str(e))
         except Exception as e:
             return jsonify(ok=False, message=f"Test failed ({type(e).__name__}).")
+
+    @app.post("/settings/test-pushover")
+    def settings_test_pushover():
+        """Send one real test notification to validate the Pushover keys."""
+        cfg = eff()
+        try:
+            notify.send(cfg, "JobHub", "Test notification – Pushover is working.", 0,
+                        cfg.app_url or None)
+            ok, msg = True, "Sent. Check your phone."
+        except notify.NotifyError as e:
+            ok, msg = False, str(e)
+        conn = db.connect(base.data_dir)
+        try:
+            notify.record(conn, "JobHub test", "Test notification", ok, None if ok else msg)
+        finally:
+            conn.close()
+        return jsonify(ok=ok, message=msg)
+
+    @app.get("/manifest.webmanifest")
+    def manifest():
+        icon = lambda n: url_for("static", filename=f"icon-{n}.png")  # noqa: E731
+        return Response(json.dumps({
+            "name": "JobHub", "short_name": "JobHub", "start_url": "/", "scope": "/",
+            "display": "standalone", "background_color": "#ffffff", "theme_color": "#0b66d0",
+            "icons": [{"src": icon(192), "sizes": "192x192", "type": "image/png"},
+                      {"src": icon(512), "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}],
+        }), mimetype="application/manifest+json")
+
+    if start_background is None:  # real deployments only: not tests, not sample mode
+        start_background = (not client_given and os.environ.get("SAMPLE_DATA") != "1"
+                            and os.environ.get("DISABLE_ALERTS") != "1")
+    if start_background:
+        alerts.start(base, client)
 
     return app

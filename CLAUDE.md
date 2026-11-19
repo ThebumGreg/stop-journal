@@ -117,6 +117,8 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 ## Privacy and security
 - Location data stays on the user's server. The only outbound calls are place lookups,
   which send coordinates (and search text) to the chosen provider, and tile requests.
+- Pushover notifications (alerts, e.g. "no location data") are the one other outbound call. Their
+  text must never contain coordinates, addresses or business names: it passes through a third party.
 - Never log raw coordinates to stdout in production; no analytics or telemetry.
 - Do not expose the app to the internet without auth. Document the safe options: LAN only,
   VPN, or a reverse proxy with auth.

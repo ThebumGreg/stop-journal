@@ -7,7 +7,33 @@ credentials for the Recorder, the timezone and APP_PASSWORD stay env-only.
 import secrets
 from dataclasses import replace
 
-SECRET = "google_places_key"
+SECRETS = ("google_places_key", "pushover_token", "pushover_user")
+DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def parse_days(text):
+    """'Mon-Fri', 'Mon,Wed,Fri' or 'Fri-Mon' -> set of weekday numbers (Mon=0)."""
+    def one(t):
+        if t[:3] not in DAY_NAMES:
+            raise ValueError(f"Unknown day “{t}”. Use names like Mon-Fri or Mon,Wed.")
+        return DAY_NAMES.index(t[:3])
+
+    out = set()
+    for tok in text.replace(" ", "").lower().split(","):
+        if not tok:
+            continue
+        if "-" in tok:
+            a, b = (one(x) for x in tok.split("-", 1))
+            while True:
+                out.add(a)
+                if a == b:
+                    break
+                a = (a + 1) % 7
+        else:
+            out.add(one(tok))
+    if not out:
+        raise ValueError("Pick at least one day, for example Mon-Fri.")
+    return out
 
 # group, key, label, kind, (min, max) or choices, help
 SPEC = [
@@ -34,8 +60,31 @@ SPEC = [
         dict(key="google_fallback_min", label="Ask Google when OSM finds fewer than", kind="int", lo=0, hi=20,
              help="osm_google mode: number of business-like OSM results below which Google is "
                   "asked (only if no known site is nearby). 0 = only when you press the button."),
+        dict(key="google_places_key", label="Google Places API key", kind="secret",
+             help="Write-only: it is never shown again after saving."),
         dict(key="google_daily_cap", label="Google daily request cap", kind="int", lo=0, hi=10000,
              help="Hard stop on outgoing Google requests per UTC day. 0 blocks Google."),
+    ]),
+]
+SPEC += [
+    ("Notifications (Pushover)", [
+        dict(key="pushover_token", label="Pushover application token", kind="secret",
+             help="From pushover.net → Your Applications → create an application named JobHub."),
+        dict(key="pushover_user", label="Pushover user key", kind="secret",
+             help="Shown at the top of your pushover.net dashboard."),
+        dict(key="app_url", label="App address for notification links", kind="url",
+             help="Tapping a notification opens this, e.g. http://192.168.1.50:5000"),
+    ]),
+    ("Alerts", [
+        dict(key="alert_no_data", label="No-data alert", kind="choice", choices=["on", "off"],
+             help="Notify me when no location data arrives during work hours."),
+        dict(key="alert_no_data_min", label="Alert after this many minutes without data", kind="int",
+             lo=5, hi=1440, help="OwnTracks may send nothing while the phone sits still, so keep this generous."),
+        dict(key="work_days", label="Work days", kind="days", help="For example Mon-Fri or Mon,Tue,Thu."),
+        dict(key="work_start", label="Work day starts", kind="time", help="24-hour time, local."),
+        dict(key="work_end", label="Work day ends", kind="time", help="24-hour time, local."),
+        dict(key="alert_repeat_min", label="Repeat reminder every (min)", kind="int", lo=0, hi=1440,
+             help="0 = one alert per outage."),
     ]),
 ]
 FIELDS = {f["key"]: f for _, fs in SPEC for f in fs}
@@ -59,6 +108,17 @@ def _convert(field, raw):
     if field["kind"] == "url":
         if not raw.startswith(("http://", "https://")):
             raise ValueError("must start with http:// or https://")
+        return raw.rstrip("/")
+    if field["kind"] == "time":
+        try:
+            h, m = raw.split(":")
+            if not (0 <= int(h) <= 23 and 0 <= int(m) <= 59):
+                raise ValueError
+        except ValueError:
+            raise ValueError("must be a time like 07:30")
+        return f"{int(h):02d}:{int(m):02d}"
+    if field["kind"] == "days":
+        parse_days(raw)
         return raw
     return raw
 
@@ -68,13 +128,14 @@ def effective(base, conn):
     changes = {}
     ov = overrides(conn)
     for key, field in FIELDS.items():
-        if key in ov:
+        if field["kind"] == "secret":
+            if ov.get(key):
+                changes[key] = ov[key]
+        elif key in ov:
             try:
                 changes[key] = _convert(field, ov[key])
             except ValueError:
                 pass  # ignore a corrupt stored value; fall back to the env default
-    if ov.get(SECRET):
-        changes[SECRET] = ov[SECRET]
     return replace(base, **changes)
 
 
@@ -82,6 +143,8 @@ def save(conn, form):
     """Validate and store a submitted form. Returns {key: error message}."""
     errors, writes, deletes = {}, {}, []
     for key, field in FIELDS.items():
+        if field["kind"] == "secret":
+            continue
         raw = (form.get(key) or "").strip()
         if not raw:
             deletes.append(key)  # blank = revert to the env default
@@ -89,15 +152,18 @@ def save(conn, form):
         try:
             writes[key] = str(_convert(field, raw))
         except ValueError as e:
-            errors[key] = str(e) if field["kind"] != "int" or "between" in str(e) \
-                else "must be a whole number"
+            errors[key] = ("must be a whole number"
+                           if field["kind"] == "int" and "between" not in str(e) else str(e))
     if errors:
         return errors
-    new_key = (form.get(SECRET) or "").strip()
-    if form.get("clear_" + SECRET):
-        deletes.append(SECRET)
-    elif new_key:
-        writes[SECRET] = new_key
+    for key in SECRETS:
+        new = (form.get(key) or "").strip()
+        if form.get("clear_" + key):
+            deletes.append(key)
+        elif new:
+            if len(new) > 200:
+                return {key: "is too long"}
+            writes[key] = new
     for k in deletes:
         conn.execute("DELETE FROM settings WHERE key=?", (k,))
     for k, v in writes.items():

@@ -1,17 +1,19 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stop Journal – Truck parts</title>
+{% include "_head.html" %}
+<title>JobHub – Truck parts</title>
 <style>
   :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --line:#d8dee4; --sel:#e8f1ff; --acc:#0b66d0; --err:#d1242f; --ok:#1a7f37; --warn:#b35900; }
   @media (prefers-color-scheme: dark) {
     :root { --bg:#14181d; --fg:#e6e9ec; --muted:#98a2ad; --line:#2c333b; --sel:#1d2b3f; --acc:#5aa2ff; --err:#ff7b72; --ok:#56d364; --warn:#f0a050; }
   }
-  * { box-sizing:border-box; }
-  body { margin:0; font:15px/1.4 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
-  header { display:flex; gap:12px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html { -webkit-text-size-adjust:100%; }
+  a, button, input, select, label { touch-action:manipulation; }
+  @media (pointer:coarse) { button, input, select { min-height:44px; } input[type=checkbox] { min-height:0; } }
+  body { margin:0; font:16px/1.4 -apple-system,system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; gap:12px; align-items:center; padding:max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left)); border-bottom:1px solid var(--line); }
   header a { color:var(--acc); text-decoration:none; }
   main { max-width:760px; margin:0 auto; padding:16px; }
   h2 { font-size:16px; margin:22px 0 8px; }
@@ -41,7 +43,7 @@
 <body>
 <header>
   <a href="/">&larr; Day view</a>
-  <strong>Truck parts</strong>
+  <strong style="color:var(--acc)">JobHub</strong> <span>Truck parts</span>
   <a href="/settings" style="margin-left:auto">Settings</a>
 </header>
 <main>

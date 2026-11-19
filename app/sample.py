@@ -111,3 +111,6 @@ class ListRecorder:
     def fetch(self, start_utc, end_utc):
         s, e = start_utc.timestamp(), end_utc.timestamp()
         return [p for p in self.points if s <= p["tst"] <= e]
+
+    def last_tst(self):
+        return max((p["tst"] for p in self.points), default=None)
