@@ -389,6 +389,8 @@ function toolbar() {
   if (isToday && !mk0.start) {
     const b = mk('Start day', () => markNow('start'));
     b.className = 'primary';
+    if (!mk0.end) mk('End day', () => markNow('end'));
+    else mk('Day —–' + mk0.end, () => { S.tool = S.tool === 'day' ? null : 'day'; render(false); });
   } else if (isToday && !mk0.end) {
     const b = mk('End day (started ' + mk0.start + ')', () => markNow('end'));
     b.className = 'primary';

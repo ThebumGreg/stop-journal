@@ -20,7 +20,7 @@ Single user. Your location data stays on your own server.
 - **Export**: a text-based PDF and a JSON twin for one day or a date range.
 - **Alerts** to your phone through Pushover (for example: no location data during work hours).
 - A **live status** box: where the phone is now and how long it has been there.
-- **Start day / End day** buttons, **one-tap confirm** for saved places (and Confirm all known),
+- **Start day / End day** buttons (either can be used alone), **one-tap confirm** for saved places (and Confirm all known),
   "usual parts" per business, and **Undo** for delete, merge, split and re-detect.
 - Daily database **backups**, and a **Debug data** download of a day (raw points, stops, edits) for troubleshooting.
 - Works well on an iPhone and can be added to the Home Screen.

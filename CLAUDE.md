@@ -169,6 +169,7 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   and they override the work-hours window for no-data alerts. They also decide the commute: the day's first drive out
   of a Personal stop (home) counts if Start day was tapped before it ended, and the last drive into a Personal stop
   counts if End day was tapped before it ended (`service.drive_counts`); mid-day Personal stops stay excluded.
+- Start day and End day are independent: End can be tapped without Start (the toolbar shows both until one is set).
 - Undo (`undo_log`, last 10 per day) for delete, merge, split, re-detect and Confirm all; one-tap confirm for
   Draft stops that sit on a saved place; "usual parts" per business.
 - Alerts (Pushover, generic text only): no data, Recorder down, end-of-day Draft review, low truck stock.
