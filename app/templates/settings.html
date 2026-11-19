@@ -3,43 +3,18 @@
 <head>
 {% include "_head.html" %}
 <title>JobHub – Settings</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
 <style>
-  :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --line:#d8dee4; --sel:#e8f1ff; --acc:#0b66d0; --err:#d1242f; --ok:#1a7f37; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#14181d; --fg:#e6e9ec; --muted:#98a2ad; --line:#2c333b; --sel:#1d2b3f; --acc:#5aa2ff; --err:#ff7b72; --ok:#56d364; }
-  }
-  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html { -webkit-text-size-adjust:100%; }
-  a, button, input, select, label { touch-action:manipulation; }
-  @media (pointer:coarse) { button, input, select { min-height:44px; } input[type=checkbox] { min-height:0; } }
-  body { margin:0; font:16px/1.4 -apple-system,system-ui,sans-serif; background:var(--bg); color:var(--fg); }
-  header { display:flex; gap:12px; align-items:center; padding:max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left)); border-bottom:1px solid var(--line); }
-  header a { color:var(--acc); text-decoration:none; }
-  main { max-width:640px; margin:0 auto; padding:16px; }
-  h2 { font-size:16px; margin:24px 0 8px; }
-  .field { margin:12px 0; }
-  label { display:block; font-weight:600; margin-bottom:4px; }
-  input, select { width:100%; font:inherit; font-size:16px; padding:8px 10px; background:var(--bg); color:var(--fg);
-                  border:1px solid var(--line); border-radius:8px; }
-  .help { color:var(--muted); font-size:13px; margin-top:3px; }
-  .err { color:var(--err); font-size:13px; margin-top:3px; }
-  .ok { color:var(--ok); }
-  .box { background:var(--sel); border-radius:8px; padding:10px 12px; margin:10px 0; font-size:14px; }
-  button { font:inherit; padding:9px 16px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); cursor:pointer; }
-  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .chk { display:flex; gap:6px; align-items:center; font-weight:400; margin-top:6px; }
-  .chk input { width:auto; }
+  main { max-width:640px; }
+  .field { margin:14px 0; }
+  .field > label { font-size:15px; font-weight:600; color:var(--fg); margin-bottom:4px; }
+  .chk input { width:22px; }
 </style>
 </head>
 <body>
-<header>
-  <a href="/">&larr; Day view</a>
-  <a href="/truck">Truck parts</a>
-  <strong style="color:var(--acc)">JobHub</strong> <span>Settings</span>
-  {% if has_password %}<form method="post" action="/logout" style="margin-left:auto"><button type="submit">Sign out</button></form>{% endif %}
-</header>
+{% include "_header.html" %}
 <main>
+  <h1 class="page-title">Settings</h1>
   {% if saved %}<div class="box ok">Settings saved.</div>{% endif %}
   {% if errors %}<div class="box err">Some values need fixing – see below. Nothing was saved.</div>{% endif %}
   {% if not has_password %}
@@ -103,6 +78,9 @@
     {% endfor %}
     <div class="row" style="margin-top:20px"><button class="primary" type="submit">Save settings</button></div>
   </form>
+  {% if has_password %}
+  <form method="post" action="/logout" style="margin-top:28px"><button type="submit">Sign out</button></form>
+  {% endif %}
   <p class="help" style="margin-top:24px">Recorder address, timezone and the app password are set in <code>.env</code> and not editable here.</p>
 </main>
 <script>

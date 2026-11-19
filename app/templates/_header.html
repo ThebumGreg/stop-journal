@@ -1,0 +1,11 @@
+{% set ep = request.endpoint %}
+<header>
+  <div class="top">
+    <a class="brand" href="/">JobHub</a>
+    <nav>
+      <a href="/">Day</a>
+      <a href="/truck" {% if ep == 'truck_page' %}aria-current="page"{% endif %}>Truck</a>
+      <a href="/settings" {% if ep in ('settings_page', 'settings_save') %}aria-current="page"{% endif %}>Settings</a>
+    </nav>
+  </div>
+</header>
