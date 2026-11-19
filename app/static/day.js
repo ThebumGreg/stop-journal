@@ -675,10 +675,10 @@ load();
     link.href = 'https://maps.google.com/?q=' + data.lat + ',' + data.lon;
     link.target = '_blank'; link.rel = 'noopener';
     const sub = el('div', 'sub' + (age > 1800 ? ' stale' : ''),
-      'Last update ' + (age < 60 ? 'just now' : mins(age) + ' ago') +
-      (data.batt != null ? ' · battery ' + data.batt + '%' : '') +
-      (age > 1800 ? ' · phone has not reported for a while' : ''));
-    box.replaceChildren(el('span', null, '\u{1F4CD}'), where, dur, link, sub);
+      'Updated ' + (age < 60 ? 'just now' : mins(age) + ' ago') +
+      (data.batt != null ? ' · battery ' + data.batt + '%' : '') + ' · ');
+    sub.append(link);
+    box.replaceChildren(el('span', null, '\u{1F4CD}'), where, dur, sub);
     box.hidden = false;
   }
   async function poll() {
