@@ -2,7 +2,8 @@
 
 Env vars stay the baseline (Docker config). A value saved on the Settings page
 overrides it; clearing the field reverts to the env value. Infrastructure and
-credentials for the Recorder, the timezone and APP_PASSWORD stay env-only.
+credentials for the Recorder, the timezone and APP_PASSWORD stay env-only. The Recorder
+address, user and device can be picked on the Settings page.
 """
 import secrets
 from dataclasses import replace
@@ -37,6 +38,14 @@ def parse_days(text):
 
 # group, key, label, kind, (min, max) or choices, help
 SPEC = [
+    ("Recorder", [
+        dict(key="recorder_url", label="Recorder address", kind="url",
+             help="Your OwnTracks Recorder, e.g. http://192.168.1.50:8083"),
+        dict(key="recorder_user", label="Recorder user", kind="text",
+             help="Use “Find on Recorder” below to pick it."),
+        dict(key="recorder_device", label="Recorder device", kind="text",
+             help="Use “Find on Recorder” below to pick it."),
+    ]),
     ("Stop detection", [
         dict(key="stop_min_minutes", label="Minimum stop length (min)", kind="int", lo=1, hi=240,
              help="Shorter visits show as dismissible short stops."),
@@ -85,6 +94,12 @@ SPEC += [
         dict(key="work_end", label="Work day ends", kind="time", help="24-hour time, local."),
         dict(key="alert_repeat_min", label="Repeat reminder every (min)", kind="int", lo=0, hi=1440,
              help="0 = one alert per outage."),
+    ]),
+]
+SPEC += [
+    ("Backups", [
+        dict(key="backup_keep", label="Daily backups to keep", kind="int", lo=0, hi=365,
+             help="One snapshot of the database is saved each day. 0 turns automatic backups off."),
     ]),
 ]
 FIELDS = {f["key"]: f for _, fs in SPEC for f in fs}

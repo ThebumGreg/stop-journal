@@ -35,6 +35,7 @@ class Config:
     work_start: str = "07:00"
     work_end: str = "17:00"
     alert_repeat_min: int = 0
+    backup_keep: int = 14
 
     @classmethod
     def from_env(cls):
@@ -67,4 +68,5 @@ class Config:
             work_start=e("WORK_START", "07:00"),
             work_end=e("WORK_END", "17:00"),
             alert_repeat_min=_int("ALERT_REPEAT_MIN", 0),
+            backup_keep=_int("BACKUP_KEEP", 14),
         )

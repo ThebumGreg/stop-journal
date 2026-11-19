@@ -13,9 +13,14 @@ import requests
 
 
 class RecorderClient:
-    def __init__(self, cfg, timeout=30):
-        self.cfg = cfg
+    def __init__(self, cfg, timeout=30, resolve=None):
+        self._cfg = cfg
+        self._resolve = resolve  # callable returning the current effective config
         self.timeout = timeout
+
+    @property
+    def cfg(self):
+        return self._resolve() if self._resolve else self._cfg
 
     def fetch(self, start_utc: datetime, end_utc: datetime):
         """Return raw point dicts between two aware UTC datetimes."""
@@ -71,6 +76,33 @@ def _last_point(self):
         return None
     p = max(pts, key=lambda x: x["tst"])
     return {"lat": p["lat"], "lon": p["lon"], "tst": p["tst"]}
+
+
+def _get(url, auth_str, path, params=None, timeout=10):
+    auth = tuple(auth_str.partition(":")[::2]) if auth_str else None
+    r = requests.get(f"{url.rstrip('/')}{path}", params=params, auth=auth, timeout=timeout)
+    r.raise_for_status()
+    return r.json()
+
+
+def discover(url, auth_str=""):
+    """Everything the Recorder knows: [{user, devices:[{device, last_tst}]}].
+
+    /api/0/list -> {"results": [users]}; /api/0/list?user=U -> {"results": [devices]};
+    /api/0/last?user=U&device=D -> [point] (used only for the "last seen" time).
+    """
+    out = []
+    for user in _get(url, auth_str, "/api/0/list").get("results", []):
+        devices = []
+        for dev in _get(url, auth_str, "/api/0/list", {"user": user}).get("results", []):
+            try:
+                pts = _get(url, auth_str, "/api/0/last", {"user": user, "device": dev})
+                last = max((p["tst"] for p in pts if "tst" in p), default=None)
+            except (requests.RequestException, ValueError):
+                last = None
+            devices.append({"device": dev, "last_tst": last})
+        out.append({"user": user, "devices": devices})
+    return out
 
 
 RecorderClient.last_tst = _last_tst

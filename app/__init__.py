@@ -6,12 +6,13 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from flask import (Flask, Response, jsonify, redirect, render_template, request,
-                   session, url_for)
+                   send_file, session, url_for)
 
-from . import alerts, db, notify, parts, pdf, places, points, sample, service, settings
+from . import alerts, backup, db, notify, parts, pdf, places, points, sample, service, settings
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
+from . import recorder as recorder_mod
 from .recorder import RecorderClient
 
 
@@ -26,7 +27,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             client = sample.ListRecorder(
                 sample.normal_day("2026-11-18") + sample.short_stop_day("2026-11-17"))
         else:
-            client = RecorderClient(base)
+            client = RecorderClient(base, resolve=lambda: eff())
     app = Flask(__name__)
     tz = ZoneInfo(base.app_tz)
     app.jinja_env.filters["ts_local"] = lambda t: datetime.fromtimestamp(t, tz).strftime("%b %-d, %-I:%M %p")
@@ -477,6 +478,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                     usage=UsageCounter(base.data_dir, "google").count(),
                     cap=cfg.google_daily_cap, provider=cfg.places_provider,
                     pushover_ready=notify.configured(cfg), recent=recent,
+                    backups=backup.list_backups(base.data_dir),
                     has_password=bool(base.app_password), **extra)
 
     @app.get("/settings")
@@ -510,6 +512,43 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         except Exception as e:
             return jsonify(ok=False, message=f"Test failed ({type(e).__name__}).")
 
+    @app.post("/settings/recorder/discover")
+    def settings_recorder_discover():
+        """List the users/devices the Recorder has, so they can be picked instead of typed."""
+        cfg = eff()
+        url = (request.form.get("recorder_url") or cfg.recorder_url).strip().rstrip("/")
+        if not url.startswith(("http://", "https://")):
+            return jsonify(ok=False, message="Enter the Recorder address first (http://host:8083).")
+        try:
+            found = recorder_mod.discover(url, cfg.recorder_auth)
+        except Exception as e:
+            return jsonify(ok=False, message=f"Could not reach the Recorder ({type(e).__name__}).")
+        if not found:
+            return jsonify(ok=False, message="Connected, but the Recorder has no users yet.")
+        for u in found:
+            for d in u["devices"]:
+                d["last"] = (datetime.fromtimestamp(d["last_tst"], tz).strftime("%b %-d, %-I:%M %p")
+                             if d["last_tst"] else "no data")
+        return jsonify(ok=True, users=found)
+
+    @app.post("/settings/backup-now")
+    def settings_backup_now():
+        cfg = eff()
+        try:
+            name = backup.snapshot(cfg.data_dir, cfg.app_tz, cfg.backup_keep or 14, stamp_time=True)
+            return jsonify(ok=True, message=f"Saved {name}. Reload to see it in the list.")
+        except Exception as e:
+            return jsonify(ok=False, message=f"Backup failed ({type(e).__name__}).")
+
+    @app.get("/settings/backup/<name>")
+    def settings_backup_download(name):
+        if not backup.NAME.match(name):
+            return jsonify(error="not found"), 404
+        path = os.path.join(backup.folder(base.data_dir), name)
+        if not os.path.isfile(path):
+            return jsonify(error="not found"), 404
+        return send_file(path, as_attachment=True, download_name=name)
+
     @app.post("/settings/test-pushover")
     def settings_test_pushover():
         """Send one real test notification to validate the Pushover keys."""
@@ -542,5 +581,6 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                             and os.environ.get("DISABLE_ALERTS") != "1")
     if start_background:
         alerts.start(base, client)
+        backup.start(base, eff)
 
     return app

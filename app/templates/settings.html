@@ -48,6 +48,25 @@
           {% if errors.get(f.key) %}<div class="err">{{ errors[f.key] }}</div>{% endif %}
         </div>
       {% endfor %}
+      {% if group == 'Recorder' %}
+        <div class="box">
+          <div class="row"><button type="button" id="finder">Find on Recorder</button><span id="findmsg"></span></div>
+          <div id="foundlist"></div>
+          <div class="help">Looks up the users and devices on the address above (even if not saved yet). Tap a device to fill in both fields, then Save settings.</div>
+        </div>
+      {% endif %}
+      {% if group == 'Backups' %}
+        <div class="box">
+          {% if backups %}
+            {% for b in backups[:5] %}
+              <div class="help"><a href="/settings/backup/{{ b.name }}">{{ b.name }}</a> · {{ (b.size / 1024) | round | int }} KB · {{ b.mtime | int | ts_local }}</div>
+            {% endfor %}
+            {% if backups | length > 5 %}<div class="help">…and {{ backups | length - 5 }} older.</div>{% endif %}
+          {% else %}<div class="help">No backups yet.</div>{% endif %}
+          <div class="row" style="margin-top:8px"><button type="button" id="backupnow">Back up now</button><span id="backupmsg"></span></div>
+          <div class="help">Saved in the data folder under <code>backups/</code>. Tap a file to download it. Also copy that folder off the server, since a disk failure would take the backups too.</div>
+        </div>
+      {% endif %}
       {% if group == 'Business suggestions' %}
         <div class="box">
           Google requests today (UTC): <strong>{{ usage }}</strong> of <strong>{{ cap }}</strong> allowed.
@@ -81,7 +100,7 @@
   {% if has_password %}
   <form method="post" action="/logout" style="margin-top:28px"><button type="submit">Sign out</button></form>
   {% endif %}
-  <p class="help" style="margin-top:24px">Recorder address, timezone and the app password are set in <code>.env</code> and not editable here.</p>
+  <p class="help" style="margin-top:24px">Recorder login (RECORDER_AUTH), timezone and the app password are set in <code>.env</code> and not editable here.</p>
 </main>
 <script>
 function wire(btnId, msgId, url) {
@@ -96,7 +115,29 @@ function wire(btnId, msgId, url) {
     } catch (e) { out.className = 'err'; out.textContent = 'Request failed.'; }
   };
 }
+document.getElementById('finder').onclick = async () => {
+  const msg = document.getElementById('findmsg'), list = document.getElementById('foundlist');
+  msg.className = ''; msg.textContent = 'Looking…'; list.innerHTML = '';
+  try {
+    const fd = new FormData(); fd.append('recorder_url', document.getElementById('recorder_url').value);
+    const d = await (await fetch('/settings/recorder/discover', {method: 'POST', body: fd})).json();
+    msg.className = d.ok ? 'ok' : 'err';
+    msg.textContent = d.ok ? '' : d.message;
+    (d.users || []).forEach(u => u.devices.forEach(dev => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.style.cssText = 'display:block;width:100%;text-align:left;margin-top:8px';
+      b.textContent = u.user + ' / ' + dev.device + ' · last data: ' + dev.last;
+      b.onclick = () => {
+        document.getElementById('recorder_user').value = u.user;
+        document.getElementById('recorder_device').value = dev.device;
+        msg.className = 'ok'; msg.textContent = 'Selected ' + u.user + ' / ' + dev.device + '. Now Save settings.';
+      };
+      list.appendChild(b);
+    }));
+  } catch (e) { msg.className = 'err'; msg.textContent = 'Request failed.'; }
+};
 wire('testg', 'testmsg', '/settings/test-google');
+wire('backupnow', 'backupmsg', '/settings/backup-now');
 wire('testp', 'testpmsg', '/settings/test-pushover');
 </script>
 </body>

@@ -87,18 +87,18 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `PUSHOVER_TOKEN`, `PUSHOVER_USER` | | notifications; see Settings |
 | `APP_URL` | | address that notification taps open, e.g. `http://192.168.x.x:8000` |
 | `ALERT_NO_DATA`, `ALERT_NO_DATA_MIN`, `WORK_DAYS`, `WORK_START`, `WORK_END`, `ALERT_REPEAT_MIN` | on, 60, Mon-Fri, 07:00, 17:00, 0 | the no-data alert |
+| `BACKUP_KEEP` | 14 | daily database snapshots to keep (0 = off) |
 | `PUID`, `PGID` | 1000 | compose only: the user the container runs as |
 
 ## Backup and restore
 
 The SQLite file in `/data` is the entire state (stops, edits, parts, places, settings).
 
-- **Online backup** (safe while running):
-  ```bash
-  docker exec jobhub python -c "import sqlite3; s=sqlite3.connect('/data/stop_journal.db'); d=sqlite3.connect('/data/backup.db'); s.backup(d)"
-  ```
-  then copy `data/backup.db` somewhere safe. Run it on a schedule (cron or Unraid User Scripts).
-- **Restore**: stop the container, replace `data/stop_journal.db`, start it.
+- **Automatic**: once a day JobHub saves a consistent snapshot to `/data/backups/` (`jobhub-YYYY-MM-DD.db`) and
+  keeps the newest 14 (Settings → Backups; `BACKUP_KEEP`). Settings also has **Back up now** and download links.
+- **Off the server**: these snapshots sit on the same disk, so copy `/data/backups/` elsewhere on a schedule
+  (Unraid appdata backup, rsync, cron).
+- **Restore**: stop the container, copy a snapshot over `data/stop_journal.db` (renaming it), start it.
 
 ## Security and privacy
 
