@@ -154,7 +154,7 @@ function partsBlock(s, err) {
   box.append(el('label', null, 'Parts used'));
   (s.parts || []).forEach(p => {
     const row = el('div', 'prow');
-    row.append(el('div', 'pn', p.name + (p.sku ? ' · ' + p.sku : '') + (p.unit && p.unit !== 'ea' ? ' (' + p.unit + ')' : '')));
+    row.append(el('div', 'pn', p.name + (p.sku ? ' · ' + p.sku : '') + (p.unit && p.unit !== 'ea' ? ' (' + p.unit + ')' : '') + (p.consumable ? ' · consumable' : '')));
     const q = el('input'); q.type = 'number'; q.step = 'any'; q.min = '0'; q.value = p.qty; q.title = 'Quantity';
     q.onchange = () => run(() => api('PATCH', '/api/stop-parts/' + p.id, {qty: q.value}), err);
     const b = el('input'); b.type = 'checkbox'; b.checked = p.billable; b.title = 'Billable';

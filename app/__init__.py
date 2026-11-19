@@ -312,7 +312,24 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     @app.get("/api/parts")
     def parts_list():
         q, everything = request.args.get("q", ""), request.args.get("all") == "1"
-        return catalog(lambda conn: {"parts": parts.list_parts(conn, q, everything)})
+        kind = request.args.get("kind") if request.args.get("kind") in parts.KINDS else None
+        return catalog(lambda conn: {"parts": parts.list_parts(conn, q, everything, kind)})
+
+    @app.get("/api/parts/count-sheet")
+    def parts_count_sheet():
+        kind = request.args.get("kind") if request.args.get("kind") in parts.KINDS else None
+        return catalog(lambda conn: {"parts": parts.count_sheet(conn, kind)})
+
+    @app.post("/api/parts/count")
+    def parts_count():
+        b = (request.get_json(silent=True) or {}).get("counts") or {}
+        if not isinstance(b, dict) or not b:
+            return jsonify(error="Nothing to save."), 400
+        return catalog(lambda conn: parts.apply_counts(conn, b))
+
+    @app.get("/api/parts/shopping")
+    def parts_shopping():
+        return catalog(lambda conn: {"groups": parts.shopping_list(conn)})
 
     @app.post("/api/parts")
     def parts_create():

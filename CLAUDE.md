@@ -174,6 +174,15 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Alerts (Pushover, generic text only): no data, Recorder down, end-of-day Draft review, low truck stock.
 - Debug data download (`/api/debug/<date>.json`): raw points + stops + edits, for reviewing a day offline.
 
+## Consumables, truck count and shopping list (added later)
+- `parts.kind` is `part` or `consumable` (tape, solvent, gloves: used up, not billed). Consumables default to
+  not billable; the CSV has `type` and `vendor` columns. Use is optional per stop; a weekly **Count the truck**
+  (`/api/parts/count`) sets real quantities and shows "used since last count". The **Shopping list** groups
+  tracked items at or below reorder level by vendor (suggests restocking to 2x the reorder level).
+- Report: each stop's `parts_used` holds parts only; consumables are in `consumables_used` (JSON) and a separate
+  "Non-billable materials" table in the PDF; "Records to update" lists parts only. Schema stays "1" (additive).
+- Planned, not built: purchase/restock log with cost and a consumables cost summary (phase 3); install kits (phase 4).
+
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.
 - Show each milestone working before starting the next.

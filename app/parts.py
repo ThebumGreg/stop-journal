@@ -7,7 +7,9 @@
 * Stock may go negative (the truck count is often behind reality); the UI flags it.
 
 CSV import format (header row required, order free, extra columns ignored):
-  name (required), sku, unit, unit_cost, billable, category, on_hand, reorder_at
+  name (required), sku, type, unit, unit_cost, billable, category, vendor, on_hand, reorder_at
+  type is "part" (default) or "consumable" (tape, gloves, solvent: used up, normally not billed;
+  consumables default to not billable).
 Common alternative headers are accepted (see ALIASES). Rows are matched to an
 existing part by sku, else by name; blank cells never overwrite existing values.
 A non-blank on_hand sets the truck count and switches tracking on.
@@ -19,7 +21,12 @@ import time
 
 from .errors import EditError
 
-COLUMNS = ["sku", "name", "unit", "unit_cost", "billable", "category", "on_hand", "reorder_at"]
+COLUMNS = ["sku", "name", "type", "unit", "unit_cost", "billable", "category", "vendor", "on_hand",
+           "reorder_at"]
+KINDS = ("part", "consumable")
+KIND_WORDS = {"part": "part", "parts": "part", "billable": "part", "material": "part",
+              "consumable": "consumable", "consumables": "consumable", "supply": "consumable",
+              "supplies": "consumable"}
 ALIASES = {
     "part_number": "sku", "part_no": "sku", "partnumber": "sku", "part_#": "sku",
     "item_number": "sku", "item_no": "sku", "item_#": "sku",
@@ -30,7 +37,8 @@ ALIASES = {
     "in_stock": "on_hand", "truck_qty": "on_hand", "qty_on_hand": "on_hand",
     "reorder": "reorder_at", "reorder_point": "reorder_at", "min": "reorder_at",
     "minimum": "reorder_at", "min_qty": "reorder_at", "par": "reorder_at",
-    "type": "category", "group": "category",
+    "group": "category", "kind": "type", "item_type": "type", "part_type": "type",
+    "supplier": "vendor", "preferred_vendor": "vendor", "buy_from": "vendor",
 }
 MAX_ROWS = 20000
 TRUE = {"1", "y", "yes", "true", "t", "billable"}
@@ -77,6 +85,16 @@ def _text(v, what, limit=200, required=False):
     return t
 
 
+def _kind(v):
+    """'part' | 'consumable' | None (blank). Anything else is an error."""
+    t = str(v or "").strip().lower()
+    if not t:
+        return None
+    if t not in KIND_WORDS:
+        raise EditError("Type must be “part” or “consumable”.")
+    return KIND_WORDS[t]
+
+
 def part_dict(r):
     tracked = bool(r["tracked"])
     low = (tracked and r["reorder_at"] is not None and r["on_hand"] <= r["reorder_at"])
@@ -84,17 +102,19 @@ def part_dict(r):
             "unit_cost": r["unit_cost"], "billable": bool(r["billable"]),
             "category": r["category"] or "", "on_hand": r["on_hand"] or 0,
             "reorder_at": r["reorder_at"], "tracked": tracked, "active": bool(r["active"]),
+            "kind": r["kind"] or "part", "vendor": r["vendor"] or "",
             "low": bool(low), "negative": bool(tracked and (r["on_hand"] or 0) < 0)}
 
 
 # ---- catalog -----------------------------------------------------------
-def list_parts(conn, q="", include_inactive=False):
+def list_parts(conn, q="", include_inactive=False, kind=None):
     rows = conn.execute("SELECT * FROM parts" + ("" if include_inactive else " WHERE active=1") +
                         " ORDER BY lower(name)").fetchall()
     q = q.strip().lower()
     return [part_dict(r) for r in rows
-            if not q or q in r["name"].lower() or q in (r["sku"] or "").lower()
-            or q in (r["category"] or "").lower()]
+            if (not kind or (r["kind"] or "part") == kind)
+            and (not q or q in r["name"].lower() or q in (r["sku"] or "").lower()
+                 or q in (r["category"] or "").lower() or q in (r["vendor"] or "").lower())]
 
 
 def get_part(conn, pid):
@@ -133,17 +153,21 @@ def create_part(conn, f, tracked=False):
     sku = _text(f.get("sku"), "Part number", 80) or None
     _check_sku_free(conn, sku)
     cost = _num(f.get("unit_cost"), "Unit cost", 0)
+    kind = _kind(f.get("type", f.get("kind"))) or "part"
     billable = _bool(f.get("billable"))
+    if billable is None:
+        billable = kind != "consumable"      # consumables are not billed unless said otherwise
     on_hand = _num(f.get("on_hand"), "On hand")
     reorder = _num(f.get("reorder_at"), "Reorder level", 0)
     if on_hand is not None:
         tracked = True
     cur = conn.execute(
-        "INSERT INTO parts(sku,name,unit,unit_cost,billable,category,on_hand,reorder_at,tracked,active)"
-        " VALUES (?,?,?,?,?,?,?,?,?,1)",
+        "INSERT INTO parts(sku,name,unit,unit_cost,billable,category,on_hand,reorder_at,tracked,active,"
+        "kind,vendor) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)",
         (sku, name, _text(f.get("unit"), "Unit", 20) or "ea", cost,
-         1 if billable is None or billable else 0, _text(f.get("category"), "Category", 80) or None,
-         0 if on_hand is None else on_hand, reorder, 1 if tracked else 0))
+         1 if billable else 0, _text(f.get("category"), "Category", 80) or None,
+         0 if on_hand is None else on_hand, reorder, 1 if tracked else 0, kind,
+         _text(f.get("vendor"), "Vendor", 80) or None))
     if on_hand:
         _log(conn, cur.lastrowid, on_hand, "initial")
     return cur.lastrowid
@@ -166,6 +190,12 @@ def update_part(conn, pid, f):
         upd["reorder_at"] = _num(f["reorder_at"], "Reorder level", 0)
     if "category" in f:
         upd["category"] = _text(f["category"], "Category", 80) or None
+    if "vendor" in f:
+        upd["vendor"] = _text(f["vendor"], "Vendor", 80) or None
+    if "type" in f or "kind" in f:
+        k = _kind(f.get("type", f.get("kind")))
+        if k:
+            upd["kind"] = k
     if "billable" in f:
         b = _bool(f["billable"])
         upd["billable"] = 1 if b is None or b else 0
@@ -282,17 +312,17 @@ def export_csv(conn):
     w = csv.writer(out)
     w.writerow(COLUMNS)
     for p in list_parts(conn):
-        w.writerow([_safe(p["sku"]), _safe(p["name"]), _safe(p["unit"]),
+        w.writerow([_safe(p["sku"]), _safe(p["name"]), p["kind"], _safe(p["unit"]),
                     _g(p["unit_cost"]), "yes" if p["billable"] else "no",
-                    _safe(p["category"]), _g(p["on_hand"]) if p["tracked"] else "",
-                    _g(p["reorder_at"])])
+                    _safe(p["category"]), _safe(p["vendor"]),
+                    _g(p["on_hand"]) if p["tracked"] else "", _g(p["reorder_at"])])
     return out.getvalue()
 
 
 def template_csv():
-    return ("sku,name,unit,unit_cost,billable,category,on_hand,reorder_at\r\n"
-            "BV-050,1/2 in. brass ball valve,ea,8.75,yes,Plumbing,12,4\r\n"
-            "TAPE-PTFE,PTFE thread tape,roll,1.20,yes,Plumbing,30,10\r\n")
+    return ("sku,name,type,unit,unit_cost,billable,category,vendor,on_hand,reorder_at\r\n"
+            "BV-050,1/2 in. brass ball valve,part,ea,8.75,yes,Plumbing,Ferguson,12,4\r\n"
+            "TAPE-PTFE,PTFE thread tape,consumable,roll,1.20,no,Plumbing,Home Depot,30,10\r\n")
 
 
 # ---- per-stop usage ----------------------------------------------------
@@ -301,7 +331,8 @@ def stop_part_dict(r):
     return {"id": r["id"], "stop_id": r["stop_id"], "part_id": r["part_id"], "name": r["name"],
             "sku": r["sku"] or "", "unit": r["unit"] or "ea", "qty": r["qty"], "unit_cost": cost,
             "line_cost": None if cost is None else round(cost * r["qty"], 2),
-            "billable": bool(r["billable"]), "notes": r["notes"] or ""}
+            "billable": bool(r["billable"]), "notes": r["notes"] or "",
+            "kind": r["kind"] or "part", "consumable": (r["kind"] or "part") == "consumable"}
 
 
 def _qty(v):
@@ -330,10 +361,11 @@ def add_to_stop(conn, stop_id, f):
         sp_id = row["id"]
     else:
         sp_id = conn.execute(
-            "INSERT INTO stop_parts(stop_id,part_id,name,sku,unit,qty,unit_cost,billable,notes) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO stop_parts(stop_id,part_id,name,sku,unit,qty,unit_cost,billable,notes,kind) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (stop_id, part["id"], part["name"], part["sku"], part["unit"], qty, part["unit_cost"],
-             part["billable"], _text(f.get("notes"), "Notes", 500) or None)).lastrowid
+             part["billable"], _text(f.get("notes"), "Notes", 500) or None,
+             part["kind"] or "part")).lastrowid
     move(conn, part, -qty, "used", sp_id)
     return sp_id
 
@@ -410,3 +442,56 @@ def usual_for(conn, stop, limit=5):
                                           "sku": r["sku"], "qty": r["qty"], "times": 0})
         a["times"] += 1
     return sorted(agg.values(), key=lambda a: -a["times"])[:limit]
+
+
+# ---- truck count and shopping list ---------------------------------------
+def count_sheet(conn, kind=None):
+    """Tracked parts with the quantity the app thinks is on the truck, when each was last
+    counted, and how much was used since then (from stops, net of returns)."""
+    out = []
+    for p in list_parts(conn, kind=kind):
+        if not p["tracked"]:
+            continue
+        last = conn.execute("SELECT MAX(ts) FROM inventory_log WHERE part_id=? AND reason='count'",
+                            (p["id"],)).fetchone()[0]
+        used = conn.execute(
+            "SELECT COALESCE(-SUM(delta), 0) FROM inventory_log WHERE part_id=? "
+            "AND reason IN ('used','return') AND ts > ?", (p["id"], last or 0)).fetchone()[0]
+        out.append({**p, "last_counted": last, "used_since": round(used, 4)})
+    return out
+
+
+def apply_counts(conn, counts):
+    """counts: {part id: counted quantity}. Only parts whose count differs are changed.
+    Returns {changed, unchanged, details}."""
+    changed, details = 0, []
+    for pid, qty in counts.items():
+        p = get_part(conn, int(pid))
+        q = _num(qty, f"Count for {p['name']}", 0)
+        if q is None:
+            continue
+        diff = round(q - (p["on_hand"] or 0), 4)
+        # always log a count (even when equal) so "used since last count" restarts
+        conn.execute("UPDATE parts SET tracked=1, on_hand=? WHERE id=?", (q, p["id"]))
+        _log(conn, p["id"], diff, "count", note="truck count")
+        if diff:
+            changed += 1
+            details.append({"name": p["name"], "was": p["on_hand"] or 0, "now": q, "diff": diff})
+    conn.commit()
+    return {"changed": changed, "unchanged": len(counts) - changed, "details": details}
+
+
+def shopping_list(conn):
+    """Tracked parts at or below their reorder level, grouped by vendor. The suggested
+    quantity restocks to twice the reorder level."""
+    groups = {}
+    for p in list_parts(conn):
+        if not (p["tracked"] and p["low"]):
+            continue
+        need = max(round(p["reorder_at"] * 2 - p["on_hand"], 4), 1)
+        groups.setdefault(p["vendor"] or "No vendor set", []).append({
+            "id": p["id"], "name": p["name"], "sku": p["sku"], "unit": p["unit"], "kind": p["kind"],
+            "on_hand": p["on_hand"], "reorder_at": p["reorder_at"], "suggest": need,
+            "unit_cost": p["unit_cost"]})
+    return [{"vendor": v, "items": items} for v, items in sorted(groups.items(),
+            key=lambda kv: (kv[0] == "No vendor set", kv[0].lower()))]

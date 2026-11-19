@@ -45,6 +45,13 @@ def _part(p):
             "unit_cost": p["unit_cost"], "line_cost": p["line_cost"], "billable": p["billable"]}
 
 
+def _split_parts(lines):
+    """Parts go to `parts_used`; consumables (tape, solvent...) to `consumables_used`, so the
+    reader does not mistake them for billable materials."""
+    return ([_part(p) for p in lines if not p.get("consumable")],
+            [_part(p) for p in lines if p.get("consumable")])
+
+
 def build_day(payload, cfg):
     """payload: service.day_payload() for one date."""
     tz = ZoneInfo(cfg.app_tz)
@@ -66,6 +73,7 @@ def build_day(payload, cfg):
         drive = None
         if d and d.get("counts", status.get(d["from_stop_id"]) != "Personal"):
             drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "notes": d["notes"]}
+        used, consumed = _split_parts(s["parts"])
         out_stops.append({
             "stop_number": len(out_stops) + 1,
             "business_name": s["business_name"], "address": s["address"],
@@ -77,7 +85,8 @@ def build_day(payload, cfg):
             "drive_from_previous_stop": drive,
             "hubspot_company_id": s["hubspot_company_id"],
             "work_performed": s["notes"],
-            "parts_used": [_part(p) for p in s["parts"]],
+            "parts_used": used,
+            "consumables_used": consumed,
         })
     drive_min = sum(s["drive_from_previous_stop"]["minutes"] for s in out_stops if s["drive_from_previous_stop"])
     miles = sum(s["drive_from_previous_stop"]["miles_approx"] for s in out_stops if s["drive_from_previous_stop"])

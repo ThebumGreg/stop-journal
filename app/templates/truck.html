@@ -13,18 +13,36 @@
   .qty { font-weight:700; white-space:nowrap; }
   .low { color:var(--warn); } .neg { color:var(--err); }
   .edit { padding:4px 4px 14px; display:grid; gap:10px; }
+  .tabs button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .crow { display:grid; grid-template-columns:1fr 96px; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
+  .crow input { width:100%; }
+  .group h3 { margin:14px 0 4px; font-size:16px; }
 </style>
 </head>
 <body>
 {% include "_header.html" %}
 <main>
   <h1 class="page-title">Truck parts</h1>
-  <input id="filter" placeholder="Search parts by name, part number or category">
+  <div class="row tabs" id="tabs">
+    <button type="button" data-k="" class="on">All</button>
+    <button type="button" data-k="part">Parts</button>
+    <button type="button" data-k="consumable">Consumables</button>
+  </div>
+  <input id="filter" placeholder="Search by name, part number, category or vendor">
 
-  <h2>Add a part</h2>
+  <h2>Count &amp; shopping</h2>
+  <div class="row">
+    <button type="button" id="countbtn">Count the truck</button>
+    <button type="button" id="shopbtn">Shopping list</button>
+  </div>
+  <div id="tools"></div>
+
+  <h2>Add an item</h2>
   <div class="grid" id="addform">
     <div><label>Name</label><input id="a_name"></div>
+    <div><label>Type</label><select id="a_kind"><option value="part">Part (billable)</option><option value="consumable">Consumable (not billed)</option></select></div>
     <div><label>Part #</label><input id="a_sku"></div>
+    <div><label>Vendor</label><input id="a_vendor"></div>
     <div><label>Unit</label><input id="a_unit" placeholder="ea"></div>
     <div><label>Unit cost</label><input id="a_cost" inputmode="decimal"></div>
     <div><label>On truck now (optional)</label><input id="a_oh" inputmode="decimal"></div>
@@ -42,14 +60,14 @@
     <div class="hint" style="margin-top:6px">
       <a href="/api/parts/template.csv">Download template</a> ·
       <a href="/api/parts/export.csv">Export current parts</a>.
-      Columns: <code>name</code> (required), <code>sku</code>, <code>unit</code>, <code>unit_cost</code>,
-      <code>billable</code>, <code>category</code>, <code>on_hand</code>, <code>reorder_at</code>.
+      Columns: <code>name</code> (required), <code>sku</code>, <code>type</code> (part or consumable), <code>unit</code>,
+      <code>unit_cost</code>, <code>billable</code>, <code>category</code>, <code>vendor</code>, <code>on_hand</code>, <code>reorder_at</code>.
       Matching is by part number, else name. A filled <code>on_hand</code> sets the truck count and turns tracking on.
     </div>
     <div id="csvres"></div>
   </div>
 
-  <h2>Parts <span class="hint" id="count"></span></h2>
+  <h2>Items <span class="hint" id="count"></span></h2>
   <div id="list"></div>
 </main>
 <script src="{{ url_for('static', filename='truck.js') }}"></script>

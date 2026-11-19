@@ -64,7 +64,9 @@ CREATE TABLE IF NOT EXISTS parts (
   on_hand REAL DEFAULT 0,
   reorder_at REAL,
   tracked INTEGER DEFAULT 0,
-  active INTEGER DEFAULT 1
+  active INTEGER DEFAULT 1,
+  kind TEXT DEFAULT 'part',
+  vendor TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_parts_sku ON parts(lower(sku))
   WHERE sku IS NOT NULL AND sku != '';
@@ -79,7 +81,8 @@ CREATE TABLE IF NOT EXISTS stop_parts (
   qty REAL NOT NULL,
   unit_cost REAL,
   billable INTEGER DEFAULT 1,
-  notes TEXT
+  notes TEXT,
+  kind TEXT DEFAULT 'part'
 );
 CREATE INDEX IF NOT EXISTS idx_stop_parts_stop ON stop_parts(stop_id);
 
@@ -159,6 +162,9 @@ CREATE TABLE IF NOT EXISTS drives (
 MIGRATIONS = [
     ("stops", "kind", "TEXT DEFAULT 'stop'"),
     ("stops", "category", "TEXT"),
+    ("parts", "kind", "TEXT DEFAULT 'part'"),
+    ("parts", "vendor", "TEXT"),
+    ("stop_parts", "kind", "TEXT DEFAULT 'part'"),
     ("stops", "edited", "INTEGER DEFAULT 0"),
     ("stops", "times_edited", "INTEGER DEFAULT 0"),
     ("drives", "edited", "INTEGER DEFAULT 0"),

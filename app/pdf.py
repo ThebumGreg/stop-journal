@@ -34,7 +34,7 @@ INSTRUCTIONS = [
     "Day summary: totals for that day. They cover only the confirmed stops listed below. Miles are "
     "approximate (straight GPS path), not odometer readings.",
     "Stop blocks: one per confirmed stop, in order. Work performed is the full text the technician "
-    "wrote. Parts used lists parts consumed at the stop. A blank HubSpot company ID means it is not "
+    "wrote. Parts used lists parts consumed at the stop. Non-billable materials (supplies such as tape or solvent) are listed separately and are not for billing. A blank HubSpot company ID means it is not "
     "known yet: match the company by business name and address.",
     "Drive from previous stop: the drive immediately before arriving at the stop. It is blank for the "
     "first stop of the day or when the drive began at a personal stop (unless the user started the work "
@@ -141,6 +141,8 @@ def _stop_block(s, st):
     for i, piece in enumerate(_fit(s["work_performed"], st["base"], 7 * inch - 1.75 * inch - 12, MAX_ROW_H)):
         rows.append(("Work performed" if i == 0 else "Work performed (continued)", piece))
     rows.append(("Parts used", _parts_table(s["parts_used"], st)))
+    if s.get("consumables_used"):
+        rows.append(("Non-billable materials", _parts_table(s["consumables_used"], st)))
     return [Paragraph(f"Stop {s['stop_number']}", st["h2"]), _kv(rows, st)]
 
 
