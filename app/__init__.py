@@ -74,9 +74,12 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         session.clear()
         return redirect(url_for("login"))
 
+    started = time.time()
+
     @app.get("/health")
     def health():
-        return jsonify(ok=True)
+        # uptime_s lets a restart loop be spotted by polling: it keeps dropping back to 0
+        return jsonify(ok=True, uptime_s=int(time.time() - started))
 
     @app.get("/")
     def index():
