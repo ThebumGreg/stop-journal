@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stop Journal – Truck parts</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --line:#d8dee4; --sel:#e8f1ff; --acc:#0b66d0; --err:#d1242f; --ok:#1a7f37; --warn:#b35900; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181d; --fg:#e6e9ec; --muted:#98a2ad; --line:#2c333b; --sel:#1d2b3f; --acc:#5aa2ff; --err:#ff7b72; --ok:#56d364; --warn:#f0a050; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.4 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); }
+  header a { color:var(--acc); text-decoration:none; }
+  main { max-width:760px; margin:0 auto; padding:16px; }
+  h2 { font-size:16px; margin:22px 0 8px; }
+  button, input, select { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; }
+  button { padding:6px 12px; cursor:pointer; }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  button.danger { color:var(--err); }
+  input { padding:6px 8px; width:100%; min-width:0; }
+  input[type=checkbox] { width:auto; }
+  label { display:block; font-size:12px; color:var(--muted); margin-bottom:2px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; align-items:end; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .box { background:var(--sel); border-radius:8px; padding:10px 12px; margin:8px 0; }
+  .part { border-bottom:1px solid var(--line); }
+  .head { display:flex; gap:10px; align-items:center; padding:10px 4px; cursor:pointer; }
+  .head .body { flex:1; min-width:0; }
+  .head .n { font-weight:600; }
+  .head .m { color:var(--muted); font-size:13px; }
+  .qty { font-weight:700; white-space:nowrap; }
+  .low { color:var(--warn); } .neg { color:var(--err); }
+  .edit { padding:4px 4px 14px; display:grid; gap:10px; }
+  .err { color:var(--err); font-size:13px; } .ok { color:var(--ok); font-size:13px; }
+  .hint { color:var(--muted); font-size:13px; }
+  code { background:var(--sel); padding:0 4px; border-radius:4px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">&larr; Day view</a>
+  <strong>Truck parts</strong>
+  <a href="/settings" style="margin-left:auto">Settings</a>
+</header>
+<main>
+  <input id="filter" placeholder="Search parts by name, part number or category">
+
+  <h2>Add a part</h2>
+  <div class="grid" id="addform">
+    <div><label>Name</label><input id="a_name"></div>
+    <div><label>Part #</label><input id="a_sku"></div>
+    <div><label>Unit</label><input id="a_unit" placeholder="ea"></div>
+    <div><label>Unit cost</label><input id="a_cost" inputmode="decimal"></div>
+    <div><label>On truck now (optional)</label><input id="a_oh" inputmode="decimal"></div>
+    <div><label><input type="checkbox" id="a_bill" checked> Billable</label><button class="primary" id="a_go" type="button">Add</button></div>
+  </div>
+  <div class="err" id="a_err"></div>
+  <div class="hint">Leave “on truck” blank for parts you don’t want stock tracked for.</div>
+
+  <h2>Import / export</h2>
+  <div class="box">
+    <div class="row">
+      <input type="file" id="csvfile" accept=".csv,text/csv" style="width:auto;flex:1">
+      <button id="csvgo" type="button">Import CSV</button>
+    </div>
+    <div class="hint" style="margin-top:6px">
+      <a href="/api/parts/template.csv">Download template</a> ·
+      <a href="/api/parts/export.csv">Export current parts</a>.
+      Columns: <code>name</code> (required), <code>sku</code>, <code>unit</code>, <code>unit_cost</code>,
+      <code>billable</code>, <code>category</code>, <code>on_hand</code>, <code>reorder_at</code>.
+      Matching is by part number, else name. A filled <code>on_hand</code> sets the truck count and turns tracking on.
+    </div>
+    <div id="csvres"></div>
+  </div>
+
+  <h2>Parts <span class="hint" id="count"></span></h2>
+  <div id="list"></div>
+</main>
+<script src="{{ url_for('static', filename='truck.js') }}"></script>
+</body>
+</html>

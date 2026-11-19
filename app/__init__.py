@@ -4,10 +4,10 @@ from dataclasses import asdict, replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from flask import (Flask, jsonify, redirect, render_template, request, session,
-                   url_for)
+from flask import (Flask, Response, jsonify, redirect, render_template, request,
+                   session, url_for)
 
-from . import db, places, points, sample, service, settings
+from . import db, parts, places, points, sample, service, settings
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
 from .recorder import RecorderClient
@@ -26,7 +26,8 @@ def create_app(cfg=None, client=None, provider=None):
             client = RecorderClient(base)
     app = Flask(__name__)
     tz = ZoneInfo(base.app_tz)
-    app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True)
+    app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
+                      MAX_CONTENT_LENGTH=4 * 1024 * 1024)
 
     def eff():
         """Env defaults with Settings-page overrides applied (read per request)."""
@@ -185,6 +186,87 @@ def create_app(cfg=None, client=None, provider=None):
     @app.patch("/api/drives/<int:did>")
     def drive_patch(did):
         return mutate(service.patch_drive, did, request.get_json(silent=True) or {})
+
+    # ---- parts used at a stop -----------------------------------------
+    @app.post("/api/stops/<int:sid>/parts")
+    def stop_part_add(sid):
+        return mutate(service.add_stop_part, sid, request.get_json(silent=True) or {})
+
+    @app.patch("/api/stop-parts/<int:spid>")
+    def stop_part_patch(spid):
+        return mutate(service.patch_stop_part, spid, request.get_json(silent=True) or {})
+
+    @app.delete("/api/stop-parts/<int:spid>")
+    def stop_part_delete(spid):
+        return mutate(service.remove_stop_part, spid)
+
+    # ---- catalog / truck inventory ------------------------------------
+    def catalog(fn):
+        """Run fn(conn) -> JSON-able; EditError -> 400."""
+        return with_conn(lambda conn, cfg: jsonify(fn(conn)))
+
+    @app.get("/truck")
+    def truck_page():
+        return render_template("truck.html")
+
+    @app.get("/api/parts")
+    def parts_list():
+        q, everything = request.args.get("q", ""), request.args.get("all") == "1"
+        return catalog(lambda conn: {"parts": parts.list_parts(conn, q, everything)})
+
+    @app.post("/api/parts")
+    def parts_create():
+        b = request.get_json(silent=True) or {}
+
+        def go(conn):
+            pid = parts.create_part(conn, b)
+            conn.commit()
+            return parts.part_dict(parts.get_part(conn, pid))
+        return catalog(go)
+
+    @app.patch("/api/parts/<int:pid>")
+    def parts_patch(pid):
+        b = request.get_json(silent=True) or {}
+
+        def go(conn):
+            parts.update_part(conn, pid, b)
+            return parts.part_dict(parts.get_part(conn, pid))
+        return catalog(go)
+
+    @app.post("/api/parts/<int:pid>/adjust")
+    def parts_adjust(pid):
+        b = request.get_json(silent=True) or {}
+
+        def go(conn):
+            parts.adjust(conn, pid, b.get("delta"), b.get("set"), b.get("note", ""))
+            return parts.part_dict(parts.get_part(conn, pid))
+        return catalog(go)
+
+    @app.post("/api/parts/import")
+    def parts_import():
+        f = request.files.get("file")
+        raw = f.read() if f else request.get_data()
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1")  # Excel "CSV" exports are often not UTF-8
+        return catalog(lambda conn: parts.import_csv(conn, text))
+
+    def csv_response(body, name):
+        return Response(body, mimetype="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename={name}"})
+
+    @app.get("/api/parts/export.csv")
+    def parts_export():
+        conn = db.connect(base.data_dir)
+        try:
+            return csv_response(parts.export_csv(conn), "parts.csv")
+        finally:
+            conn.close()
+
+    @app.get("/api/parts/template.csv")
+    def parts_template():
+        return csv_response(parts.template_csv(), "parts-template.csv")
 
     @app.get("/api/suggest")
     def suggest():

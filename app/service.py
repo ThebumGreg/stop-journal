@@ -14,15 +14,14 @@ Totals rules (documented here because the UI and PDF rely on them):
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import detect
+from . import detect, parts
+from .errors import EditError
 from .geo import haversine_m
 from .places import known
 
 STATUSES = ("Draft", "Confirmed", "Personal")
 
 
-class EditError(ValueError):
-    """A user-correctable problem; the message is safe to show."""
 
 
 # ---- time helpers ------------------------------------------------------
@@ -170,6 +169,8 @@ def sync_new(conn, cfg, date, kept, run_cfg):
 
 def redetect(conn, cfg, date, kept, run_cfg):
     """Discard detected stops (and all their edits) and detect again. Manual stops stay."""
+    parts.release_stops(conn, [r["id"] for r in conn.execute(
+        "SELECT id FROM stops WHERE date=? AND source!='manual'", (date,))])
     conn.execute("DELETE FROM stops WHERE date=? AND source!='manual'", (date,))
     conn.execute("DELETE FROM drives WHERE date=?", (date,))
     materialize(conn, cfg, date, kept, run_cfg)
@@ -241,6 +242,7 @@ def patch_stop(conn, cfg, sid, f):
 
 def delete_stop(conn, cfg, sid):
     date = _stop(conn, sid)["date"]
+    parts.release_stops(conn, [sid])
     conn.execute("DELETE FROM stops WHERE id=?", (sid,))
     _finish(conn, cfg, date)
     return date
@@ -310,9 +312,31 @@ def merge_stops(conn, cfg, id_a, id_b):
         (a["arrive_utc"], b["depart_utc"], lat, lon, first["business_name"],
          first["address"], first["category"], first["known_site_id"], notes, status,
          kind, a["id"]))
+    conn.execute("UPDATE stop_parts SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
     conn.execute("DELETE FROM stops WHERE id=?", (b["id"],))
     _finish(conn, cfg, a["date"])
     return a["date"]
+
+
+# ---- parts used at a stop ------------------------------------------------
+def add_stop_part(conn, cfg, stop_id, f):
+    date = _stop(conn, stop_id)["date"]
+    parts.add_to_stop(conn, stop_id, f)
+    conn.execute("UPDATE stops SET edited=1 WHERE id=?", (stop_id,))
+    conn.commit()
+    return date
+
+
+def patch_stop_part(conn, cfg, spid, f):
+    stop_id = parts.patch_stop_part(conn, spid, f)
+    conn.commit()
+    return _stop(conn, stop_id)["date"]
+
+
+def remove_stop_part(conn, cfg, spid):
+    stop_id = parts.remove_from_stop(conn, spid)
+    conn.commit()
+    return _stop(conn, stop_id)["date"]
 
 
 # ---- drive operations --------------------------------------------------
@@ -359,7 +383,9 @@ def totals(stops, drives):
 
 
 def day_payload(conn, cfg, date, include_path=False):
+    used = parts.for_day(conn, date)
     stops = [{
+        "parts": used.get(r["id"], []),
         "id": r["id"], "seq": r["seq"], "kind": r["kind"] or "stop", "source": r["source"],
         "lat": r["lat"], "lon": r["lon"],
         "arrive": fmt_time(cfg, r["arrive_utc"]), "depart": fmt_time(cfg, r["depart_utc"]),

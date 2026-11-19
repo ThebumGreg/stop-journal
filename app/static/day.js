@@ -2,7 +2,7 @@
 // Editable day view. Server is the source of truth: every edit is a request that
 // returns the refreshed day, then the list re-renders. Unsaved typing is kept in
 // S.drafts (keyed 's<id>' / 'd<id>') so a re-render never loses it.
-const S = {date: null, path: [], stops: [], drives: [], totals: {}, tool: null,
+const S = {parts: [], date: null, path: [], stops: [], drives: [], totals: {}, tool: null,
            open: new Set(), openDrives: new Set(), sel: null, drafts: {}, flash: ''};
 const dateEl = document.getElementById('date');
 const listEl = document.getElementById('list');
@@ -132,6 +132,54 @@ async function loadCands(s, box, q, pick, google) {
   }
 }
 
+// ---- parts catalog (autocomplete) --------------------------------------
+const partList = document.createElement('datalist');
+partList.id = 'partlist';
+document.body.append(partList);
+async function loadParts() {
+  try {
+    S.parts = (await api('GET', '/api/parts')).parts;
+    partList.replaceChildren();
+    S.parts.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.name; if (p.sku) o.label = p.sku;
+      partList.append(o);
+    });
+  } catch (e) { /* autocomplete is optional */ }
+}
+
+function partsBlock(s, err) {
+  const box = el('div');
+  box.append(el('label', null, 'Parts used'));
+  (s.parts || []).forEach(p => {
+    const row = el('div', 'prow');
+    row.append(el('div', 'pn', p.name + (p.sku ? ' · ' + p.sku : '') + (p.unit && p.unit !== 'ea' ? ' (' + p.unit + ')' : '')));
+    const q = el('input'); q.type = 'number'; q.step = 'any'; q.min = '0'; q.value = p.qty; q.title = 'Quantity';
+    q.onchange = () => run(() => api('PATCH', '/api/stop-parts/' + p.id, {qty: q.value}), err);
+    const b = el('input'); b.type = 'checkbox'; b.checked = p.billable; b.title = 'Billable';
+    b.onchange = () => run(() => api('PATCH', '/api/stop-parts/' + p.id, {billable: b.checked}), err);
+    const x = el('button', 'danger', '✕'); x.type = 'button'; x.title = 'Remove (returns to truck)';
+    x.onclick = () => run(() => api('DELETE', '/api/stop-parts/' + p.id), err);
+    row.append(q, b, x);
+    box.append(row);
+  });
+  const add = el('div', 'prow add');
+  const name = el('input'); name.setAttribute('list', 'partlist'); name.placeholder = 'Add part (name or part #)';
+  const qty = el('input'); qty.type = 'number'; qty.step = 'any'; qty.min = '0'; qty.value = '1'; qty.title = 'Quantity';
+  const go = el('button', null, 'Add'); go.type = 'button';
+  go.onclick = () => {
+    const v = name.value.trim();
+    if (!v) { err.textContent = 'Enter a part name.'; return; }
+    const m = S.parts.find(p => p.name.toLowerCase() === v.toLowerCase() || (p.sku && p.sku.toLowerCase() === v.toLowerCase()));
+    const body = {qty: qty.value, name: v};
+    if (m) body.part_id = m.id;
+    run(() => api('POST', '/api/stops/' + s.id + '/parts', body), err, () => { loadParts(); });
+  };
+  add.append(name, qty, go);
+  box.append(add);
+  return box;
+}
+
 // ---- stop card ---------------------------------------------------------
 function labeled(label, input) {
   const w = el('div'); w.append(el('label', null, label), input); return w;
@@ -258,7 +306,7 @@ function buildEdit(edit, s, i) {
   acts.append(del);
 
   edit.append(labeled('Business', nameIn), labeled('Address', addrIn), find, times,
-              labeled('Notes', notes), seg, acts, splitRow, err);
+              labeled('Notes', notes), partsBlock(s, err), seg, acts, splitRow, err);
   if (s.lat != null) edit.append(el('div', 'hint', 'Tip: tap this stop\'s pin on the map, then drag it to move the location.'));
 }
 
@@ -395,9 +443,11 @@ async function load() {
 
 function shift(n) {
   const x = new Date(dateEl.value + 'T12:00:00'); x.setDate(x.getDate() + n);
-  dateEl.value = x.toLocaleDateString('en-CA'); load();
+  dateEl.value = x.toLocaleDateString('en-CA'); loadParts();
+load();
 }
 document.getElementById('prev').onclick = () => shift(-1);
 document.getElementById('next').onclick = () => shift(1);
 dateEl.onchange = load;
+loadParts();
 load();

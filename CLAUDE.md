@@ -137,6 +137,19 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 5. PDF + JSON export, with the text-extraction check.
 6. README with setup, env vars, deployment and backup (the SQLite file is the whole state).
 
+## Parts and truck inventory (added after v1 scope was written)
+- Per-stop "Parts used": name, part number (sku), quantity, unit cost, billable flag. Each use
+  snapshots the catalog values so later catalog edits do not rewrite history.
+- `parts` table is both catalog and truck stock (`on_hand`, `reorder_at`, `tracked`). Only tracked
+  parts move stock; parts typed ad hoc into a stop are cataloged untracked. Stock may go negative.
+  `inventory_log` records every change. Deleting/re-detecting a stop returns its parts to the truck.
+- CSV import/export on the /truck page; format documented at the top of `app/parts.py`
+  (name required; sku, unit, unit_cost, billable, category, on_hand, reorder_at). The user supplies
+  the spreadsheet and formats it to match.
+- PDF/JSON export (Milestone 5) must include each confirmed stop's parts (name, sku, qty, unit,
+  unit cost, billable) in the stop block and in the "Records to update" table, because the
+  HubSpot session needs the list of parts used.
+
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.
 - Show each milestone working before starting the next.

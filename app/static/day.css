@@ -67,3 +67,8 @@ footer { padding:8px 12px; border-top:1px solid var(--line); font-size:13px; col
   #map { height:45%; flex:none; }
   button, input, textarea { min-height:38px; }
 }
+
+.prow { display:grid; grid-template-columns:1fr 70px 24px 34px; gap:6px; align-items:center; margin-bottom:4px; }
+.prow.add { grid-template-columns:1fr 70px 56px; margin-top:4px; }
+.prow input[type=checkbox] { width:auto; min-height:0; }
+.prow .pn { font-size:14px; overflow:hidden; text-overflow:ellipsis; }

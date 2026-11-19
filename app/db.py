@@ -51,6 +51,46 @@ CREATE TABLE IF NOT EXISTS api_usage (
   PRIMARY KEY (day, provider)
 );
 
+CREATE TABLE IF NOT EXISTS parts (
+  id INTEGER PRIMARY KEY,
+  sku TEXT,
+  name TEXT NOT NULL,
+  unit TEXT DEFAULT 'ea',
+  unit_cost REAL,
+  billable INTEGER DEFAULT 1,
+  category TEXT,
+  on_hand REAL DEFAULT 0,
+  reorder_at REAL,
+  tracked INTEGER DEFAULT 0,
+  active INTEGER DEFAULT 1
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_parts_sku ON parts(lower(sku))
+  WHERE sku IS NOT NULL AND sku != '';
+
+CREATE TABLE IF NOT EXISTS stop_parts (
+  id INTEGER PRIMARY KEY,
+  stop_id INTEGER NOT NULL,
+  part_id INTEGER,
+  name TEXT NOT NULL,
+  sku TEXT,
+  unit TEXT,
+  qty REAL NOT NULL,
+  unit_cost REAL,
+  billable INTEGER DEFAULT 1,
+  notes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_stop_parts_stop ON stop_parts(stop_id);
+
+CREATE TABLE IF NOT EXISTS inventory_log (
+  id INTEGER PRIMARY KEY,
+  part_id INTEGER NOT NULL,
+  ts INTEGER NOT NULL,
+  delta REAL NOT NULL,
+  reason TEXT NOT NULL,
+  stop_part_id INTEGER,
+  note TEXT
+);
+
 CREATE TABLE IF NOT EXISTS stops (
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL,
