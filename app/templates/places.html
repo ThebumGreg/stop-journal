@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "_head.html" %}
+<title>JobHub – Places</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
+<style>
+  .place { border-bottom:1px solid var(--line); }
+  .head { display:flex; gap:10px; align-items:center; padding:12px 4px; min-height:56px; cursor:pointer; }
+  .head .body { flex:1; min-width:0; }
+  .head .n { font-weight:600; }
+  .head .m { color:var(--muted); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chip { font-size:12px; border:1px solid var(--line); border-radius:6px; padding:1px 8px; color:var(--muted); white-space:nowrap; }
+  .chip.home { color:var(--warn); } .chip.office, .chip.vendor { color:var(--acc); }
+  .edit { padding:4px 4px 14px; display:grid; gap:10px; }
+  .cand { padding:10px 4px; border-top:1px solid var(--line); cursor:pointer; }
+  .cand .n { font-weight:600; } .cand .a { color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+{% include "_header.html" %}
+<main>
+  <h1 class="page-title">Places</h1>
+  <p class="hint">Save your home, office and vendor locations. Stops detected there are pre-filled with the place’s name. Home pre-marks stops as Personal, but you can switch any stop to real work. You can also save a place from any stop on the day view.</p>
+
+  <h2>Add a place</h2>
+  <div class="box">
+    <div class="grid">
+      <div><label for="kind">Type</label>
+        <select id="kind">
+          <option value="home">Home</option>
+          <option value="office">Office</option>
+          <option value="vendor" selected>Vendor / supplier</option>
+          <option value="client">Client</option>
+        </select></div>
+      <div><label for="pname">Name (optional)</label><input id="pname" placeholder="e.g. Main office"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="here" type="button">Use my phone’s current location</button>
+    </div>
+    <div class="hint">Stand at the place and tap the button, or search for an address below.</div>
+    <form id="searchform" class="row" style="margin-top:10px; flex-wrap:nowrap">
+      <input id="q" placeholder="Search an address or business" autocapitalize="off">
+      <button type="submit">Search</button>
+    </form>
+    <div id="results"></div>
+    <div class="err" id="adderr"></div>
+  </div>
+
+  <h2>Saved places <span class="hint" id="count"></span></h2>
+  <div class="row" style="margin-bottom:8px">
+    <select id="filter" style="max-width:220px">
+      <option value="">All places</option>
+      <option value="home">Home</option><option value="office">Office</option>
+      <option value="vendor">Vendors</option><option value="client">Clients</option>
+    </select>
+  </div>
+  <div id="list"></div>
+</main>
+<script src="{{ url_for('static', filename='places.js') }}"></script>
+</body>
+</html>

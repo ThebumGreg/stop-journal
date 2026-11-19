@@ -1,0 +1,167 @@
+from dataclasses import replace
+
+from app import create_app, db, sample
+from tests.test_detect import CFG
+from tests.test_places import FakeSession  # noqa: F401  (shared fixtures live there)
+
+D = "2026-11-18"
+HOME = sample.SITE_A
+OFFICE = sample.SITE_B
+
+
+def revisit_day():
+    """A at 9, drive to B, then back to A in the afternoon."""
+    d = sample.Day(D)
+    d.dwell(*sample.SITE_A, d.at(9), 45)
+    d.drive(sample.SITE_A, sample.SITE_B, d.at(9, 45), 20)
+    d.dwell(*sample.SITE_B, d.at(10, 5), 40)
+    d.drive(sample.SITE_B, sample.SITE_A, d.at(10, 45), 20)
+    d.dwell(*sample.SITE_A, d.at(11, 5), 40)
+    return d.points()
+
+
+def make(tmp_path, points=None, **kw):
+    cfg = replace(CFG, data_dir=str(tmp_path), **kw)
+    return create_app(cfg, client=sample.ListRecorder(revisit_day() if points is None else points),
+                      provider={"osm": _Osm(), "google": _Osm()}).test_client(), cfg
+
+
+class _Osm:
+    def search_text(self, q, lat, lon):
+        from app.places.base import Candidate
+        return [Candidate("Acme Supply", address="1 Dock Rd", lat=lat + .001, lon=lon, category="shop=hardware")]
+
+    search_nearby = search_text
+
+
+def place(c, **f):
+    body = {"name": "X", "lat": HOME[0], "lon": HOME[1], "kind": "home"}
+    body.update(f)
+    r = c.post("/api/places", json=body)
+    assert r.status_code == 200, r.json
+    return r.json
+
+
+def stops(c):
+    return c.get(f"/api/day/{D}").json["stops"]
+
+
+def test_create_validate_defaults_and_dedupe(tmp_path):
+    c, _ = make(tmp_path)
+    h = place(c, name="Home", kind="home")
+    assert h["default_status"] == "Personal" and h["radius_m"] == 100
+    assert place(c, name="Main office", kind="office", lat=OFFICE[0], lon=OFFICE[1])["default_status"] == "Draft"
+    assert place(c, name="home", kind="home")["id"] == h["id"]           # same place, same name
+    assert c.post("/api/places", json={"name": "", "lat": 1, "lon": 1}).status_code == 400
+    assert c.post("/api/places", json={"name": "x", "lat": 99, "lon": 1}).status_code == 400
+    assert c.post("/api/places", json={"name": "x", "lat": 1, "lon": 1, "kind": "bogus"}).status_code == 400
+    assert c.post("/api/places", json={"name": "x", "lat": 1, "lon": 1, "radius_m": 5}).status_code == 400
+
+
+def test_places_prefill_when_day_is_first_opened(tmp_path):
+    c, _ = make(tmp_path)
+    place(c, name="Home", kind="home")
+    place(c, name="Main office", kind="office", lat=OFFICE[0], lon=OFFICE[1])
+    st = stops(c)                                  # first open of the day
+    assert [(s["business_name"], s["status"]) for s in st] == [
+        ("Home", "Personal"), ("Main office", "Draft"), ("Home", "Personal")]
+    assert st[0]["category"] == "place=home" and st[0]["known_site_id"]
+
+
+def test_places_added_later_apply_on_redetect(tmp_path):
+    c, _ = make(tmp_path)
+    assert all(s["business_name"] == "" for s in stops(c))   # day already opened
+    place(c, name="Home", kind="home")
+    assert all(s["business_name"] == "" for s in stops(c))   # existing stops are not rewritten
+    c.post(f"/api/day/{D}/redetect", json={})
+    assert [s["business_name"] for s in stops(c)] == ["Home", "", "Home"]
+
+
+def test_work_at_home_still_possible(tmp_path):
+    c, _ = make(tmp_path)
+    place(c, name="Home", kind="home")
+    c.post(f"/api/day/{D}/redetect", json={})
+    sid = stops(c)[0]["id"]
+    r = c.patch(f"/api/stops/{sid}", json={"status": "Confirmed", "notes": "bench repair"})
+    assert r.status_code == 200 and r.json["stops"][0]["status"] == "Confirmed"
+    assert r.json["totals"]["confirmed"] == 1
+
+
+def test_clients_and_edited_stops_are_not_auto_filled(tmp_path):
+    c, _ = make(tmp_path)
+    place(c, name="Client A", kind="client")
+    first = stops(c)[0]
+    assert first["business_name"] == "" and first["status"] == "Draft"
+    c.patch(f"/api/stops/{first['id']}", json={"notes": "hand edited"})
+    place(c, name="Home", kind="home")
+    c.post(f"/api/day/{D}/sync")
+    assert stops(c)[0]["business_name"] == ""            # edited stop untouched by sync
+
+
+def test_save_stop_as_place_prefills_matching_stops(tmp_path):
+    c, _ = make(tmp_path)
+    first = stops(c)[0]
+    r = c.post(f"/api/stops/{first['id']}/save-place", json={"kind": "vendor", "name": "Dock Supply"})
+    assert r.status_code == 200
+    st = r.json["stops"]
+    assert st[0]["business_name"] == "Dock Supply" and st[0]["category"] == "place=vendor"
+    assert st[2]["business_name"] == "Dock Supply" and st[2]["status"] == "Draft"   # revisit pre-filled
+    assert st[1]["business_name"] == ""
+    assert c.post(f"/api/stops/{first['id']}/save-place", json={"kind": "client"}).status_code == 400
+    m = c.post(f"/api/day/{D}/stops", json={"arrive": "13:00", "depart": "13:30"}).json["stops"][-1]
+    assert c.post(f"/api/stops/{m['id']}/save-place", json={"kind": "home"}).status_code == 400  # no GPS
+
+
+def test_edit_and_delete_place(tmp_path):
+    c, _ = make(tmp_path)
+    p = place(c, name="Home", kind="home")
+    r = c.patch(f"/api/places/{p['id']}", json={"name": "House", "kind": "office", "radius_m": 250})
+    assert r.json["name"] == "House" and r.json["radius_m"] == 250 and r.json["default_status"] == "Draft"
+    assert c.patch(f"/api/places/{p['id']}", json={"radius_m": 5000}).status_code == 400
+    c.post(f"/api/day/{D}/redetect", json={})
+    assert stops(c)[0]["known_site_id"] == p["id"]
+    assert c.delete(f"/api/places/{p['id']}").status_code == 200
+    st = stops(c)[0]
+    assert st["known_site_id"] is None and st["business_name"] == "House"   # history keeps the name
+    assert c.get("/api/places").json["places"] == []
+    assert c.delete(f"/api/places/{p['id']}").status_code == 400
+
+
+def test_list_orders_special_places_first_and_filters(tmp_path):
+    c, _ = make(tmp_path)
+    place(c, name="Zed Client", kind="client", lat=1, lon=1)
+    place(c, name="Home", kind="home")
+    names = [p["name"] for p in c.get("/api/places").json["places"]]
+    assert names == ["Home", "Zed Client"]
+    assert [p["name"] for p in c.get("/api/places?kind=client").json["places"]] == ["Zed Client"]
+    assert [p["name"] for p in c.get("/api/places?q=zed").json["places"]] == ["Zed Client"]
+
+
+def test_from_last_location_and_search(tmp_path):
+    c, _ = make(tmp_path)
+    r = c.post("/api/places/from-last", json={"kind": "office", "name": "Shop"})
+    assert r.status_code == 200 and r.json["kind"] == "office"
+    last = revisit_day()[-1]
+    assert abs(r.json["lat"] - last["lat"]) < 1e-9
+    s = c.get("/api/places/search?q=acme").json
+    assert s["candidates"][0]["name"] == "Acme Supply" and all(x["source"] != "known" for x in s["candidates"])
+    assert c.get("/api/places/search?q=ab").status_code == 400
+    empty, _ = make(tmp_path / "e", points=[])
+    assert empty.post("/api/places/from-last", json={}).status_code == 400   # nothing to use yet
+
+
+def test_suggestions_label_special_places(tmp_path):
+    c, _ = make(tmp_path)
+    place(c, name="Home", kind="home")
+    r = c.get(f"/api/suggest?lat={HOME[0]}&lon={HOME[1]}").json
+    assert r["candidates"][0]["name"] == "Home" and r["candidates"][0]["kind"] == "home"
+
+
+def test_pages_and_work_performed_label(tmp_path):
+    c, _ = make(tmp_path)
+    assert c.get("/places").status_code == 200 and b"Places" in c.get("/places").data
+    js = c.get("/static/day.js").data.decode()
+    assert "labeled('Work performed', notes)" in js  # the stop field; drives keep 'Notes'
+    locked = create_app(replace(CFG, data_dir=str(tmp_path / "l"), app_password="pw"),
+                        client=sample.ListRecorder([])).test_client()
+    assert locked.get("/places").status_code == 302 and locked.get("/api/places").status_code == 401

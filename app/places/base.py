@@ -15,6 +15,7 @@ class Candidate:
     category: str = ""            # e.g. "shop=hardware"
     source: str = "osm"           # known | osm | google
     known_site_id: Optional[int] = None
+    kind: str = ""                # known sites only: client | home | office | vendor
     times_confirmed: int = 0
     distance_m: float = 0.0       # filled in by ranking
     score: float = 0.0            # filled in by ranking

@@ -72,7 +72,7 @@ For each stop, show a ranked pick-list and a free-text search box.
 - Left: timeline list of stops and drives in order. Right: map with the day's path and stop
   markers; clicking one syncs both.
 - Per stop: business pick-list plus search box, editable address, location nudge (drag the
-  pin), editable arrival and departure times, notes (multi-line), status: Draft, Confirmed,
+  pin), editable arrival and departure times, work performed (multi-line; stored in the `notes` column), status: Draft, Confirmed,
   or Personal.
 - Split a stop at a time, merge two stops, delete a stop, add a manual stop with no GPS data.
 - Drives show time and approximate miles and are editable (time, notes).
@@ -103,9 +103,9 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   3. One block per CONFIRMED stop, in order, with these labeled fields:
      Stop number, Business name, Address, Latitude/Longitude, Arrival, Departure,
      Time on site, Drive from previous stop (minutes and approximate miles),
-     HubSpot company ID (blank for now), Notes (full text).
+     HubSpot company ID (blank for now), Work performed (full text).
   4. A final "Records to update" table, one row per confirmed stop: business name, address,
-     arrival, departure, notes. This is the section the HubSpot session acts on.
+     arrival, departure, work performed. This is the section the HubSpot session acts on.
   5. A short "Excluded" section listing Personal and unconfirmed stops by time only (no
      detail), so the reader knows they were intentionally left out.
 - Only Confirmed stops appear in detail. Draft stops are flagged in the UI before export.
@@ -138,6 +138,14 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 4. Editing UI (times, pins, notes, split/merge, personal), day totals.
 5. PDF + JSON export, with the text-extraction check.
 6. README with setup, env vars, deployment and backup (the SQLite file is the whole state).
+
+## Places (home / office / vendors)
+- `known_sites.kind` is client | home | office | vendor; `default_status` is Draft or Personal.
+  Stops detected on a home/office/vendor place are pre-filled with its name and (for Home) pre-marked
+  Personal, but work can still be done there: the user flips the stop to Confirmed. Clients are never
+  auto-filled. Places are added from a stop, from the phone's last position, or by address search.
+- A stop's field is labelled "Work performed" everywhere user-facing (UI, PDF, JSON export key
+  `work_performed`); the database column stays `notes`.
 
 ## Parts and truck inventory (added after v1 scope was written)
 - Per-stop "Parts used": name, part number (sku), quantity, unit cost, billable flag. Each use

@@ -114,3 +114,7 @@ class ListRecorder:
 
     def last_tst(self):
         return max((p["tst"] for p in self.points), default=None)
+
+    def last_point(self):
+        p = max(self.points, key=lambda x: x["tst"], default=None)
+        return p and {"lat": p["lat"], "lon": p["lon"], "tst": p["tst"]}

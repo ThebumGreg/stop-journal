@@ -271,21 +271,12 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def parts_template():
         return csv_response(parts.template_csv(), "parts-template.csv")
 
-    @app.get("/api/suggest")
-    def suggest():
-        """Ranked business candidates for a stop; optional free-text query q.
+    def run_suggest(lat, lon, minutes, qtext, force_google):
+        """Ranked business candidates around a point; optional free-text query.
 
         Cascade: known sites always; then OSM (modes osm, osm_google); Google only
-        in mode google, when forced with ?google=1, or in osm_google mode when no
-        known site is nearby and OSM found fewer than google_fallback_min
-        business-like places."""
-        try:
-            lat, lon = float(request.args["lat"]), float(request.args["lon"])
-        except (KeyError, ValueError):
-            return jsonify(error="lat and lon are required"), 400
-        minutes = request.args.get("minutes", 0, type=int)
-        qtext = request.args.get("q", "").strip()
-        force_google = request.args.get("google") == "1"
+        in mode google, when forced, or in osm_google mode when no known site is
+        nearby and OSM found fewer than google_fallback_min business-like places."""
         cfg = eff()
         radius = cfg.places_radius_m
         conn = db.connect(base.data_dir)
@@ -325,13 +316,98 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                 mode == "osm_google" and not known_near and thin < cfg.google_fallback_min)
         if want_google:
             external += attempt("google")
-        cands += external
-        ranked = ranking.rank(cands, lat, lon, minutes,
+        ranked = ranking.rank(cands + external, lat, lon, minutes,
                               search_radius_m=radius if not qtext else TEXT_SEARCH_FALLOFF_M)
-        return jsonify(candidates=[asdict(c) for c in ranked[:25]],
-                       error=" ".join(errors) or None, sources=sources,
-                       google_used="google" in sources,
-                       google_available=bool(cfg.google_places_key) or isinstance(provider, dict))
+        return {"candidates": [asdict(c) for c in ranked[:25]],
+                "error": " ".join(errors) or None, "sources": sources,
+                "google_used": "google" in sources,
+                "google_available": bool(cfg.google_places_key) or isinstance(provider, dict)}
+
+    @app.get("/api/suggest")
+    def suggest():
+        try:
+            lat, lon = float(request.args["lat"]), float(request.args["lon"])
+        except (KeyError, ValueError):
+            return jsonify(error="lat and lon are required"), 400
+        return jsonify(run_suggest(lat, lon, request.args.get("minutes", 0, type=int),
+                                   request.args.get("q", "").strip(),
+                                   request.args.get("google") == "1"))
+
+    # ---- places: home / office / vendors / clients ----------------------
+    def current_position(conn):
+        """Phone's latest position: Recorder first, else the newest cached point."""
+        try:
+            p = client.last_point()
+            if p:
+                return p["lat"], p["lon"]
+        except Exception:
+            pass
+        r = conn.execute("SELECT lat, lon FROM points ORDER BY tst_utc DESC LIMIT 1").fetchone()
+        if r:
+            return r["lat"], r["lon"]
+        raise service.EditError("No location available yet. Open OwnTracks on your phone and try again.")
+
+    @app.get("/places")
+    def places_page():
+        return render_template("places.html")
+
+    @app.get("/api/places")
+    def places_list():
+        return catalog(lambda conn: {"places": known.list_sites(
+            conn, request.args.get("kind", ""), request.args.get("q", ""))})
+
+    @app.post("/api/places")
+    def places_create():
+        b = request.get_json(silent=True) or {}
+        return catalog(lambda conn: known.site_dict(known.get_site(conn, known.create_site(conn, b))))
+
+    @app.post("/api/places/from-last")
+    def places_from_last():
+        """Save wherever the phone is right now (handy when standing at the office)."""
+        b = request.get_json(silent=True) or {}
+
+        def go(conn):
+            lat, lon = current_position(conn)
+            kind = b.get("kind") or "vendor"
+            name = str(b.get("name") or "").strip() or known.KIND_LABEL.get(kind, "Place")
+            sid = known.create_site(conn, {"name": name, "address": b.get("address", ""),
+                                           "lat": lat, "lon": lon, "kind": kind})
+            return known.site_dict(known.get_site(conn, sid))
+        return catalog(go)
+
+    @app.get("/api/places/search")
+    def places_search():
+        """Address / business search for adding a place, biased to where the phone is."""
+        q = request.args.get("q", "").strip()
+        if len(q) < 3:
+            return jsonify(error="Type at least 3 letters."), 400
+
+        def go(conn):
+            try:
+                lat, lon = current_position(conn)
+            except service.EditError:
+                lat, lon = 39.5, -98.35
+            r = run_suggest(lat, lon, 0, q, request.args.get("google") == "1")
+            r["candidates"] = [c for c in r["candidates"] if c["source"] != "known"]
+            return r
+        return catalog(go)
+
+    @app.patch("/api/places/<int:sid>")
+    def places_patch(sid):
+        b = request.get_json(silent=True) or {}
+
+        def go(conn):
+            known.update_site(conn, sid, b)
+            return known.site_dict(known.get_site(conn, sid))
+        return catalog(go)
+
+    @app.delete("/api/places/<int:sid>")
+    def places_delete(sid):
+        return catalog(lambda conn: known.delete_site(conn, sid) or {"ok": True})
+
+    @app.post("/api/stops/<int:sid>/save-place")
+    def stop_save_place(sid):
+        return mutate(service.save_place, sid, request.get_json(silent=True) or {})
 
     @app.post("/api/known-sites")
     def teach():

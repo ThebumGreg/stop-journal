@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS known_sites (
   category TEXT,
   hubspot_company_id TEXT,
   times_confirmed INTEGER DEFAULT 0,
-  last_confirmed TEXT
+  last_confirmed TEXT,
+  kind TEXT DEFAULT 'client',
+  default_status TEXT DEFAULT 'Draft'
 );
 
 CREATE TABLE IF NOT EXISTS place_cache (
@@ -143,6 +145,8 @@ MIGRATIONS = [
     ("stops", "category", "TEXT"),
     ("stops", "edited", "INTEGER DEFAULT 0"),
     ("drives", "edited", "INTEGER DEFAULT 0"),
+    ("known_sites", "kind", "TEXT DEFAULT 'client'"),
+    ("known_sites", "default_status", "TEXT DEFAULT 'Draft'"),
 ]
 
 

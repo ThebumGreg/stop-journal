@@ -137,6 +137,19 @@ def _insert_detected(conn, date, it):
         (date, it["lat"], it["lon"], it["arrive"], it["depart"], it["kind"]))
 
 
+def apply_places(conn, date):
+    """Pre-fill untouched Draft stops that sit on a saved Home/Office/Vendor place."""
+    for s in _ordered(conn, date):
+        if s["status"] != "Draft" or s["edited"] or s["business_name"] or s["lat"] is None:
+            continue
+        site = known.match_place(conn, s["lat"], s["lon"])
+        if site:
+            conn.execute(
+                "UPDATE stops SET business_name=?, address=?, category=?, known_site_id=?, status=? "
+                "WHERE id=?", (site["name"], site["address"] or "", f"place={site['kind']}",
+                               site["id"], site["default_status"] or "Draft", s["id"]))
+
+
 def materialize(conn, cfg, date, kept, run_cfg):
     items, _ = detect.detect(kept, run_cfg)
     for it in items:
@@ -144,6 +157,7 @@ def materialize(conn, cfg, date, kept, run_cfg):
     _mark_processed(conn, date, {"min": run_cfg.stop_min_minutes,
                                  "radius": run_cfg.stop_radius_m,
                                  "gap": run_cfg.stop_max_gap_min})
+    apply_places(conn, date)
     _finish(conn, cfg, date)
 
 
@@ -163,6 +177,7 @@ def sync_new(conn, cfg, date, kept, run_cfg):
             conn.execute("UPDATE stops SET arrive_utc=?, depart_utc=?, lat=?, lon=?, "
                          "kind=? WHERE id=?", (it["arrive"], it["depart"], it["lat"],
                                                it["lon"], it["kind"], ov[0]["id"]))
+    apply_places(conn, date)
     _finish(conn, cfg, date)
     return added
 
@@ -316,6 +331,24 @@ def merge_stops(conn, cfg, id_a, id_b):
     conn.execute("DELETE FROM stops WHERE id=?", (b["id"],))
     _finish(conn, cfg, a["date"])
     return a["date"]
+
+
+def save_place(conn, cfg, sid, f):
+    """Save a stop's location as a Home/Office/Vendor place and pre-fill the day's matching stops."""
+    s = _stop(conn, sid)
+    if s["lat"] is None:
+        raise EditError("This stop has no location to save (it was added by hand).")
+    kind = f.get("kind")
+    if kind not in ("home", "office", "vendor"):
+        raise EditError("Choose Home, Office or Vendor.")
+    name = str(f.get("name") or "").strip() or s["business_name"] or known.KIND_LABEL[kind]
+    site_id = known.create_site(conn, {"name": name, "address": s["address"] or "", "lat": s["lat"],
+                                       "lon": s["lon"], "kind": kind})
+    conn.execute("UPDATE stops SET business_name=?, known_site_id=?, category=?, edited=1 WHERE id=?",
+                 (name, site_id, f"place={kind}", sid))
+    apply_places(conn, s["date"])
+    _finish(conn, cfg, s["date"])
+    return s["date"]
 
 
 # ---- parts used at a stop ------------------------------------------------

@@ -113,7 +113,7 @@ async function loadCands(s, box, q, pick, google) {
   if (!d.candidates.length) box.append(el('div', 'hint', 'No matches. Try the search box, or type a name above.'));
   d.candidates.forEach(c => {
     const row = el('div', 'cand');
-    row.append(el('div', 'n', c.name + (c.source === 'known' ? '  ★ known' : c.source === 'google' ? '  (Google)' : '')),
+    row.append(el('div', 'n', c.name + (c.source === 'known' ? '  ★ ' + (c.kind && c.kind !== 'client' ? c.kind : 'known') : c.source === 'google' ? '  (Google)' : '')),
       el('div', 'a', [c.address, c.category, Math.round(c.distance_m) + ' m'].filter(Boolean).join(' · ')));
     row.onclick = () => {
       pick(c);
@@ -251,7 +251,7 @@ function buildEdit(edit, s, i) {
   depIn.oninput = () => remember('depart', depIn.value);
   const times = el('div', 'two'); times.append(labeled('Arrived', arrIn), labeled('Departed', depIn));
 
-  const notes = el('textarea'); notes.value = d.notes; notes.placeholder = 'Notes';
+  const notes = el('textarea'); notes.value = d.notes; notes.placeholder = 'Describe the work performed';
   notes.oninput = () => remember('notes', notes.value);
 
   const seg = el('div', 'seg');
@@ -294,6 +294,24 @@ function buildEdit(edit, s, i) {
   };
   acts.append(splitB);
 
+  // save this stop's location as Home / Office / Vendor
+  const placeBox = el('div', 'panel'); placeBox.hidden = true;
+  const kindSel = el('select');
+  [['home', 'Home'], ['office', 'Office'], ['vendor', 'Vendor / supplier']].forEach(([v, t]) => {
+    const o = el('option', null, t); o.value = v; kindSel.append(o);
+  });
+  const placeName = el('input'); placeName.placeholder = 'Name (optional)'; placeName.value = s.business_name;
+  const placeGo = el('button', 'primary', 'Save place');
+  placeGo.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/save-place',
+    {kind: kindSel.value, name: placeName.value}), err, () => { placeBox.hidden = true; });
+  const placeHint = el('div', 'hint', 'Future stops here are pre-filled. Home pre-marks them Personal; you can still change any stop.');
+  placeBox.append(kindSel, placeName, placeGo, placeHint);
+  if (s.lat != null) {
+    const pb = el('button', null, 'Save as place…');
+    pb.onclick = () => { placeBox.hidden = !placeBox.hidden; };
+    acts.append(pb);
+  }
+
   const prev = S.stops[i - 1], next = S.stops[i + 1];
   const mergeWith = other => run(() => api('POST', '/api/stops/merge', {ids: [s.id, other.id]}), err);
   if (prev) { const b = el('button', null, 'Merge ↑'); b.title = 'Merge with the previous stop'; b.onclick = () => mergeWith(prev); acts.append(b); }
@@ -306,7 +324,7 @@ function buildEdit(edit, s, i) {
   acts.append(del);
 
   edit.append(labeled('Business', nameIn), labeled('Address', addrIn), find, times,
-              labeled('Notes', notes), partsBlock(s, err), seg, acts, splitRow, err);
+              labeled('Work performed', notes), partsBlock(s, err), seg, acts, splitRow, placeBox, err);
   if (s.lat != null) edit.append(el('div', 'hint', 'Tip: tap this stop\'s pin on the map, then drag it to move the location.'));
 }
 
