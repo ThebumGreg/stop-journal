@@ -43,14 +43,29 @@ echo <TOKEN> | docker login ghcr.io -u <github-username> --password-stdin
 
 ### Unraid
 
-1. Install the **Docker Compose Manager** plugin (Community Applications), or use **Docker →
-   Add Container**.
-2. Log in to GHCR from the Unraid terminal (command above).
-3. Compose route: create a stack with this repo's `docker-compose.yml`, put your `.env` beside it
-   and set `PUID=99` and `PGID=100` in it. Container route: repository
-   `ghcr.io/thebumgreg/stop-journal:latest`, port `8000`, a path mapping
-   `/mnt/user/appdata/jobhub` → `/data`, extra parameter `--user 99:100`, and the variables below.
-4. To update: `docker compose pull && docker compose up -d` (or "force update" on the container).
+**With the template (easiest):** in the Unraid terminal run
+
+```bash
+wget -O /boot/config/plugins/dockerMan/templates-user/jobhub.xml \
+  https://raw.githubusercontent.com/ThebumGreg/stop-journal/main/unraid/jobhub.xml
+```
+
+then go to **Docker → Add Container**, choose **JobHub** from the template list, fill in the
+Recorder URL, user and device, set an **App password**, and press **Apply**. The template
+runs the container as `99:100` and maps `/mnt/user/appdata/jobhub` to `/data`.
+
+The image is pulled from GitHub's registry. If you have not made the package public (GitHub →
+your profile → Packages → stop-journal → Package settings → Change visibility), log in once from
+the Unraid terminal with a personal access token that has the `read:packages` scope:
+
+```bash
+echo <TOKEN> | docker login ghcr.io -u <github-username> --password-stdin
+```
+
+**With Compose:** install the **Docker Compose Manager** plugin, create a stack from this repo's
+`docker-compose.yml`, put your `.env` beside it and add `PUID=99` and `PGID=100` to it.
+
+To update: use "force update" on the container (or `docker compose pull && docker compose up -d`).
 
 ## Configuration
 

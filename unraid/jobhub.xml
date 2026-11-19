@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>JobHub</Name>
+  <Repository>ghcr.io/thebumgreg/stop-journal:latest</Repository>
+  <Registry>https://github.com/ThebumGreg/stop-journal/pkgs/container/stop-journal</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/ThebumGreg/stop-journal/issues</Support>
+  <Project>https://github.com/ThebumGreg/stop-journal</Project>
+  <Overview>JobHub turns your phone's OwnTracks location data into a daily log of job-site stops and drives. Review and correct each day on your phone, record the work performed and parts used, track truck inventory, and export a PDF/JSON report. Single user, self-hosted: your location data stays on your server. Requires an OwnTracks Recorder that this container can reach. IMPORTANT: set an App password, and do not expose this container to the internet without a VPN or an authenticating reverse proxy.</Overview>
+  <Category>Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/ThebumGreg/stop-journal/main/unraid/jobhub.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/ThebumGreg/stop-journal/main/app/static/icon-512.png</Icon>
+  <ExtraParams>--user 99:100</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="WebUI Port" Target="8000" Default="8000" Mode="tcp" Description="Port for the JobHub web page." Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+  <Config Name="Data (database)" Target="/data" Default="/mnt/user/appdata/jobhub" Mode="rw" Description="Holds the SQLite database, which is the entire app state. Back this folder up." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/jobhub</Config>
+  <Config Name="Recorder URL" Target="RECORDER_URL" Default="" Mode="" Description="Address of your OwnTracks Recorder, for example http://192.168.1.20:8083" Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Recorder user" Target="RECORDER_USER" Default="" Mode="" Description="OwnTracks user name on the Recorder (the 'user' in /api/0/list)." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="Recorder device" Target="RECORDER_DEVICE" Default="" Mode="" Description="OwnTracks device name on the Recorder (the 'device' in /api/0/list?user=...)." Type="Variable" Display="always" Required="true" Mask="false"/>
+  <Config Name="App password" Target="APP_PASSWORD" Default="" Mode="" Description="Password for the login page. Strongly recommended. Leave empty only if the app is reachable from a trusted network alone." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Timezone" Target="APP_TZ" Default="America/Los_Angeles" Mode="" Description="All times are shown in this timezone (stored as UTC). Use an IANA name, for example America/Chicago." Type="Variable" Display="always" Required="true" Mask="false">America/Los_Angeles</Config>
+  <Config Name="App address (for notification links)" Target="APP_URL" Default="" Mode="" Description="Address a Pushover notification opens when tapped, for example http://192.168.1.50:8000" Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Recorder basic auth" Target="RECORDER_AUTH" Default="" Mode="" Description="Only if your Recorder needs basic auth, as user:password." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Places provider" Target="PLACES_PROVIDER" Default="osm" Mode="" Description="osm (free), osm_google (OSM first, Google only when OSM comes up short) or google. Can also be changed on the Settings page." Type="Variable" Display="advanced" Required="false" Mask="false">osm</Config>
+  <Config Name="Google Places API key" Target="GOOGLE_PLACES_KEY" Default="" Mode="" Description="Optional. Google costs money per request; see the daily cap. Can also be set on the Settings page." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Google daily request cap" Target="GOOGLE_DAILY_CAP" Default="100" Mode="" Description="Hard limit on Google requests per day." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Pushover app token" Target="PUSHOVER_TOKEN" Default="" Mode="" Description="Optional. For notifications such as the no-data alert. Can also be set on the Settings page." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Pushover user key" Target="PUSHOVER_USER" Default="" Mode="" Description="Optional. Your Pushover user key." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="No-data alert after (min)" Target="ALERT_NO_DATA_MIN" Default="60" Mode="" Description="Alert when no location point arrives for this long during work hours. Keep it generous: OwnTracks may send nothing while the phone is still." Type="Variable" Display="advanced" Required="false" Mask="false">60</Config>
+  <Config Name="Work days" Target="WORK_DAYS" Default="Mon-Fri" Mode="" Description="Days the no-data alert applies, for example Mon-Fri or Mon,Tue,Thu." Type="Variable" Display="advanced" Required="false" Mask="false">Mon-Fri</Config>
+  <Config Name="Work day start" Target="WORK_START" Default="07:00" Mode="" Description="24-hour local time." Type="Variable" Display="advanced" Required="false" Mask="false">07:00</Config>
+  <Config Name="Work day end" Target="WORK_END" Default="17:00" Mode="" Description="24-hour local time." Type="Variable" Display="advanced" Required="false" Mask="false">17:00</Config>
+  <Config Name="Min stop length (min)" Target="STOP_MIN_MINUTES" Default="10" Mode="" Description="Shorter visits show as dismissible short stops. Also editable on the Settings page." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
+  <Config Name="Stop radius (m)" Target="STOP_RADIUS_M" Default="100" Mode="" Description="Points within this distance count as the same place. Also editable on the Settings page." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+</Container>
