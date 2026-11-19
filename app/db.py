@@ -123,7 +123,8 @@ CREATE TABLE IF NOT EXISTS stops (
   source TEXT DEFAULT 'detected',
   kind TEXT DEFAULT 'stop',
   category TEXT,
-  edited INTEGER DEFAULT 0
+  edited INTEGER DEFAULT 0,
+  times_edited INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS undo_log (
@@ -159,6 +160,7 @@ MIGRATIONS = [
     ("stops", "kind", "TEXT DEFAULT 'stop'"),
     ("stops", "category", "TEXT"),
     ("stops", "edited", "INTEGER DEFAULT 0"),
+    ("stops", "times_edited", "INTEGER DEFAULT 0"),
     ("drives", "edited", "INTEGER DEFAULT 0"),
     ("known_sites", "kind", "TEXT DEFAULT 'client'"),
     ("known_sites", "default_status", "TEXT DEFAULT 'Draft'"),

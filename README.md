@@ -84,7 +84,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `RECORDER_URL`, `RECORDER_USER`, `RECORDER_DEVICE`, `RECORDER_AUTH` | | optional: normally set in the app (Settings → Recorder → Find on Recorder). Env values are only the starting default |
 | `APP_TZ` | `America/Los_Angeles` | everything is shown in this zone, stored as UTC |
 | `APP_PASSWORD` | | **set this.** Enables the login page |
-| `STOP_MIN_MINUTES`, `STOP_RADIUS_M`, `STOP_MAX_GAP_MIN`, `STOP_MERGE_GAP_MIN`, `MAX_ACC_M` | 10, 100, 15, 60, 100 | detection tuning |
+| `STOP_MIN_MINUTES`, `STOP_RADIUS_M`, `STOP_MAX_GAP_MIN`, `STOP_MERGE_GAP_MIN`, `STOP_SHORT_MIN_S`, `MAX_ACC_M` | 10, 100, 15, 60, 180, 100 | detection tuning (STOP_SHORT_MIN_S: pauses shorter than this, like traffic lights, are ignored) |
 | `PLACES_PROVIDER` | `osm` | `osm`, `osm_google` (OSM first, Google only when OSM comes up short) or `google` |
 | `GOOGLE_PLACES_KEY`, `GOOGLE_DAILY_CAP` | | Google is optional and costs money; the cap limits requests per day |
 | `OVERPASS_URL` | public server | point at a mirror if lookups fail |

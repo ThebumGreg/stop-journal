@@ -164,8 +164,10 @@ def materialize(conn, cfg, date, kept, run_cfg):
 
 
 def sync_new(conn, cfg, date, kept, run_cfg):
-    """Add stops detected since the day was materialized. Untouched Draft stops
-    that grew (e.g. you are still on site) are extended; edited ones are left alone."""
+    """Add stops detected since the day was materialized, and let stops that are still
+    going (you are on site) grow. Untouched Draft stops follow the detection exactly; a
+    stop you edited or confirmed keeps its details and pin, and only grows in time
+    unless you set its times yourself."""
     items, _ = detect.detect(kept, run_cfg)
     added = 0
     for it in items:
@@ -174,14 +176,29 @@ def sync_new(conn, cfg, date, kept, run_cfg):
         if not ov:
             _insert_detected(conn, date, it)
             added += 1
-        elif (len(ov) == 1 and ov[0]["source"] == "detected" and not ov[0]["edited"]
-              and ov[0]["status"] == "Draft"):
+            continue
+        if len(ov) != 1 or ov[0]["source"] != "detected":
+            continue
+        s = ov[0]
+        if not s["edited"] and s["status"] == "Draft":
             conn.execute("UPDATE stops SET arrive_utc=?, depart_utc=?, lat=?, lon=?, "
                          "kind=? WHERE id=?", (it["arrive"], it["depart"], it["lat"],
-                                               it["lon"], it["kind"], ov[0]["id"]))
+                                               it["lon"], it["kind"], s["id"]))
+        elif not s["times_edited"] and (it["depart"] > s["depart_utc"] or it["arrive"] < s["arrive_utc"]):
+            arrive, depart = min(s["arrive_utc"], it["arrive"]), max(s["depart_utc"], it["depart"])
+            if _free(conn, date, s["id"], arrive, depart):
+                kind = "stop" if depart - arrive >= run_cfg.stop_min_minutes * 60 else s["kind"]
+                conn.execute("UPDATE stops SET arrive_utc=?, depart_utc=?, kind=? WHERE id=?",
+                             (arrive, depart, kind, s["id"]))
     apply_places(conn, date)
     _finish(conn, cfg, date)
     return added
+
+
+def _free(conn, date, sid, a, d):
+    """True when [a, d] overlaps no other stop (so growing a stop can't collide)."""
+    return not any(o["id"] != sid and o["arrive_utc"] < d and a < o["depart_utc"]
+                   for o in _ordered(conn, date))
 
 
 def redetect(conn, cfg, date, kept, run_cfg):
@@ -368,6 +385,7 @@ def patch_stop(conn, cfg, sid, f):
         d = parse_time(cfg, date, f["depart"]) if "depart" in f else s["depart_utc"]
         _check_window(conn, cfg, date, sid, a, d)
         upd["arrive_utc"], upd["depart_utc"] = a, d
+        upd["times_edited"] = 1
 
     status = upd.get("status", s["status"])
     name = upd.get("business_name", s["business_name"] or "")
@@ -425,11 +443,11 @@ def split_stop(conn, cfg, sid, at):
     fb = (s["lat"], s["lon"])
     c1 = centre(s["arrive_utc"], t, fb) if s["lat"] is not None else fb
     c2 = centre(t, s["depart_utc"], fb) if s["lat"] is not None else fb
-    conn.execute("UPDATE stops SET depart_utc=?, lat=?, lon=?, edited=1 WHERE id=?",
+    conn.execute("UPDATE stops SET depart_utc=?, lat=?, lon=?, edited=1, times_edited=1 WHERE id=?",
                  (t, c1[0], c1[1], sid))
     conn.execute(
-        "INSERT INTO stops(date,lat,lon,arrive_utc,depart_utc,kind,status,source,edited)"
-        " VALUES (?,?,?,?,?,?,'Draft',?,1)",
+        "INSERT INTO stops(date,lat,lon,arrive_utc,depart_utc,kind,status,source,edited,times_edited)"
+        " VALUES (?,?,?,?,?,?,'Draft',?,1,1)",
         (date, c2[0], c2[1], t, s["depart_utc"], s["kind"], s["source"]))
     _finish(conn, cfg, date)
     return date
@@ -457,7 +475,7 @@ def merge_stops(conn, cfg, id_a, id_b):
     kind = "stop" if "stop" in (a["kind"], b["kind"]) else "short"
     conn.execute(
         "UPDATE stops SET arrive_utc=?, depart_utc=?, lat=?, lon=?, business_name=?, "
-        "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, edited=1 "
+        "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, edited=1, times_edited=1 "
         "WHERE id=?",
         (a["arrive_utc"], b["depart_utc"], lat, lon, first["business_name"],
          first["address"], first["category"], first["known_site_id"], notes, status,

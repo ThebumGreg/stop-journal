@@ -110,7 +110,7 @@ def test_personal_excluded_from_totals(tmp_path):
     sid = d["stops"][1]["id"]
     r = c.patch(f"/api/stops/{sid}", json={"status": "Personal"}).json
     assert r["totals"]["personal"] == 1
-    assert r["totals"]["on_site_s"] == d["totals"]["on_site_s"] - d["stops"][1]["minutes"] * 60
+    assert r["totals"]["on_site_s"] == d["totals"]["on_site_s"] - (d["stops"][1]["depart_ts"] - d["stops"][1]["arrive_ts"])
     assert r["totals"]["drive_s"] == 0 and r["totals"]["miles_approx"] == 0  # both drives touch it
 
 

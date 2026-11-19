@@ -37,6 +37,7 @@ class Config:
     alert_repeat_min: int = 0
     backup_keep: int = 14
     alert_drafts: str = "on"
+    stop_short_min_s: int = 180
     alert_low_stock: str = "on"
 
     @classmethod
@@ -72,5 +73,6 @@ class Config:
             alert_repeat_min=_int("ALERT_REPEAT_MIN", 0),
             backup_keep=_int("BACKUP_KEEP", 14),
             alert_drafts=e("ALERT_DRAFTS", "on"),
+            stop_short_min_s=_int("STOP_SHORT_MIN_S", 180),
             alert_low_stock=e("ALERT_LOW_STOCK", "on"),
         )

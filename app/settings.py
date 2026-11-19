@@ -51,6 +51,9 @@ SPEC = [
     ("Stop detection", [
         dict(key="stop_min_minutes", label="Minimum stop length (min)", kind="int", lo=1, hi=240,
              help="Shorter visits show as dismissible short stops."),
+        dict(key="stop_short_min_s", label="Shortest stop to show (seconds)", kind="int", lo=30, hi=1800,
+             help="Pauses shorter than this (traffic lights, stop signs) are ignored; "
+                  "between this and the minimum stop length they show as dismissible short stops."),
         dict(key="stop_radius_m", label="Stop radius (m)", kind="int", lo=10, hi=1000,
              help="Points within this distance of the stop centre count as the same place."),
         dict(key="stop_max_gap_min", label="Max gap inside a stop (min)", kind="int", lo=1, hi=120,

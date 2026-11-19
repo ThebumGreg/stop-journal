@@ -7,15 +7,16 @@ Pipeline (all thresholds come from Config and can be overridden per run):
  2. A cluster lasting >= stop_min_minutes is a 'stop'. One lasting
     SHORT_STOP_MIN_S..stop_min_minutes is a 'short' stop (shown, dismissible,
     never counted in on-site time). Anything shorter is noise.
- 3. Merge adjacent items (any kind; result kind re-evaluated) whose centroids are within
+ 3. Merge adjacent items (any kind, including too-short fragments such as a single point
+    reported before a long quiet spell; result kind re-evaluated) whose centroids are within
     stop_radius_m * MERGE_RADIUS_FACTOR and whose gap is <= stop_merge_gap_min
-    (GPS drift splits, phone-off gaps at one site).
+    (GPS drift splits, phone-off gaps at one site). Fragments that join nothing are dropped.
  4. Everything between two consecutive items is a drive. Distance is the sum of
     haversine hops over the points in between (approximate).
 """
 from .geo import haversine_m
 
-SHORT_STOP_MIN_S = 120
+SHORT_STOP_MIN_S = 180  # default; Config.stop_short_min_s overrides
 MERGE_RADIUS_FACTOR = 1.5
 OUTLIER_LOOKAHEAD = 2  # points to peek ahead before ending a cluster
 
@@ -57,14 +58,13 @@ def _make(points, i0, i1, lat, lon, kind):
 def detect(points, cfg):
     """points: time-sorted, accuracy-filtered dicts. Returns (items, drives)."""
     min_s = cfg.stop_min_minutes * 60
+    short_s = getattr(cfg, "stop_short_min_s", SHORT_STOP_MIN_S)
+    kind_for = lambda dur: "stop" if dur >= min_s else "short" if dur >= short_s else "noise"  # noqa: E731
     items = []
     for i0, i1, lat, lon in _cluster(points, cfg.stop_radius_m,
                                      cfg.stop_max_gap_min * 60):
         dur = points[i1]["tst"] - points[i0]["tst"]
-        if dur >= min_s:
-            items.append(_make(points, i0, i1, lat, lon, "stop"))
-        elif dur >= SHORT_STOP_MIN_S:
-            items.append(_make(points, i0, i1, lat, lon, "short"))
+        items.append(_make(points, i0, i1, lat, lon, kind_for(dur)))
 
     merged = []
     for it in items:
@@ -78,10 +78,10 @@ def detect(points, cfg):
             prev["lat"] = (prev["lat"] * w1 + it["lat"] * w2) / (w1 + w2)
             prev["lon"] = (prev["lon"] * w1 + it["lon"] * w2) / (w1 + w2)
             prev["depart"], prev["i1"] = it["depart"], it["i1"]
-            prev["kind"] = "stop" if prev["depart"] - prev["arrive"] >= min_s else "short"
+            prev["kind"] = kind_for(prev["depart"] - prev["arrive"])
         else:
             merged.append(dict(it))
-    items = merged
+    items = [it for it in merged if it["kind"] != "noise"]
     for idx, it in enumerate(items):
         it["index"] = idx
 
