@@ -196,6 +196,15 @@ function stopCard(s, i) {
   if (s.kind === 'short') t.append(' ', el('span', 'chip', 'short'));
   body.append(t, el('div', 'm', s.business_name || (s.source === 'manual' ? 'Manual stop' : 'Unnamed stop')));
   head.append(el('div', 'num', String(i + 1)), body, el('span', 'chip', s.status));
+  if (s.suggest) {
+    const q = el('button', 'quick', (s.business_name ? 'Confirm ' : 'Confirm as ') + s.suggest.name);
+    q.onclick = async ev => {
+      ev.stopPropagation();
+      try { applyDay(await api('POST', '/api/stops/' + s.id + '/confirm-known')); render(false); }
+      catch (e) { alert(e.message); }
+    };
+    body.append(q);
+  }
   head.onclick = () => {
     const open = !S.open.has(s.id);
     setOpen(s.id, open);
@@ -365,6 +374,15 @@ function toolbar() {
   const bar = el('div', 'toolbar');
   const mk = (label, fn) => { const b = el('button', null, label); b.onclick = fn; bar.append(b); return b; };
   mk('+ Add stop', () => { S.tool = S.tool === 'add' ? null : 'add'; render(false); });
+  const ready = S.stops.filter(x => x.suggest).length;
+  if (ready) {
+    const b = mk('Confirm ' + ready + ' known', async () => {
+      if (!confirm('Confirm ' + ready + ' stop' + (ready > 1 ? 's' : '') + ' at saved places? You can undo this.')) return;
+      try { applyDay(await api('POST', '/api/day/' + S.date + '/confirm-known')); render(true); }
+      catch (e) { alert(e.message); }
+    });
+    b.className = 'primary';
+  }
   mk('Sync new data', async () => {
     try {
       const d = await api('POST', '/api/day/' + S.date + '/sync');

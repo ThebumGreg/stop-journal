@@ -169,6 +169,18 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                             "added": n})
         return with_conn(go)
 
+    @app.post("/api/day/<date>/confirm-known")
+    def day_confirm_known(date):
+        def go(conn, cfg):
+            check_date(date)
+            return payload(conn, cfg, service.confirm_known(conn, cfg, date), path=True)
+        return with_conn(go)
+
+    @app.post("/api/stops/<int:sid>/confirm-known")
+    def stop_confirm_known(sid):
+        return mutate(lambda conn, cfg, i: service.confirm_known(
+            conn, cfg, service._stop(conn, i)["date"], i), sid)
+
     @app.post("/api/day/<date>/undo")
     def day_undo(date):
         def go(conn, cfg):

@@ -194,6 +194,38 @@ def redetect(conn, cfg, date, kept, run_cfg):
     materialize(conn, cfg, date, kept, run_cfg)
 
 
+# ---- one-tap confirm for saved places -----------------------------------
+def suggestion(conn, s):
+    """The saved place a Draft stop sits on (or is already filled in from), if any."""
+    if s["status"] != "Draft" or (s["kind"] or "stop") != "stop":
+        return None
+    site = None
+    if s["business_name"]:
+        if s["known_site_id"]:
+            site = conn.execute("SELECT * FROM known_sites WHERE id=?", (s["known_site_id"],)).fetchone()
+    elif s["lat"] is not None:
+        site = known.match_any(conn, s["lat"], s["lon"])
+    if not site:
+        return None
+    return {"id": site["id"], "name": site["name"], "address": site["address"] or "",
+            "kind": site["kind"] or "client"}
+
+
+def confirm_known(conn, cfg, date, sid=None):
+    """Confirm Draft stops that match a saved place (one stop, or the whole day)."""
+    rows = [r for r in _ordered(conn, date) if sid is None or r["id"] == sid]
+    todo = [(r, suggestion(conn, r)) for r in rows]
+    todo = [(r, g) for r, g in todo if g]
+    if not todo:
+        raise EditError("No stops here match a saved place.")
+    snapshot_day(conn, date, "Confirmed known stops")
+    for r, g in todo:
+        patch_stop(conn, cfg, r["id"], {"business_name": g["name"],
+                                        "address": g["address"] or r["address"] or "",
+                                        "status": "Confirmed"})
+    return date
+
+
 # ---- undo ----------------------------------------------------------------
 UNDO_KEEP = 10  # snapshots kept per day
 
@@ -496,7 +528,7 @@ def day_payload(conn, cfg, date, include_path=False):
         "notes": r["notes"] or "", "category": r["category"] or "",
         "status": r["status"] or "Draft", "known_site_id": r["known_site_id"],
         "hubspot_company_id": r["hubspot_company_id"] or "",
-        "edited": bool(r["edited"]),
+        "edited": bool(r["edited"]), "suggest": suggestion(conn, r),
     } for r in _ordered(conn, date)]
     drives = [{
         "id": r["id"], "from_stop_id": r["from_stop_id"], "to_stop_id": r["to_stop_id"],

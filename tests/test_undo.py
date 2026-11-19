@@ -74,3 +74,26 @@ def test_undo_merge(tmp_path):
     c.post(f"/api/day/{D}/undo")
     after = day(c)["stops"]
     assert len(after) == n and after[1]["notes"] == "second"
+
+
+def test_confirm_known_single_and_bulk_with_undo(tmp_path):
+    c, _ = make(tmp_path)
+    d0 = day(c)
+    assert all(s["suggest"] is None for s in d0["stops"])      # nothing saved yet
+    first, second = d0["stops"][0], d0["stops"][1]
+    c.post("/api/places", json={"name": "Acme Co", "kind": "client", "lat": first["lat"],
+                                "lon": first["lon"], "address": "1 Dock Rd"})
+    c.post("/api/places", json={"name": "Shop", "kind": "vendor", "lat": second["lat"],
+                                "lon": second["lon"]})
+    d1 = day(c)
+    assert d1["stops"][0]["suggest"]["name"] == "Acme Co"
+    r = c.post(f"/api/stops/{first['id']}/confirm-known")
+    assert r.status_code == 200
+    s = next(x for x in day(c)["stops"] if x["id"] == first["id"])
+    assert s["status"] == "Confirmed" and s["business_name"] == "Acme Co" and s["address"] == "1 Dock Rd"
+    bulk = c.post(f"/api/day/{D}/confirm-known")
+    assert bulk.status_code == 200
+    assert all(x["status"] != "Draft" or x["suggest"] is None for x in day(c)["stops"] if x["kind"] == "stop")
+    assert c.post(f"/api/day/{D}/confirm-known").status_code == 400   # nothing left
+    c.post(f"/api/day/{D}/undo")
+    assert next(x for x in day(c)["stops"] if x["id"] == second["id"])["status"] == "Draft"
