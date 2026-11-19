@@ -11,7 +11,7 @@ def make_cfg(tmp_path):
         recorder_url="http://x", recorder_user="u", recorder_device="d",
         recorder_auth="", app_tz="America/Los_Angeles", places_provider="osm",
         google_places_key="", stop_min_minutes=10, stop_radius_m=100,
-        stop_max_gap_min=15, max_acc_m=100, app_password="",
+        stop_max_gap_min=15, stop_merge_gap_min=60, max_acc_m=100, app_password="",
         data_dir=str(tmp_path))
 
 

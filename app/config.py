@@ -18,6 +18,7 @@ class Config:
     stop_min_minutes: int
     stop_radius_m: int
     stop_max_gap_min: int
+    stop_merge_gap_min: int
     max_acc_m: int
     app_password: str
     data_dir: str
@@ -36,6 +37,7 @@ class Config:
             stop_min_minutes=_int("STOP_MIN_MINUTES", 10),
             stop_radius_m=_int("STOP_RADIUS_M", 100),
             stop_max_gap_min=_int("STOP_MAX_GAP_MIN", 15),
+            stop_merge_gap_min=_int("STOP_MERGE_GAP_MIN", 60),
             max_acc_m=_int("MAX_ACC_M", 100),
             app_password=e("APP_PASSWORD", ""),
             data_dir=e("DATA_DIR", "/data"),
