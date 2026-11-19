@@ -166,7 +166,9 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Daily SQLite snapshots in `/data/backups` (`BACKUP_KEEP`), Back up now + download in Settings.
 - Live status banner (`/api/live`): last position, place name or OSM address, time at the spot.
 - Day start/end marks (`day_marks`): optional; shown in the report (`day_start`, `day_end`, schema stays "1"),
-  and they override the work-hours window for no-data alerts. Day totals rules are unchanged.
+  and they override the work-hours window for no-data alerts. They also decide the commute: the day's first drive out
+  of a Personal stop (home) counts if Start day was tapped before it ended, and the last drive into a Personal stop
+  counts if End day was tapped before it ended (`service.drive_counts`); mid-day Personal stops stay excluded.
 - Undo (`undo_log`, last 10 per day) for delete, merge, split, re-detect and Confirm all; one-tap confirm for
   Draft stops that sit on a saved place; "usual parts" per business.
 - Alerts (Pushover, generic text only): no data, Recorder down, end-of-day Draft review, low truck stock.

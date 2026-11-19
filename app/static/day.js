@@ -353,7 +353,7 @@ function driveRow(dr) {
   const key = 'd' + dr.id;
   const row = el('div', 'drive');
   row.append(el('div', null, '↓ Drive ' + dr.depart + ' – ' + dr.arrive + ' · ' + dur(dr.minutes) +
-    ' · ~' + dr.miles_approx + ' mi (approx.)' + (dr.notes ? ' · has notes' : '')));
+    ' · ~' + dr.miles_approx + ' mi (approx.)' + (dr.counts === false ? ' · not counted' : '') + (dr.notes ? ' · has notes' : '')));
   const edit = el('div', 'edit'); edit.hidden = !S.openDrives.has(dr.id);
   const d = Object.assign({depart: dr.depart, arrive: dr.arrive, notes: dr.notes}, S.drafts[key] || {});
   const remember = (k, v) => { d[k] = v; (S.drafts[key] = S.drafts[key] || {})[k] = v; };

@@ -37,7 +37,9 @@ INSTRUCTIONS = [
     "wrote. Parts used lists parts consumed at the stop. A blank HubSpot company ID means it is not "
     "known yet: match the company by business name and address.",
     "Drive from previous stop: the drive immediately before arriving at the stop. It is blank for the "
-    "first stop of the day or when the drive began at a personal stop.",
+    "first stop of the day or when the drive began at a personal stop (unless the user started the work "
+    "day before that drive ended, in which case the commute is included). Drive after last stop: the "
+    "drive home, included only when the user ended the work day before arriving.",
     "Records to update: one row per confirmed stop. This table is what to act on.",
     "Excluded: stops that were Personal or not confirmed, shown by time only. They were left out on "
     "purpose; do not create records for them.",
@@ -174,6 +176,9 @@ def render(report):
                           ("Drive time", _hm(sm["drive_minutes"])),
                           ("Approximate miles", f"{sm['miles_approx']} mi (approximate)"),
                           ("Stops confirmed", str(sm["stops_confirmed"]))]
+                         + ([("Drive after last stop", f"{_hm(day['drive_after_last_stop']['minutes'])}, "
+                                f"{day['drive_after_last_stop']['miles_approx']} mi (included in the totals above)")]
+                            if day.get("drive_after_last_stop") else [])
                          + ([("Work day", f"{day.get('day_start') or '—'} to {day.get('day_end') or '—'}")]
                             if day.get("day_start") or day.get("day_end") else []), st))
         if not day["stops"]:

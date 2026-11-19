@@ -550,13 +550,36 @@ def patch_drive(conn, cfg, did, f):
 
 
 # ---- read side ---------------------------------------------------------
-def totals(stops, drives):
+def drive_counts(stops, drives, marks=None):
+    """{drive id: counts toward work totals}. A drive counts unless one end is a Personal stop.
+    Exception, driven by the Start day / End day taps: the day's first drive out of a Personal
+    stop counts if Start day was tapped before that drive ended (you started work before arriving
+    at the first job), and the day's last drive into a Personal stop counts if End day was tapped
+    before it ended (you ended work before getting home). So a commute counts only on days you
+    start or end work around it.
+    Mid-day Personal stops (lunch, errands) always stay excluded."""
+    marks = marks or {}
+    personal = {s["id"] for s in stops if s["status"] == "Personal"}
+    out = {}
+    for i, d in enumerate(drives):
+        frm, to = d["from_stop_id"] in personal, d["to_stop_id"] in personal
+        ok = not frm and not to
+        if frm and not to and i == 0 and marks.get("start_ts") and marks["start_ts"] < d["arrive_ts"]:
+            ok = True
+        if to and not frm and i == len(drives) - 1 and marks.get("end_ts") and marks["end_ts"] < d["arrive_ts"]:
+            ok = True
+        out[d["id"]] = ok
+    return out
+
+
+def totals(stops, drives, marks=None):
     def counts(s):
         return s["status"] != "Personal" and (s["kind"] == "stop" or s["status"] == "Confirmed")
 
     personal = {s["id"] for s in stops if s["status"] == "Personal"}
     on_site = sum(s["depart_ts"] - s["arrive_ts"] for s in stops if counts(s))
-    live = [d for d in drives if d["from_stop_id"] not in personal and d["to_stop_id"] not in personal]
+    ok = drive_counts(stops, drives, marks)
+    live = [d for d in drives if ok[d["id"]]]
     return {
         "on_site_s": on_site,
         "drive_s": sum(d["arrive_ts"] - d["depart_ts"] for d in live),
@@ -593,9 +616,13 @@ def day_payload(conn, cfg, date, include_path=False):
         "distance_m": r["distance_m"] or 0,
         "notes": r["notes"] or "", "edited": bool(r["edited"]),
     } for r in conn.execute("SELECT * FROM drives WHERE date=? ORDER BY seq", (date,))]
+    marks = day_marks(conn, cfg, date)
+    ok = drive_counts(stops, drives, marks)
+    for d in drives:
+        d["counts"] = ok[d["id"]]
     out = {"date": date, "tz": cfg.app_tz, "stops": stops, "drives": drives,
-           "totals": totals(stops, drives), "undo": undo_available(conn, date),
-           "marks": day_marks(conn, cfg, date)}
+           "totals": totals(stops, drives, marks), "undo": undo_available(conn, date),
+           "marks": marks}
     if include_path:
         pts = kept_points(conn, cfg, date)
         out["path"] = [[p["lat"], p["lon"]] for p in pts]

@@ -5,7 +5,9 @@ deliberately flat and unambiguous. Rules (also printed in the PDF's instruction 
   * only Confirmed stops get detail; Personal and unconfirmed stops are listed by time only;
   * totals cover only the confirmed stops listed;
   * "drive from previous stop" is the drive immediately before the stop, left blank when it
-    began at a Personal stop (consistent with the day totals in the app);
+    began at a Personal stop (consistent with the day totals in the app), except the first drive
+    of the day when the user tapped Start day before arriving at the first stop; a last drive
+    into a Personal stop (home) counts as "drive after last stop" when End day was tapped before it ended;
   * times are 24-hour local time in the stated timezone; miles are approximate.
 """
 from datetime import datetime, timedelta
@@ -62,7 +64,7 @@ def build_day(payload, cfg):
             continue
         d = drive_into.get(s["id"])
         drive = None
-        if d and status.get(d["from_stop_id"]) != "Personal":
+        if d and d.get("counts", status.get(d["from_stop_id"]) != "Personal"):
             drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "notes": d["notes"]}
         out_stops.append({
             "stop_number": len(out_stops) + 1,
@@ -79,12 +81,18 @@ def build_day(payload, cfg):
         })
     drive_min = sum(s["drive_from_previous_stop"]["minutes"] for s in out_stops if s["drive_from_previous_stop"])
     miles = sum(s["drive_from_previous_stop"]["miles_approx"] for s in out_stops if s["drive_from_previous_stop"])
+    final = None   # last drive of the day into a Personal stop (e.g. home), counted via End day
+    if drives and drives[-1].get("counts") and status.get(drives[-1]["to_stop_id"]) == "Personal":
+        final = {"minutes": drives[-1]["minutes"], "miles_approx": drives[-1]["miles_approx"]}
+        drive_min += final["minutes"]
+        miles += final["miles_approx"]
     marks = payload.get("marks") or {}
     return {"date": payload["date"],
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
                         "drive_minutes": drive_min, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded)},
+            "drive_after_last_stop": final,
             "stops": out_stops, "excluded": excluded}
 
 
