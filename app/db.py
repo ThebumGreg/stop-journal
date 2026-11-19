@@ -126,6 +126,21 @@ CREATE TABLE IF NOT EXISTS stops (
   edited INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS undo_log (
+  id INTEGER PRIMARY KEY,
+  date TEXT NOT NULL,
+  ts INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_undo_date ON undo_log(date, id);
+
+CREATE TABLE IF NOT EXISTS day_marks (
+  date TEXT PRIMARY KEY,
+  start_utc INTEGER,
+  end_utc INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS drives (
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL,

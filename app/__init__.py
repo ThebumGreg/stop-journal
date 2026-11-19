@@ -169,6 +169,13 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                             "added": n})
         return with_conn(go)
 
+    @app.post("/api/day/<date>/undo")
+    def day_undo(date):
+        def go(conn, cfg):
+            check_date(date)
+            return payload(conn, cfg, service.undo_last(conn, cfg, date), path=True)
+        return with_conn(go)
+
     @app.post("/api/day/<date>/redetect")
     def day_redetect(date):
         """Discard detected stops and their edits; detect again with new thresholds."""

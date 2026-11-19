@@ -11,6 +11,8 @@ Totals rules (documented here because the UI and PDF rely on them):
   * "draft" counts Draft stops of kind 'stop' (Draft short stops are clutter and
     are counted separately).
 """
+import json
+import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -184,11 +186,74 @@ def sync_new(conn, cfg, date, kept, run_cfg):
 
 def redetect(conn, cfg, date, kept, run_cfg):
     """Discard detected stops (and all their edits) and detect again. Manual stops stay."""
+    snapshot_day(conn, date, "Re-detected the day")
     parts.release_stops(conn, [r["id"] for r in conn.execute(
         "SELECT id FROM stops WHERE date=? AND source!='manual'", (date,))])
     conn.execute("DELETE FROM stops WHERE date=? AND source!='manual'", (date,))
     conn.execute("DELETE FROM drives WHERE date=?", (date,))
     materialize(conn, cfg, date, kept, run_cfg)
+
+
+# ---- undo ----------------------------------------------------------------
+UNDO_KEEP = 10  # snapshots kept per day
+
+
+def _columns(conn, table):
+    return [r["name"] for r in conn.execute(f"PRAGMA table_info({table})")]
+
+
+def snapshot_day(conn, date, label):
+    """Save the day's stops, drives and part lines so a destructive edit can be undone."""
+    stops = [dict(r) for r in conn.execute("SELECT * FROM stops WHERE date=?", (date,))]
+    ids = [s["id"] for s in stops]
+    marks = ",".join("?" * len(ids))
+    sp = [dict(r) for r in conn.execute(
+        f"SELECT * FROM stop_parts WHERE stop_id IN ({marks})", ids)] if ids else []
+    drives = [dict(r) for r in conn.execute("SELECT * FROM drives WHERE date=?", (date,))]
+    conn.execute("INSERT INTO undo_log(date,ts,label,payload) VALUES (?,?,?,?)",
+                 (date, int(time.time()), label,
+                  json.dumps({"stops": stops, "drives": drives, "stop_parts": sp})))
+    conn.execute("DELETE FROM undo_log WHERE date=? AND id NOT IN "
+                 "(SELECT id FROM undo_log WHERE date=? ORDER BY id DESC LIMIT ?)",
+                 (date, date, UNDO_KEEP))
+
+
+def undo_available(conn, date):
+    r = conn.execute("SELECT label, ts FROM undo_log WHERE date=? ORDER BY id DESC LIMIT 1",
+                     (date,)).fetchone()
+    return {"label": r["label"], "ts": r["ts"]} if r else None
+
+
+def undo_last(conn, cfg, date):
+    """Put the day back as it was before the last delete / merge / split / re-detect.
+    Edits made after that action are lost with it."""
+    row = conn.execute("SELECT * FROM undo_log WHERE date=? ORDER BY id DESC LIMIT 1",
+                       (date,)).fetchone()
+    if not row:
+        raise EditError("Nothing to undo for this day.")
+    snap = json.loads(row["payload"])
+    parts.release_stops(conn, [r["id"] for r in conn.execute(
+        "SELECT id FROM stops WHERE date=?", (date,))])
+    conn.execute("DELETE FROM drives WHERE date=?", (date,))
+    conn.execute("DELETE FROM stops WHERE date=?", (date,))
+
+    def put(table, rec):
+        cols = [c for c in _columns(conn, table) if c in rec]  # column names come from the schema
+        conn.execute(f"INSERT INTO {table}({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                     [rec[c] for c in cols])
+
+    for rec in snap["stops"]:
+        put("stops", rec)
+    for rec in snap["drives"]:
+        put("drives", rec)
+    for rec in snap["stop_parts"]:
+        put("stop_parts", rec)
+        part = conn.execute("SELECT * FROM parts WHERE id=?", (rec["part_id"],)).fetchone() \
+            if rec.get("part_id") else None
+        parts.move(conn, part, -rec["qty"], "used", rec["id"], "undo")
+    conn.execute("DELETE FROM undo_log WHERE id=?", (row["id"],))
+    _finish(conn, cfg, date)
+    return date
 
 
 # ---- validation --------------------------------------------------------
@@ -257,6 +322,7 @@ def patch_stop(conn, cfg, sid, f):
 
 def delete_stop(conn, cfg, sid):
     date = _stop(conn, sid)["date"]
+    snapshot_day(conn, date, "Deleted a stop")
     parts.release_stops(conn, [sid])
     conn.execute("DELETE FROM stops WHERE id=?", (sid,))
     _finish(conn, cfg, date)
@@ -281,6 +347,7 @@ def split_stop(conn, cfg, sid, at):
     t = parse_time(cfg, date, at)
     if not s["arrive_utc"] < t < s["depart_utc"]:
         raise EditError("Split time must be between arrival and departure.")
+    snapshot_day(conn, date, "Split a stop")
 
     def centre(lo, hi, fallback):
         pts = kept_points(conn, cfg, date, lo, hi)
@@ -310,6 +377,7 @@ def merge_stops(conn, cfg, id_a, id_b):
         raise EditError("Only neighbouring stops can be merged.")
     if order.index(a["id"]) > order.index(b["id"]):
         a, b = b, a
+    snapshot_day(conn, a["date"], "Merged two stops")
     first = a if (a["business_name"] or not b["business_name"]) else b
     la, lb = a["depart_utc"] - a["arrive_utc"], b["depart_utc"] - b["arrive_utc"]
     if a["lat"] is not None and b["lat"] is not None and (la + lb) > 0:
@@ -440,7 +508,7 @@ def day_payload(conn, cfg, date, include_path=False):
         "notes": r["notes"] or "", "edited": bool(r["edited"]),
     } for r in conn.execute("SELECT * FROM drives WHERE date=? ORDER BY seq", (date,))]
     out = {"date": date, "tz": cfg.app_tz, "stops": stops, "drives": drives,
-           "totals": totals(stops, drives)}
+           "totals": totals(stops, drives), "undo": undo_available(conn, date)}
     if include_path:
         pts = kept_points(conn, cfg, date)
         out["path"] = [[p["lat"], p["lon"]] for p in pts]

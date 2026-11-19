@@ -41,7 +41,7 @@ async function api(method, url, body) {
 }
 
 function applyDay(d) {
-  S.stops = d.stops; S.drives = d.drives; S.totals = d.totals;
+  S.stops = d.stops; S.drives = d.drives; S.totals = d.totals; S.undo = d.undo || null;
   if (d.path) S.path = d.path;
 }
 
@@ -372,6 +372,15 @@ function toolbar() {
       applyDay(d); render(true);
     } catch (e) { alert(e.message); }
   });
+  if (S.undo) {
+    const u = mk('Undo: ' + S.undo.label.toLowerCase(), async () => {
+      if (!confirm('Put the day back as it was before “' + S.undo.label.toLowerCase() +
+                   '”? Edits made since then are lost.')) return;
+      try { const d = await api('POST', '/api/day/' + S.date + '/undo'); S.sel = null; S.open.clear(); S.openDrives.clear(); S.drafts = {}; applyDay(d); render(true); }
+      catch (e) { alert(e.message); }
+    });
+    u.className = 'undo';
+  }
   mk('Re-detect…', () => { S.tool = S.tool === 'redo' ? null : 'redo'; render(false); });
   mk('Export…', () => { S.tool = S.tool === 'export' ? null : 'export'; render(false); });
   if (S.flash) bar.append(el('span', 'hint', S.flash));
