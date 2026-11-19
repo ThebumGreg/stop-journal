@@ -104,9 +104,14 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         except ValueError:
             raise service.EditError("Dates look like 2026-11-18.")
 
+    def fetch_day(conn, cfg, date, refresh=False):
+        if not (cfg.recorder_url and cfg.recorder_user and cfg.recorder_device):
+            raise service.EditError("Set up the Recorder first: Settings → Recorder → Find on Recorder.")
+        points.load_day(conn, client, cfg, date, refresh=refresh)
+
     def ensure_day(conn, cfg, date, refresh=False):
         if refresh or not service.is_processed(conn, date):
-            points.load_day(conn, client, base, date, refresh=refresh)
+            fetch_day(conn, cfg, date, refresh=refresh)
         if not service.is_processed(conn, date):
             service.materialize(conn, cfg, date, service.kept_points(conn, cfg, date), cfg)
 
@@ -157,7 +162,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         def go(conn, cfg):
             check_date(date)
             ensure_day(conn, cfg, date)
-            points.load_day(conn, client, base, date, refresh=True)
+            fetch_day(conn, cfg, date, refresh=True)
             n = service.sync_new(conn, cfg, date, service.kept_points(conn, cfg, date), cfg)
             return jsonify({**service.day_payload(conn, cfg, date, include_path=True),
                             "added": n})

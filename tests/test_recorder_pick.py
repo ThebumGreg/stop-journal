@@ -51,3 +51,22 @@ def test_saved_recorder_settings_reach_the_client(tmp_path):
     assert r.status_code == 302
     page = c.get("/settings").get_data(as_text=True)
     assert 'value="u1"' in page and "Find on Recorder" in page
+
+
+def test_unconfigured_recorder_gives_a_clear_message(tmp_path):
+    c = app_for(tmp_path, recorder_url="", recorder_user="", recorder_device="").test_client()
+    r = c.get("/api/day/2026-11-18")
+    assert r.status_code == 400 and "Settings" in r.get_json()["error"]
+
+
+def test_points_are_keyed_by_the_saved_device(tmp_path):
+    from dataclasses import replace
+    from tests.test_detect import CFG
+    from app import sample
+    cfg = replace(CFG, data_dir=str(tmp_path), recorder_url="", recorder_user="", recorder_device="")
+    app = create_app(cfg, client=sample.ListRecorder(sample.normal_day("2026-11-18")))
+    c = app.test_client()
+    c.post("/settings", data={"recorder_url": "http://rec:8083", "recorder_user": "u",
+                              "recorder_device": "phone"})
+    d = c.get("/api/day/2026-11-18").get_json()
+    assert d["stops"], d

@@ -26,12 +26,13 @@ You need Docker with Compose, and an OwnTracks Recorder reachable from the serve
 
 ```bash
 git clone https://github.com/ThebumGreg/stop-journal.git jobhub && cd jobhub
-cp .env.example .env          # then edit .env (see the table below)
+cp .env.example .env          # optional: set APP_PASSWORD (see the table below)
 docker compose pull           # or: docker compose up -d --build  to build locally
 docker compose up -d
 ```
 
-Open `http://<server>:8000`. The database is `./data/stop_journal.db`.
+Open `http://<server>:8000`, go to **Settings → Recorder**, enter your Recorder address and press
+**Find on Recorder** to pick your user and device. The database is `./data/stop_journal.db`.
 
 The image is published by GitHub Actions to `ghcr.io/thebumgreg/stop-journal`. The package is
 private (it follows the repository), so log in once on the server with a GitHub personal access
@@ -50,8 +51,9 @@ wget -O /boot/config/plugins/dockerMan/templates-user/jobhub.xml \
   https://raw.githubusercontent.com/ThebumGreg/stop-journal/main/unraid/jobhub.xml
 ```
 
-then go to **Docker → Add Container**, choose **JobHub** from the template list, fill in the
-Recorder URL, user and device, set an **App password**, and press **Apply**. The template
+then go to **Docker → Add Container**, choose **JobHub** from the template list, set an
+**App password**, and press **Apply**. Then open JobHub, go to **Settings → Recorder**, enter the
+Recorder address and pick your user and device with **Find on Recorder**. The template
 runs the container as `99:100` and maps `/mnt/user/appdata/jobhub` to `/data`.
 
 The image is pulled from GitHub's registry. If you have not made the package public (GitHub →
@@ -75,9 +77,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `RECORDER_URL` | | e.g. `http://192.168.x.x:8083` |
-| `RECORDER_USER`, `RECORDER_DEVICE` | | OwnTracks user and device names on the Recorder |
-| `RECORDER_AUTH` | | optional basic auth, `user:pass` |
+| `RECORDER_URL`, `RECORDER_USER`, `RECORDER_DEVICE`, `RECORDER_AUTH` | | optional: normally set in the app (Settings → Recorder → Find on Recorder). Env values are only the starting default |
 | `APP_TZ` | `America/Los_Angeles` | everything is shown in this zone, stored as UTC |
 | `APP_PASSWORD` | | **set this.** Enables the login page |
 | `STOP_MIN_MINUTES`, `STOP_RADIUS_M`, `STOP_MAX_GAP_MIN`, `STOP_MERGE_GAP_MIN`, `MAX_ACC_M` | 10, 100, 15, 60, 100 | detection tuning |

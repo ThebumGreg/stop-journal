@@ -8,7 +8,7 @@ address, user and device can be picked on the Settings page.
 import secrets
 from dataclasses import replace
 
-SECRETS = ("google_places_key", "pushover_token", "pushover_user")
+SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user")
 DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
@@ -41,6 +41,8 @@ SPEC = [
     ("Recorder", [
         dict(key="recorder_url", label="Recorder address", kind="url",
              help="Your OwnTracks Recorder, e.g. http://192.168.1.50:8083"),
+        dict(key="recorder_auth", label="Recorder login (only if it needs one)", kind="secret",
+             help="Basic auth as user:password. Write-only: it is never shown again after saving."),
         dict(key="recorder_user", label="Recorder user", kind="text",
              help="Use “Find on Recorder” below to pick it."),
         dict(key="recorder_device", label="Recorder device", kind="text",

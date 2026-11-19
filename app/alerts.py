@@ -99,7 +99,8 @@ def run_once(base, client, now=None, send=notify.send):
         cfg = settings.effective(base, conn)
         in_window, start = work_window(cfg, now)
         last = err = None
-        if cfg.alert_no_data == "on" and notify.configured(cfg) and in_window:
+        if (cfg.alert_no_data == "on" and notify.configured(cfg) and in_window
+                and cfg.recorder_url and cfg.recorder_user and cfg.recorder_device):
             try:
                 last = client.last_tst()
             except Exception as e:  # unreachable Recorder is itself worth an alert
