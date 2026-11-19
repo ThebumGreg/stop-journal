@@ -427,6 +427,7 @@ def day_payload(conn, cfg, date, include_path=False):
         "business_name": r["business_name"] or "", "address": r["address"] or "",
         "notes": r["notes"] or "", "category": r["category"] or "",
         "status": r["status"] or "Draft", "known_site_id": r["known_site_id"],
+        "hubspot_company_id": r["hubspot_company_id"] or "",
         "edited": bool(r["edited"]),
     } for r in _ordered(conn, date)]
     drives = [{

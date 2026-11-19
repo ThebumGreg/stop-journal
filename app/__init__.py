@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 from flask import (Flask, Response, jsonify, redirect, render_template, request,
                    session, url_for)
 
-from . import alerts, db, notify, parts, places, points, sample, service, settings
+from . import alerts, db, notify, parts, pdf, places, points, sample, service, settings
+from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
 from .recorder import RecorderClient
@@ -117,6 +118,36 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             check_date(date)
             ensure_day(conn, cfg, date)
             return payload(conn, cfg, date, path=True)
+        return with_conn(go)
+
+    # ---- export (PDF + JSON report) -------------------------------------
+    def build_report(conn, cfg):
+        start = request.args.get("from", "")
+        dates = reports.date_range(start, request.args.get("to") or start)
+        return reports.build(conn, cfg, dates, lambda c, cf, d: ensure_day(c, cf, d))
+
+    def download(body, mimetype, rep, ext):
+        a, b = rep["date_from"], rep["date_to"]
+        name = f"jobhub-{a}" if a == b else f"jobhub-{a}_to_{b}"
+        return Response(body, mimetype=mimetype,
+                        headers={"Content-Disposition": f"attachment; filename={name}.{ext}"})
+
+    @app.get("/api/export/check")
+    def export_check():
+        return with_conn(lambda conn, cfg: jsonify(reports.check(build_report(conn, cfg))))
+
+    @app.get("/api/export.json")
+    def export_json():
+        def go(conn, cfg):
+            rep = build_report(conn, cfg)
+            return download(json.dumps(rep, indent=2, ensure_ascii=False), "application/json", rep, "json")
+        return with_conn(go)
+
+    @app.get("/api/export.pdf")
+    def export_pdf():
+        def go(conn, cfg):
+            rep = build_report(conn, cfg)
+            return download(pdf.render(rep), "application/pdf", rep, "pdf")
         return with_conn(go)
 
     @app.post("/api/day/<date>/sync")

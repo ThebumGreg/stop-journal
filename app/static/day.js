@@ -373,6 +373,7 @@ function toolbar() {
     } catch (e) { alert(e.message); }
   });
   mk('Re-detect…', () => { S.tool = S.tool === 'redo' ? null : 'redo'; render(false); });
+  mk('Export…', () => { S.tool = S.tool === 'export' ? null : 'export'; render(false); });
   if (S.flash) bar.append(el('span', 'hint', S.flash));
   return bar;
 }
@@ -389,6 +390,36 @@ function addForm() {
     {arrive: a.value, depart: d.value, business_name: n.value}), err, () => { S.tool = null; });
   const two = el('div', 'two'); two.append(labeled('Arrived', a), labeled('Departed', d));
   f.append(el('div', 'hint', 'Add a stop that has no GPS data (e.g. a phone job).'), two, n, go, err);
+  return f;
+}
+
+function exportForm() {
+  const f = el('div', 'redo');
+  const from = el('input'); from.type = 'date'; from.value = S.date;
+  const to = el('input'); to.type = 'date'; to.value = S.date;
+  const two = el('div', 'two'); two.append(labeled('From', from), labeled('To', to));
+  const info = el('div', 'hint', 'Checking…');
+  const pdf = el('a', 'btn primary', 'Download PDF'), js = el('a', 'btn', 'Download JSON');
+  const acts = el('div', 'acts'); acts.append(pdf, js);
+  const q = () => 'from=' + from.value + '&to=' + (to.value || from.value);
+  async function refresh() {
+    info.className = 'hint'; info.textContent = 'Checking…';
+    pdf.removeAttribute('href'); js.removeAttribute('href');
+    try {
+      const c = await api('GET', '/api/export/check?' + q());
+      const bits = [c.confirmed + ' confirmed stop' + (c.confirmed === 1 ? '' : 's') + ' will be included'];
+      if (c.not_confirmed) bits.push(c.not_confirmed + ' not confirmed (left out)');
+      if (c.personal) bits.push(c.personal + ' personal (left out)');
+      info.textContent = bits.join(' · ') + (c.not_confirmed ? '. Confirm them first if they belong in the report.' : '.');
+      info.className = c.not_confirmed ? 'err' : 'hint';
+      pdf.href = '/api/export.pdf?' + q(); js.href = '/api/export.json?' + q();
+    } catch (e) { info.className = 'err'; info.textContent = e.message; }
+  }
+  from.onchange = () => { if (to.value < from.value) to.value = from.value; refresh(); };
+  to.onchange = refresh;
+  f.append(el('div', 'hint', 'Only Confirmed stops are included in detail. Pick a range to export several days.'),
+           two, info, acts);
+  refresh();
   return f;
 }
 
@@ -421,6 +452,7 @@ function render(fit) {
   listEl.replaceChildren(toolbar());
   if (S.tool === 'add') listEl.append(addForm());
   if (S.tool === 'redo') listEl.append(redoForm());
+  if (S.tool === 'export') listEl.append(exportForm());
   const bounds = [];
   if (S.path.length) {
     L.polyline(S.path, {color: '#0b66d0', weight: 3, opacity: .7}).addTo(pathLayer);

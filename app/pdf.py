@@ -1,0 +1,227 @@
+"""Render a report (app/report.py) as a text-based PDF: real selectable text, plain tables,
+fixed field labels, one timezone statement. No images, so a reader can extract everything."""
+import io
+import os
+from datetime import datetime
+from xml.sax.saxutils import escape
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import (KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table,
+                                TableStyle)
+
+FONT_DIR = os.path.join(os.path.dirname(__file__), "fonts")
+_registered = False
+
+
+def _fonts():
+    global _registered
+    if not _registered:  # DejaVu covers far more characters than the built-in Helvetica
+        pdfmetrics.registerFont(TTFont("JH", os.path.join(FONT_DIR, "DejaVuSans.ttf")))
+        pdfmetrics.registerFont(TTFont("JH-Bold", os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf")))
+        pdfmetrics.registerFontFamily("JH", normal="JH", bold="JH-Bold", italic="JH", boldItalic="JH-Bold")
+        _registered = True
+
+
+INSTRUCTIONS = [
+    "This report lists the jobs worked on for the period above. Use it to update HubSpot.",
+    "Header: report title, period, timezone (all times in this report are 24-hour local time in that "
+    "timezone), when it was generated, and the report schema version.",
+    "Day summary: totals for that day. They cover only the confirmed stops listed below. Miles are "
+    "approximate (straight GPS path), not odometer readings.",
+    "Stop blocks: one per confirmed stop, in order. Work performed is the full text the technician "
+    "wrote. Parts used lists parts consumed at the stop. A blank HubSpot company ID means it is not "
+    "known yet: match the company by business name and address.",
+    "Drive from previous stop: the drive immediately before arriving at the stop. It is blank for the "
+    "first stop of the day or when the drive began at a personal stop.",
+    "Records to update: one row per confirmed stop. This table is what to act on.",
+    "Excluded: stops that were Personal or not confirmed, shown by time only. They were left out on "
+    "purpose; do not create records for them.",
+]
+
+
+def _styles():
+    base = ParagraphStyle("base", fontName="JH", fontSize=9.5, leading=12.5)
+    return {
+        "base": base,
+        "small": ParagraphStyle("small", parent=base, fontSize=8, leading=10),
+        "title": ParagraphStyle("title", parent=base, fontName="JH-Bold", fontSize=17, leading=21),
+        "h1": ParagraphStyle("h1", parent=base, fontName="JH-Bold", fontSize=13, leading=16, spaceBefore=12,
+                             spaceAfter=4, keepWithNext=True),
+        "h2": ParagraphStyle("h2", parent=base, fontName="JH-Bold", fontSize=11, leading=14, spaceBefore=8,
+                             spaceAfter=3, keepWithNext=True),
+        "label": ParagraphStyle("label", parent=base, fontName="JH-Bold"),
+        "th": ParagraphStyle("th", parent=base, fontName="JH-Bold", fontSize=8, leading=10),
+    }
+
+
+def _p(text, style):
+    """Plain user text -> Paragraph (escaped, newlines kept, empty shown as a dash)."""
+    return Paragraph(_html(text), style)
+
+
+def _html(text):
+    t = escape(str(text)) if text not in (None, "") else "&mdash;"
+    return t.replace("\r\n", "\n").replace("\n", "<br/>")
+
+
+def _fit(text, style, width, max_h):
+    """Split text into pieces that each *measure* no taller than max_h at this column width
+    (a table row cannot span pages). Halves by lines, then words, then characters."""
+    text = (text or "").replace("\r\n", "\n")
+    para = Paragraph(_html(text), style)
+    para.wrap(width, 100000)
+    if para.height <= max_h or len(text) < 2:
+        return [text]
+    for sep in ("\n", " "):
+        parts = text.split(sep)
+        if len(parts) > 1:
+            mid = len(parts) // 2
+            return (_fit(sep.join(parts[:mid]), style, width, max_h) +
+                    _fit(sep.join(parts[mid:]), style, width, max_h))
+    mid = len(text) // 2
+    return _fit(text[:mid], style, width, max_h) + _fit(text[mid:], style, width, max_h)
+
+
+MAX_ROW_H = 560  # points; a page frame is ~672 tall
+
+
+def _hm(minutes):
+    return f"{minutes} min ({minutes // 60} h {minutes % 60:02d} min)"
+
+
+def _kv(rows, st, label_w=1.75 * inch, width=7 * inch):
+    t = Table([[Paragraph(escape(k), st["label"]), v if not isinstance(v, str) else _p(v, st["base"])]
+               for k, v in rows], colWidths=[label_w, width - label_w])
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
+                           ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+                           ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+    return t
+
+
+def _grid(header, rows, widths, st):
+    data = [[Paragraph(escape(h), st["th"]) for h in header]] + rows
+    t = Table(data, colWidths=widths, repeatRows=1)
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                           ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eeeeee")),
+                           ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+    return t
+
+
+def _parts_table(parts, st):
+    if not parts:
+        return _p("None", st["base"])
+    rows = [[_p(p["name"], st["small"]), _p(p["part_number"], st["small"]),
+             _p(f"{p['quantity']:g}", st["small"]), _p(p["unit"], st["small"]),
+             _p("" if p["unit_cost"] is None else f"{p['unit_cost']:.2f}", st["small"]),
+             _p("yes" if p["billable"] else "no", st["small"])] for p in parts]
+    return _grid(["Part", "Part #", "Qty", "Unit", "Unit cost", "Billable"], rows,
+                 [1.65 * inch, 0.9 * inch, 0.45 * inch, 0.5 * inch, 0.8 * inch, 0.75 * inch], st)
+
+
+def _stop_block(s, st):
+    drive = s["drive_from_previous_stop"]
+    drive_txt = "n/a" if not drive else f"{drive['minutes']} min, {drive['miles_approx']} mi (approximate)"
+    if drive and drive["notes"]:
+        drive_txt += f". Drive notes: {drive['notes']}"
+    latlon = "(no GPS data)" if s["latitude"] is None else f"{s['latitude']:.6f}, {s['longitude']:.6f}"
+    rows = [("Stop number", str(s["stop_number"])), ("Business name", s["business_name"]),
+            ("Address", s["address"])]
+    if s["place_type"]:
+        rows.append(("Place type", s["place_type"]))
+    rows += [("Latitude/Longitude", latlon), ("Arrival", s["arrival"]), ("Departure", s["departure"]),
+             ("Time on site", _hm(s["time_on_site_minutes"])), ("Drive from previous stop", drive_txt),
+             ("HubSpot company ID", s["hubspot_company_id"])]
+    for i, piece in enumerate(_fit(s["work_performed"], st["base"], 7 * inch - 1.75 * inch - 12, MAX_ROW_H)):
+        rows.append(("Work performed" if i == 0 else "Work performed (continued)", piece))
+    rows.append(("Parts used", _parts_table(s["parts_used"], st)))
+    return [Paragraph(f"Stop {s['stop_number']}", st["h2"]), _kv(rows, st)]
+
+
+def render(report):
+    _fonts()
+    st = _styles()
+    multi = report["date_from"] != report["date_to"]
+    buf = io.BytesIO()
+
+    def footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("JH", 7.5)
+        canvas.setFillColor(colors.grey)
+        canvas.drawString(0.75 * inch, 0.5 * inch, f"JobHub report, schema version {report['schema_version']}")
+        canvas.drawRightString(letter[0] - 0.75 * inch, 0.5 * inch, f"Page {doc.page}")
+        canvas.restoreState()
+
+    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.75 * inch, rightMargin=0.75 * inch,
+                            topMargin=0.7 * inch, bottomMargin=0.8 * inch, title="JobHub report",
+                            author="JobHub")
+    story = [Paragraph("JobHub Job Report", st["title"]), Spacer(1, 6)]
+    period = (f"{report['date_from']} to {report['date_to']}" if multi else
+              datetime.fromisoformat(report["date_from"]).strftime("%A, %Y-%m-%d"))
+    gen = datetime.fromisoformat(report["generated_at"]).strftime("%Y-%m-%d %H:%M")
+    story.append(_kv([("Report", "JobHub job report"), ("Period" if multi else "Date", period),
+                      ("Timezone", report["timezone"]), ("Generated at", gen),
+                      ("Report schema version", report["schema_version"])], st))
+
+    for day in report["days"]:
+        d, sm = day["date"], day["summary"]
+        story.append(Paragraph(f"Day summary: {datetime.fromisoformat(d).strftime('%A, %Y-%m-%d')}", st["h1"]))
+        story.append(_kv([("On-site time", _hm(sm["on_site_minutes"])),
+                          ("Drive time", _hm(sm["drive_minutes"])),
+                          ("Approximate miles", f"{sm['miles_approx']} mi (approximate)"),
+                          ("Stops confirmed", str(sm["stops_confirmed"]))], st))
+        if not day["stops"]:
+            story.append(Spacer(1, 4))
+            story.append(_p("No confirmed stops.", st["base"]))
+        for s in day["stops"]:
+            blk = _stop_block(s, st)
+            story.extend(blk)
+
+    story.append(Paragraph("Records to update", st["h1"]))
+    head = ["Business name", "Address", "Arrival", "Departure", "Work performed", "Parts used"]
+    widths = [1.1, 1.15, 0.65, 0.85, 1.85, 1.4]
+    if multi:
+        head.insert(0, "Date")
+        widths.insert(0, 0.8)
+    scale = 7.0 / sum(widths)
+    widths = [w * scale * inch for w in widths]
+    work_w = widths[head.index("Work performed")] - 12
+    rows = []
+    for r in report["records_to_update"]:
+        parts = "; ".join(r["parts_used"]) if r["parts_used"] else ""
+        for i, piece in enumerate(_fit(r["work_performed"], st["small"], work_w, MAX_ROW_H)):
+            if i == 0:
+                row = [_p(r["business_name"], st["small"]), _p(r["address"], st["small"]),
+                       _p(r["arrival"], st["small"]), _p(r["departure"], st["small"]),
+                       _p(piece, st["small"]), _p(parts, st["small"])]
+            else:  # long text continues on following rows (a table row cannot span pages)
+                blank = Paragraph("", st["small"])
+                row = [_p(f"(continued) {r['business_name']}", st["small"]), blank, blank, blank,
+                       _p(piece, st["small"]), blank]
+            if multi:
+                row.insert(0, _p(r["date"], st["small"]))
+            rows.append(row)
+    if rows:
+        story.append(_grid(head, rows, widths, st))
+    else:
+        story.append(_p("No confirmed stops in this period.", st["base"]))
+
+    story.append(Paragraph("Excluded", st["h1"]))
+    story.append(_p("Left out on purpose (Personal or not confirmed). Times only.", st["small"]))
+    any_ex = False
+    for day in report["days"]:
+        for e in day["excluded"]:
+            any_ex = True
+            prefix = f"{day['date']} " if multi else ""
+            story.append(_p(f"{prefix}{e['arrival']} to {e['departure']}: {e['reason']}", st["base"]))
+    if not any_ex:
+        story.append(_p("None.", st["base"]))
+
+    story.append(KeepTogether([Paragraph("How to read this report", st["h1"])] +
+                              [_p(f"{i}. {t}", st["small"]) for i, t in enumerate(INSTRUCTIONS, 1)]))
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    return buf.getvalue()

@@ -103,3 +103,8 @@ footer { padding:8px max(12px, env(safe-area-inset-right)) max(8px, env(safe-are
 
 .panel select, .panel > input, .panel > button { width:100%; margin-bottom:8px; }
 select { padding:8px 10px; width:100%; min-height:40px; -webkit-appearance:menulist; appearance:auto; }
+
+.btn { display:inline-flex; align-items:center; justify-content:center; padding:8px 14px; min-height:40px; border:1px solid var(--line);
+       border-radius:8px; color:var(--fg); text-decoration:none; background:var(--bg); }
+.btn.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+.btn:not([href]) { opacity:.45; pointer-events:none; }
