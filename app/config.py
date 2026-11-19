@@ -22,6 +22,8 @@ class Config:
     max_acc_m: int
     app_password: str
     data_dir: str
+    places_radius_m: int = 150
+    overpass_url: str = "https://overpass-api.de/api/interpreter"
 
     @classmethod
     def from_env(cls):
@@ -41,4 +43,6 @@ class Config:
             max_acc_m=_int("MAX_ACC_M", 100),
             app_password=e("APP_PASSWORD", ""),
             data_dir=e("DATA_DIR", "/data"),
+            places_radius_m=_int("PLACES_RADIUS_M", 150),
+            overpass_url=e("OVERPASS_URL", "https://overpass-api.de/api/interpreter"),
         )

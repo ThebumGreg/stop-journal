@@ -33,6 +33,12 @@ CREATE TABLE IF NOT EXISTS known_sites (
   last_confirmed TEXT
 );
 
+CREATE TABLE IF NOT EXISTS place_cache (
+  key TEXT PRIMARY KEY,
+  response_json TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS stops (
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL,
