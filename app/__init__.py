@@ -91,6 +91,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         datetime.fromisoformat(date)  # 400s on junk via ValueError -> 500; fine for v1
         return render_template("day.html", date=date, tz=base.app_tz)
 
+    @app.get("/tools")
+    def tools_page():
+        return render_template("tools.html")
+
     # ---- the editable day ---------------------------------------------
     def with_conn(fn, *a, **kw):
         """Run fn(conn, cfg, ...) with effective settings; EditError -> 400."""

@@ -275,7 +275,7 @@ function buildEdit(edit, s, i) {
   notes.oninput = () => remember('notes', notes.value);
 
   const seg = el('div', 'seg');
-  const segBtns = ['Draft', 'Confirmed', 'Personal'].map(st => {
+  const segBtns = ['Draft', 'Confirmed', 'Personal', 'Lunch', 'Traffic'].map(st => {
     const b = el('button', d.status === st ? 'on' : '', st); b.type = 'button';
     b.onclick = () => {
       remember('status', st);
@@ -387,7 +387,8 @@ function toolbar() {
   const isToday = S.date === new Date().toLocaleDateString('en-CA');
   const mk0 = S.marks || {};
   if (isToday && !mk0.start) {
-    const b = mk('Start day', () => markNow('start'));
+    const openForm = () => { S.tool = S.tool === 'day' ? null : 'day'; render(false); };
+    const b = mk('Start day', () => (mk0.end ? openForm() : markNow('start')));
     b.className = 'primary';
     if (!mk0.end) mk('End day', () => markNow('end'));
     else mk('Day —–' + mk0.end, () => { S.tool = S.tool === 'day' ? null : 'day'; render(false); });
@@ -424,8 +425,6 @@ function toolbar() {
     });
     u.className = 'undo';
   }
-  mk('Re-detect…', () => { S.tool = S.tool === 'redo' ? null : 'redo'; render(false); });
-  mk('Export…', () => { S.tool = S.tool === 'export' ? null : 'export'; render(false); });
   if (S.flash) bar.append(el('span', 'hint', S.flash));
   return bar;
 }
@@ -436,9 +435,8 @@ async function markNow(which) {
     applyDay(d);
     if (which === 'end') {
       const n = S.totals.draft;
-      S.flash = n ? n + ' stop' + (n > 1 ? 's' : '') + ' still in Draft: review before exporting.'
-                  : 'Day ended. Everything is reviewed.';
-      S.tool = 'export';
+      if (!n) { location.href = '/tools?date=' + S.date; return; }
+      S.flash = n + ' stop' + (n > 1 ? 's' : '') + ' still in Draft: review them, then use Export.';
     } else S.flash = 'Day started.';
     render(false);
   } catch (e) { alert(e.message); }
@@ -483,61 +481,6 @@ function addForm() {
   return f;
 }
 
-function exportForm() {
-  const f = el('div', 'redo');
-  const from = el('input'); from.type = 'date'; from.value = S.date;
-  const to = el('input'); to.type = 'date'; to.value = S.date;
-  const two = el('div', 'two'); two.append(labeled('From', from), labeled('To', to));
-  const info = el('div', 'hint', 'Checking…');
-  const pdf = el('a', 'btn primary', 'Download PDF'), js = el('a', 'btn', 'Download JSON');
-  const dbg = el('a', 'btn', 'Debug data');
-  dbg.title = 'Raw GPS points, detected stops and your edits for the “From” day (contains locations)';
-  const acts = el('div', 'acts'); acts.append(pdf, js, dbg);
-  const q = () => 'from=' + from.value + '&to=' + (to.value || from.value);
-  async function refresh() {
-    info.className = 'hint'; info.textContent = 'Checking…';
-    pdf.removeAttribute('href'); js.removeAttribute('href'); dbg.removeAttribute('href');
-    try {
-      const c = await api('GET', '/api/export/check?' + q());
-      const bits = [c.confirmed + ' confirmed stop' + (c.confirmed === 1 ? '' : 's') + ' will be included'];
-      if (c.not_confirmed) bits.push(c.not_confirmed + ' not confirmed (left out)');
-      if (c.personal) bits.push(c.personal + ' personal (left out)');
-      info.textContent = bits.join(' · ') + (c.not_confirmed ? '. Confirm them first if they belong in the report.' : '.');
-      info.className = c.not_confirmed ? 'err' : 'hint';
-      pdf.href = '/api/export.pdf?' + q(); js.href = '/api/export.json?' + q();
-      dbg.href = '/api/debug/' + from.value + '.json';
-    } catch (e) { info.className = 'err'; info.textContent = e.message; }
-  }
-  from.onchange = () => { if (to.value < from.value) to.value = from.value; refresh(); };
-  to.onchange = refresh;
-  f.append(el('div', 'hint', 'Only Confirmed stops are included in detail. Pick a range to export several days.'),
-           two, info, acts);
-  refresh();
-  return f;
-}
-
-function redoForm() {
-  const f = el('div', 'redo');
-  f.append(el('div', 'hint', 'Detect again with different thresholds. Leave blank for your saved defaults. ' +
-    'This discards edits to detected stops for this day; manual stops are kept.'));
-  const row = el('div', 'r');
-  const mk = (label) => { const i = el('input'); i.inputMode = 'numeric'; row.append(label, i); return i; };
-  const min = mk('min (min)'), rad = mk('radius (m)'), gap = mk('gap (min)');
-  const err = el('div', 'err');
-  const go = el('button', null, 'Re-detect');
-  go.onclick = () => {
-    if (!confirm('Discard edits to detected stops for this day and detect again?')) return;
-    const body = {};
-    if (min.value) body.min = min.value;
-    if (rad.value) body.radius = rad.value;
-    if (gap.value) body.gap = gap.value;
-    run(() => api('POST', '/api/day/' + S.date + '/redetect', body), err,
-        () => { S.tool = null; S.drafts = {}; S.open.clear(); S.openDrives.clear(); S.sel = null; });
-  };
-  f.append(row, go, err);
-  return f;
-}
-
 // ---- render ------------------------------------------------------------
 function render(fit) {
   const keep = listEl.scrollTop;
@@ -545,8 +488,6 @@ function render(fit) {
   listEl.replaceChildren(toolbar());
   if (S.tool === 'add') listEl.append(addForm());
   if (S.tool === 'day') listEl.append(dayForm());
-  if (S.tool === 'redo') listEl.append(redoForm());
-  if (S.tool === 'export') listEl.append(exportForm());
   const bounds = [];
   if (S.path.length) {
     L.polyline(S.path, {color: '#0b66d0', weight: 3, opacity: .7}).addTo(pathLayer);
@@ -569,12 +510,13 @@ function render(fit) {
   const drafts = t.draft ? ' · ' + t.draft + ' draft' + (t.draft_short ? ' (+' + t.draft_short + ' short)' : '') : '';
   footEl.textContent = 'On site ' + dur(Math.round((t.on_site_s || 0) / 60)) + ' · Driving ' +
     dur(Math.round((t.drive_s || 0) / 60)) + ' · ~' + (t.miles_approx || 0) + ' mi · ' + (t.confirmed || 0) +
-    ' confirmed' + drafts + (t.personal ? ' · ' + t.personal + ' personal' : '');
+    ' confirmed' + drafts + (t.personal ? ' · ' + t.personal + ' personal' : '') + (t.lunch ? ' · lunch' : '') + (t.traffic ? ' · ' + t.traffic + ' traffic' : '');
   footEl.style.color = t.draft ? 'var(--err)' : '';
 }
 
 async function load() {
   S.date = dateEl.value;
+  document.getElementById('toolslink').href = '/tools?date=' + S.date;
   history.replaceState(null, '', '/day/' + S.date);
   S.tool = null; S.sel = null; S.flash = ''; S.drafts = {}; S.open.clear(); S.openDrives.clear();
   pathLayer.clearLayers(); candLayer.clearLayers(); markers = {};

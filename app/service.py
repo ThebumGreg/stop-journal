@@ -5,9 +5,10 @@ touched. Drives are derived from the stop order (one between each neighbouring
 pair) and keep their notes / edited times while the pair still exists.
 
 Totals rules (documented here because the UI and PDF rely on them):
-  * on-site time counts every non-Personal stop that is a real stop, plus short
-    stops the user has Confirmed;
-  * a drive counts unless one of its two ends is a Personal stop;
+  * on-site time counts every stop that is a real stop and not Personal, Lunch or Traffic, plus
+    short stops the user has Confirmed;
+  * a drive counts unless one of its two ends is a Personal or Lunch stop;
+  * a Traffic stop (a slow-down mistaken for a stop) is not on-site time; its minutes count as drive time;
   * "draft" counts Draft stops of kind 'stop' (Draft short stops are clutter and
     are counted separately).
 """
@@ -21,7 +22,8 @@ from .errors import EditError
 from .geo import haversine_m
 from .places import known
 
-STATUSES = ("Draft", "Confirmed", "Personal")
+STATUSES = ("Draft", "Confirmed", "Personal", "Lunch", "Traffic")
+OFF_CLOCK = ("Personal", "Lunch")   # not work: the stop and the drives to and from it are excluded
 
 
 
@@ -375,7 +377,7 @@ def patch_stop(conn, cfg, sid, f):
         upd["known_site_id"] = int(f["known_site_id"]) if f["known_site_id"] else None
     if "status" in f:
         if f["status"] not in STATUSES:
-            raise EditError("Status must be Draft, Confirmed or Personal.")
+            raise EditError("Status must be Draft, Confirmed, Personal, Lunch or Traffic.")
         upd["status"] = f["status"]
     if "lat" in f or "lon" in f:
         upd["lat"] = _float(f.get("lat"), -90, 90, "Latitude")
@@ -550,6 +552,9 @@ def patch_drive(conn, cfg, did, f):
 
 
 # ---- read side ---------------------------------------------------------
+START_SLACK_S = 120
+
+
 def drive_counts(stops, drives, marks=None):
     """{drive id: counts toward work totals}. A drive counts unless one end is a Personal stop.
     Exception, driven by the Start day / End day taps: the day's first drive out of a Personal
@@ -559,12 +564,17 @@ def drive_counts(stops, drives, marks=None):
     start or end work around it.
     Mid-day Personal stops (lunch, errands) always stay excluded."""
     marks = marks or {}
-    personal = {s["id"] for s in stops if s["status"] == "Personal"}
+    personal = {s["id"] for s in stops if s["status"] in OFF_CLOCK}
+    lunch = {s["id"] for s in stops if s["status"] == "Lunch"}
     out = {}
     for i, d in enumerate(drives):
         frm, to = d["from_stop_id"] in personal, d["to_stop_id"] in personal
         ok = not frm and not to
-        if frm and not to and i == 0 and marks.get("start_ts") and marks["start_ts"] < d["arrive_ts"]:
+        if d["from_stop_id"] in lunch or d["to_stop_id"] in lunch:
+            out[d["id"]] = False
+            continue
+        # Start day tapped within START_SLACK_S of arriving means "started on arrival": no commute
+        if frm and not to and i == 0 and marks.get("start_ts") and marks["start_ts"] < d["arrive_ts"] - START_SLACK_S:
             ok = True
         if to and not frm and i == len(drives) - 1 and marks.get("end_ts") and marks["end_ts"] < d["arrive_ts"]:
             ok = True
@@ -574,20 +584,24 @@ def drive_counts(stops, drives, marks=None):
 
 def totals(stops, drives, marks=None):
     def counts(s):
-        return s["status"] != "Personal" and (s["kind"] == "stop" or s["status"] == "Confirmed")
+        return s["status"] not in OFF_CLOCK + ("Traffic",) and (s["kind"] == "stop" or s["status"] == "Confirmed")
 
     personal = {s["id"] for s in stops if s["status"] == "Personal"}
+    traffic_s = sum(s["depart_ts"] - s["arrive_ts"] for s in stops if s["status"] == "Traffic")
     on_site = sum(s["depart_ts"] - s["arrive_ts"] for s in stops if counts(s))
     ok = drive_counts(stops, drives, marks)
     live = [d for d in drives if ok[d["id"]]]
     return {
         "on_site_s": on_site,
-        "drive_s": sum(d["arrive_ts"] - d["depart_ts"] for d in live),
+        "drive_s": sum(d["arrive_ts"] - d["depart_ts"] for d in live) + traffic_s,
+        "traffic_s": traffic_s,
         "miles_approx": round(sum(d["distance_m"] for d in live) / 1609.344, 1),
         "confirmed": sum(1 for s in stops if s["status"] == "Confirmed"),
         "draft": sum(1 for s in stops if s["status"] == "Draft" and s["kind"] == "stop"),
         "draft_short": sum(1 for s in stops if s["status"] == "Draft" and s["kind"] == "short"),
         "personal": len(personal),
+        "lunch": sum(1 for s in stops if s["status"] == "Lunch"),
+        "traffic": sum(1 for s in stops if s["status"] == "Traffic"),
     }
 
 
@@ -605,7 +619,7 @@ def day_payload(conn, cfg, date, include_path=False):
         "status": r["status"] or "Draft", "known_site_id": r["known_site_id"],
         "hubspot_company_id": r["hubspot_company_id"] or "",
         "edited": bool(r["edited"]), "suggest": suggestion(conn, r),
-        "usual": parts.usual_for(conn, r) if r["status"] != "Personal" else [],
+        "usual": parts.usual_for(conn, r) if r["status"] not in OFF_CLOCK + ("Traffic",) else [],
     } for r in _ordered(conn, date)]
     drives = [{
         "id": r["id"], "from_stop_id": r["from_stop_id"], "to_stop_id": r["to_stop_id"],

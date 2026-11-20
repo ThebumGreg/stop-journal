@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "_head.html" %}
+<title>JobHub – Export & tools</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
+<style>
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .two > div { min-width:0; }
+  .box { display:grid; gap:8px; }
+  #redo .row { flex-wrap:nowrap; align-items:flex-end; }
+  #redo .row > div { flex:1; min-width:0; }
+  .acts { display:flex; gap:8px; flex-wrap:wrap; }
+  .btn { display:inline-flex; align-items:center; justify-content:center; padding:8px 14px; min-height:40px; border:1px solid var(--line);
+         border-radius:8px; color:var(--fg); background:var(--bg); text-decoration:none; }
+  .btn.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .btn:not([href]), a.btn.disabled { opacity:.45; pointer-events:none; }
+</style>
+</head>
+<body>
+{% include "_header.html" %}
+<main>
+  <h1 class="page-title">Export &amp; tools</h1>
+  <p><a id="backlink" href="/">&larr; Back to the day</a></p>
+  <label for="tdate">Day</label>
+  <input type="date" id="tdate">
+
+  <h2>Export report</h2>
+  <div id="export"></div>
+
+  <h2>Re-detect this day</h2>
+  <div id="redo"></div>
+</main>
+<script src="{{ url_for('static', filename='tools.js') }}"></script>
+</body>
+</html>

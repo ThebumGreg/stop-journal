@@ -64,7 +64,10 @@ main { flex:1; display:flex; min-height:0; }
 .head { display:flex; gap:10px; align-items:center; padding:12px; min-height:56px; cursor:pointer; }
 .num { min-width:28px; height:28px; border-radius:50%; color:#fff; font-size:13px; font-weight:700; display:grid; place-items:center; background:var(--draft); }
 .st-Confirmed .num, .pin.st-Confirmed { background:var(--conf); }
-.st-Personal .num, .pin.st-Personal { background:var(--pers); }
+.st-Personal .num, .pin.st-Personal, .st-Lunch .num, .pin.st-Lunch, .st-Traffic .num, .pin.st-Traffic { background:var(--pers); }
+a.btn.disabled { opacity:.45; pointer-events:none; }
+.seg { flex-wrap:wrap; }
+.seg button { font-size:14px; padding-left:4px; padding-right:4px; }
 .card.short .num { opacity:.6; }
 .head .t { font-weight:600; }
 .head .m { color:var(--muted); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

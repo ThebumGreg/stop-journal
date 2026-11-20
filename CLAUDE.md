@@ -170,6 +170,12 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   of a Personal stop (home) counts if Start day was tapped before it ended, and the last drive into a Personal stop
   counts if End day was tapped before it ended (`service.drive_counts`); mid-day Personal stops stay excluded.
 - Start day and End day are independent: End can be tapped without Start (the toolbar shows both until one is set).
+- Stop statuses are Draft, Confirmed, Personal, Lunch, Traffic. Lunch: left out of on-site time, the drives to and
+  from it do not count, and the report lists it by time only ("Lunch"). Traffic: a slow-down detected as a stop; not on-site
+  time, its minutes are added to drive time (`traffic_minutes` in the report summary). The Export panel blocks PDF/JSON
+  while any stop is still Draft (an "Export anyway" tickbox overrides). Start day within 2 minutes of arriving
+  (`START_SLACK_S`) means you started on arrival, so that commute is not counted.
+- Export, Re-detect and Debug data live on the **Export & tools** page (`/tools?date=`, linked from the header on every page), not on the day page. Tapping End day with no Drafts left jumps there.
 - Undo (`undo_log`, last 10 per day) for delete, merge, split, re-detect and Confirm all; one-tap confirm for
   Draft stops that sit on a saved place; "usual parts" per business.
 - Alerts (Pushover, generic text only): no data, Recorder down, end-of-day Draft review, low truck stock.

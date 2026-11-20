@@ -1,0 +1,98 @@
+// Export & tools page: export, re-detect, debug data for one day. Standalone (no day.js).
+const DATE = new URLSearchParams(location.search).get('date') || new Date().toLocaleDateString('en-CA');
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function labeled(label, input) { const w = el('div'); w.append(el('label', null, label), input); return w; }
+async function api(method, url, body) {
+  const r = await fetch(url, {method, headers: body ? {'Content-Type': 'application/json'} : {},
+                              body: body ? JSON.stringify(body) : undefined});
+  if (r.status === 401) { location.href = '/login'; throw new Error('Login required'); }
+  let d = null;
+  try { d = await r.json(); } catch (e) { /* non-JSON error page */ }
+  if (!r.ok) throw new Error((d && d.error) || 'Request failed (' + r.status + ')');
+  return d;
+}
+
+function exportForm() {
+  const f = el('div', 'box');
+  const from = el('input'); from.type = 'date'; from.value = DATE;
+  const to = el('input'); to.type = 'date'; to.value = DATE;
+  const two = el('div', 'two'); two.append(labeled('From', from), labeled('To', to));
+  const info = el('div', 'hint', 'Checking…');
+  const pdf = el('a', 'btn primary', 'Download PDF'), js = el('a', 'btn', 'Download JSON');
+  const dbg = el('a', 'btn', 'Debug data');
+  dbg.title = 'Raw GPS points, detected stops and your edits for the “From” day (contains locations)';
+  const acts = el('div', 'acts'); acts.append(pdf, js, dbg);
+  const q = () => 'from=' + from.value + '&to=' + (to.value || from.value);
+  let blocked = false;
+  const overBox = el('input'); overBox.type = 'checkbox';
+  const over = el('label', 'hint'); over.append(overBox, ' Export anyway, leaving those out'); over.hidden = true;
+  function setLinks() {
+    const on = !blocked || overBox.checked;
+    for (const a of [pdf, js]) {
+      a.classList.toggle('disabled', !on);
+      a.setAttribute('aria-disabled', on ? 'false' : 'true');
+    }
+    if (on) { pdf.href = '/api/export.pdf?' + q(); js.href = '/api/export.json?' + q(); }
+    else { pdf.removeAttribute('href'); js.removeAttribute('href'); }
+  }
+  overBox.onchange = setLinks;
+  async function refresh() {
+    info.className = 'hint'; info.textContent = 'Checking…';
+    pdf.removeAttribute('href'); js.removeAttribute('href'); dbg.removeAttribute('href');
+    try {
+      const c = await api('GET', '/api/export/check?' + q());
+      const bits = [c.confirmed + ' confirmed stop' + (c.confirmed === 1 ? '' : 's') + ' will be included'];
+      if (c.not_confirmed) bits.push(c.not_confirmed + ' not confirmed (left out)');
+      if (c.personal) bits.push(c.personal + ' personal, lunch or traffic (left out)');
+      info.textContent = bits.join(' · ') + (c.not_confirmed
+        ? '. Confirm each one, or mark it Personal, Lunch or Traffic, before exporting.' : '.');
+      info.className = c.not_confirmed ? 'err' : 'hint';
+      blocked = c.not_confirmed > 0;
+      over.hidden = !blocked; overBox.checked = false;
+      setLinks();
+      dbg.href = '/api/debug/' + from.value + '.json';
+    } catch (e) { info.className = 'err'; info.textContent = e.message; }
+  }
+  from.onchange = () => { if (to.value < from.value) to.value = from.value; refresh(); };
+  to.onchange = refresh;
+  f.append(el('div', 'hint', 'Only Confirmed stops are included in detail. Pick a range to export several days.'),
+           two, info, over, acts);
+  refresh();
+  return f;
+}
+
+function redoForm() {
+  const f = el('div', 'box');
+  f.append(el('div', 'hint', 'Detect the day again, optionally with different thresholds (blank = your saved defaults). ' +
+    'This discards edits to detected stops for this day; manual stops are kept. You can Undo it on the day page.'));
+  const row = el('div', 'row');
+  const mk = (label) => { const w = el('div'); const i = el('input'); i.inputMode = 'numeric';
+    w.append(el('label', null, label), i); row.append(w); return i; };
+  const min = mk('Min stop (min)'), rad = mk('Radius (m)'), gap = mk('Gap (min)');
+  const err = el('div', 'err');
+  const go = el('button', null, 'Re-detect ' + DATE);
+  go.onclick = async () => {
+    if (!confirm('Discard edits to detected stops for ' + DATE + ' and detect again?')) return;
+    const body = {};
+    if (min.value) body.min = min.value;
+    if (rad.value) body.radius = rad.value;
+    if (gap.value) body.gap = gap.value;
+    try { await api('POST', '/api/day/' + DATE + '/redetect', body); location.href = '/day/' + DATE; }
+    catch (e) { err.textContent = e.message; }
+  };
+  f.append(row, go, err);
+  return f;
+}
+
+const dateIn = document.getElementById('tdate');
+dateIn.value = DATE;
+dateIn.onchange = () => { location.href = '/tools?date=' + dateIn.value; };
+document.getElementById('backlink').href = '/day/' + DATE;
+document.getElementById('export').append(exportForm());
+document.getElementById('redo').append(redoForm());

@@ -65,13 +65,14 @@ def build_day(payload, cfg):
     out_stops, excluded = [], []
     for s in stops:
         if s["status"] != "Confirmed":
-            excluded.append({"arrival": s["arrive"], "departure": s["depart"],
-                             "reason": "Personal" if s["status"] == "Personal"
-                             else "Not confirmed" + (" (short stop)" if s["kind"] == "short" else "")})
+            reason = {"Personal": "Personal", "Lunch": "Lunch",
+                      "Traffic": "Traffic (counted as drive time)"}.get(s["status"]) or \
+                "Not confirmed" + (" (short stop)" if s["kind"] == "short" else "")
+            excluded.append({"arrival": s["arrive"], "departure": s["depart"], "reason": reason})
             continue
         d = drive_into.get(s["id"])
         drive = None
-        if d and d.get("counts", status.get(d["from_stop_id"]) != "Personal"):
+        if d and d.get("counts", status.get(d["from_stop_id"]) not in ("Personal", "Lunch")):
             drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "notes": d["notes"]}
         used, consumed = _split_parts(s["parts"])
         out_stops.append({
@@ -90,6 +91,8 @@ def build_day(payload, cfg):
         })
     drive_min = sum(s["drive_from_previous_stop"]["minutes"] for s in out_stops if s["drive_from_previous_stop"])
     miles = sum(s["drive_from_previous_stop"]["miles_approx"] for s in out_stops if s["drive_from_previous_stop"])
+    traffic = sum(s["minutes"] for s in stops if s["status"] == "Traffic")
+    drive_min += traffic
     final = None   # last drive of the day into a Personal stop (e.g. home), counted via End day
     if drives and drives[-1].get("counts") and status.get(drives[-1]["to_stop_id"]) == "Personal":
         final = {"minutes": drives[-1]["minutes"], "miles_approx": drives[-1]["miles_approx"]}
@@ -99,7 +102,7 @@ def build_day(payload, cfg):
     return {"date": payload["date"],
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
-                        "drive_minutes": drive_min, "miles_approx": round(miles, 1),
+                        "drive_minutes": drive_min, "traffic_minutes": traffic, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded)},
             "drive_after_last_stop": final,
             "stops": out_stops, "excluded": excluded}
@@ -137,7 +140,7 @@ def check(report):
     out = {"days": [], "confirmed": 0, "not_confirmed": 0, "personal": 0}
     for d in report["days"]:
         nc = sum(1 for e in d["excluded"] if e["reason"].startswith("Not confirmed"))
-        pe = sum(1 for e in d["excluded"] if e["reason"] == "Personal")
+        pe = sum(1 for e in d["excluded"] if e["reason"] in ("Personal", "Lunch") or e["reason"].startswith("Traffic"))
         out["days"].append({"date": d["date"], "confirmed": d["summary"]["stops_confirmed"],
                             "not_confirmed": nc, "personal": pe})
         out["confirmed"] += d["summary"]["stops_confirmed"]

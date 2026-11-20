@@ -41,8 +41,9 @@ INSTRUCTIONS = [
     "day before that drive ended, in which case the commute is included). Drive after last stop: the "
     "drive home, included only when the user ended the work day before arriving.",
     "Records to update: one row per confirmed stop. This table is what to act on.",
-    "Excluded: stops that were Personal or not confirmed, shown by time only. They were left out on "
-    "purpose; do not create records for them.",
+    "Excluded: stops that were Personal, Lunch or not confirmed, shown by time only. They were left out on "
+    "purpose; do not create records for them. A Traffic entry was a slow-down, not a visit: its minutes are "
+    "already included in drive time.",
 ]
 
 
@@ -220,7 +221,7 @@ def render(report):
         story.append(_p("No confirmed stops in this period.", st["base"]))
 
     story.append(Paragraph("Excluded", st["h1"]))
-    story.append(_p("Left out on purpose (Personal or not confirmed). Times only.", st["small"]))
+    story.append(_p("Left out on purpose (Personal, Lunch, Traffic or not confirmed). Times only.", st["small"]))
     any_ex = False
     for day in report["days"]:
         for e in day["excluded"]:

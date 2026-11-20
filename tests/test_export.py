@@ -33,7 +33,7 @@ def scenario(c):
     c.post(f"/api/stops/{ids[0]}/parts", json={"part_id": v["id"], "qty": 2})
     c.patch(f"/api/stops/{ids[1]}", json={"status": "Confirmed", "business_name": "Beta Plumbing",
                                          "address": "9 Oak Ave", "notes": "Quoted job."})
-    c.patch(f"/api/stops/{ids[2]}", json={"status": "Personal", "business_name": "Lunch"})
+    c.patch(f"/api/stops/{ids[2]}", json={"status": "Personal", "business_name": "Secret Diner"})
     c.post(f"/api/day/{D}/stops", json={"arrive": "13:30", "depart": "14:00", "business_name": "Phone job"})
     return ids
 
@@ -62,7 +62,7 @@ def test_json_report_structure_and_values(tmp_path):
     rec = rep["records_to_update"]
     assert [x["business_name"] for x in rec] == ["Acme Hardware", "Beta Plumbing"]
     assert rec[0]["parts_used"] == ["2 x 1/2 in. ball valve (BV-050)"]
-    assert "Lunch" not in r.get_data(as_text=True)                       # excluded stops carry no detail
+    assert "Secret Diner" not in r.get_data(as_text=True)                       # excluded stops carry no detail
 
 
 def test_drive_from_personal_stop_is_blank(tmp_path):
@@ -101,7 +101,7 @@ def test_pdf_text_extraction_every_field_in_sensible_order(tmp_path):
         assert needle in flat, needle
     # records table, excluded section (times only), instructions
     assert "12:00 to 12:45: Personal" in flat and "13:30 to 14:00: Not confirmed" in flat
-    assert "Lunch" not in text and "Phone job" not in text
+    assert "Secret Diner" not in text and "Phone job" not in text
     assert "How to read this report" in flat and "do not create records for them" in flat
 
     pos = 0
@@ -170,9 +170,14 @@ def test_export_requires_login(tmp_path):
     assert c.get(f"/api/export.pdf?from={D}").status_code == 200
 
 
-def test_export_button_present_in_ui(tmp_path):
-    js = make(tmp_path).get("/static/day.js").data.decode()
-    assert "Export…" in js and "/api/export.pdf" in js
+def test_export_lives_on_tools_page(tmp_path):
+    c = make(tmp_path)
+    page = c.get(f"/tools?date={D}")
+    assert page.status_code == 200 and b"Export" in page.data
+    assert "/api/export.pdf" in c.get("/static/tools.js").data.decode()
+    day = c.get("/static/day.js").data.decode()
+    assert "Export…" not in day and "Re-detect…" not in day
+    assert b'href="/tools"' in c.get(f"/day/{D}").data
 
 
 def test_one_huge_line_and_words_are_not_split(tmp_path):
