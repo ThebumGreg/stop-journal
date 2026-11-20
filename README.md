@@ -15,7 +15,7 @@ Single user. Your location data stays on your own server.
 - Per stop: business, address, times, drag-to-move pin, **work performed**, **parts used**, status
   (Draft / Confirmed / Personal). Split, merge, delete, or add a stop by hand.
 - Saved **Places** (home, office, vendors) pre-fill and pre-mark matching stops.
-- **Truck parts and consumables**: a catalog with stock levels, CSV import/export, reorder levels, non-billable
+- **Truck parts and consumables**: a catalog with stock levels, fixed unit list and pack sizes (buy a bag of 25, use them one by one), vendor and category dropdowns, CSV import/export, reorder levels, non-billable
   consumables, a weekly **Count the truck** screen and a vendor-grouped **Shopping list**.
 - **Export** (own page, header link): a text-based PDF and a JSON twin for one day or a date range.
 - **Alerts** to your phone through Pushover (for example: no location data during work hours).

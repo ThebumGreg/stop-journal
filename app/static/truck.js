@@ -23,8 +23,42 @@ async function api(method, url, body, raw) {
   return d;
 }
 
+let CH = {vendors: [], categories: [], units: []};
+const showOff = () => document.getElementById('showoff').checked;
+
+// A dropdown of fixed choices. `more` adds a "+ New…" entry that asks for a name (vendors, categories).
+function choiceSelect(values, current, opts) {
+  const sel = el('select');
+  const add = (v, t) => { const o = el('option', null, t === undefined ? v : t); o.value = v; sel.append(o); return o; };
+  if (opts.blank !== undefined) add('', opts.blank);
+  const items = values.map(v => typeof v === 'string' ? [v, v] : [v.value, v.label]);
+  if (current && !items.some(([v]) => v === current)) items.push([current, current]);   // an older value stays selectable
+  items.forEach(([v, t]) => add(v, t));
+  if (opts.more) add('__new__', '+ New ' + opts.more + '…');
+  sel.value = current || (opts.blank !== undefined ? '' : (items[0] || [''])[0]);
+  if (opts.more) {
+    let prev = sel.value;
+    sel.onchange = () => {
+      if (sel.value !== '__new__') { prev = sel.value; return; }
+      const name = (prompt('New ' + opts.more + ' name:') || '').trim();
+      if (!name) { sel.value = prev; return; }
+      const o = document.createElement('option'); o.value = name; o.textContent = name;
+      sel.insertBefore(o, sel.querySelector('option[value="__new__"]'));
+      sel.value = prev = name;
+    };
+  }
+  return sel;
+}
+const vendorSel = cur => choiceSelect(CH.vendors, cur, {blank: 'No vendor', more: 'vendor'});
+const categorySel = cur => choiceSelect(CH.categories, cur, {blank: 'No category', more: 'category'});
+const unitSel = cur => choiceSelect(CH.units, cur || 'ea', {});
+const packUnitSel = cur => choiceSelect(CH.units, cur || '', {blank: '—'});
+
 async function load() {
-  PARTS = (await api('GET', '/api/parts')).parts;
+  [PARTS, CH] = await Promise.all([
+    api('GET', '/api/parts' + (showOff() ? '?all=1' : '')).then(r => r.parts),
+    api('GET', '/api/parts/choices')]);
+  fillAddForm();
   render();
 }
 
@@ -35,7 +69,7 @@ function qtyText(p) {
 
 function render() {
   const f = document.getElementById('filter').value.trim().toLowerCase();
-  const shown = PARTS.filter(p => (!KIND || p.kind === KIND) && (!f || p.name.toLowerCase().includes(f) ||
+  const shown = PARTS.filter(p => (!KIND || (KIND === 'low' ? p.low : p.kind === KIND)) && (!f || p.name.toLowerCase().includes(f) ||
     p.sku.toLowerCase().includes(f) || p.category.toLowerCase().includes(f) || (p.vendor || '').toLowerCase().includes(f)));
   document.getElementById('count').textContent = '(' + shown.length + (shown.length !== PARTS.length ? ' of ' + PARTS.length : '') + ')';
   listEl.replaceChildren();
@@ -48,7 +82,7 @@ function partRow(p) {
   const head = el('div', 'head');
   const body = el('div', 'body');
   body.append(el('div', 'n', p.name),
-    el('div', 'm', [p.kind !== 'part' ? p.kind : '', p.sku, p.category, p.vendor, money(p.unit_cost),
+    el('div', 'm', [p.active ? '' : 'REMOVED', p.kind !== 'part' ? p.kind : '', p.sku, p.category, p.vendor, money(p.unit_cost),
       p.billable ? 'billable' : 'not billable',
       p.low ? 'LOW – reorder at ' + p.reorder_at : ''].filter(Boolean).join(' · ')));
   const q = qtyText(p);
@@ -66,17 +100,26 @@ function partRow(p) {
     catch (e) { err.textContent = e.message; }
   };
   const add = el('button', null, '+ Add stock'); add.onclick = adj(() => ({delta: amt.value}));
-  const rem = el('button', null, '− Remove'); rem.onclick = adj(() => ({delta: amt.value ? -Math.abs(Number(amt.value)) : ''}));
-  const set = el('button', null, 'Set count to'); set.onclick = adj(() => ({set: amt.value}));
-  const stock = el('div', 'row'); stock.append(amt, add, rem, set);
+  const rem = el('button', null, '− Remove stock'); rem.onclick = adj(() => ({delta: amt.value ? -Math.abs(Number(amt.value)) : ''}));
+  const set = el('button', null, 'Set stock count to'); set.onclick = adj(() => ({set: amt.value}));
+  const stock = el('div', 'row'); stock.append(amt, add);
+  if (p.pack_size) {
+    const pk = el('button', null, '+ Add ' + (p.pack_unit || 'pack') + ' (' + p.pack_size + ')');
+    pk.title = 'Adds the pack size for each pack received; leave the amount blank for one';
+    pk.onclick = adj(() => ({packs: amt.value || 1}));
+    stock.append(pk);
+  }
+  stock.append(rem, set);
 
   // details
   const F = {};
   const mk = (k, label, val, type) => { const i = el('input'); i.value = val == null ? '' : val; if (type) i.inputMode = type; F[k] = i; return lab(label, i); };
   const grid = el('div', 'grid');
-  grid.append(mk('name', 'Name', p.name), mk('sku', 'Part #', p.sku), mk('unit', 'Unit', p.unit),
-    mk('unit_cost', 'Unit cost', p.unit_cost, 'decimal'), mk('category', 'Category', p.category),
-    mk('reorder_at', 'Reorder at', p.reorder_at, 'decimal'), mk('vendor', 'Vendor', p.vendor));
+  const pick = (k, label, sel) => { F[k] = sel; return lab(label, sel); };
+  grid.append(mk('name', 'Name', p.name), mk('sku', 'Part #', p.sku), pick('unit', 'Unit', unitSel(p.unit)),
+    mk('unit_cost', 'Unit cost', p.unit_cost, 'decimal'), pick('category', 'Category', categorySel(p.category)),
+    mk('reorder_at', 'Reorder at', p.reorder_at, 'decimal'), pick('vendor', 'Vendor', vendorSel(p.vendor)),
+    mk('pack_size', 'Comes in packs of', p.pack_size, 'decimal'), pick('pack_unit', 'Pack is a', packUnitSel(p.pack_unit)));
   const kind = el('select');
   [['part', 'Part (billable)'], ['consumable', 'Consumable (not billed)'], ['expense', 'Expense (money, not stock)']].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; kind.append(o); });
   kind.value = p.kind;
@@ -94,10 +137,10 @@ function partRow(p) {
     Object.keys(F).forEach(k => { b[k] = F[k].value; });
     try { await api('PATCH', '/api/parts/' + p.id, b); await load(); } catch (e) { err.textContent = e.message; }
   };
-  const del = el('button', 'danger', 'Remove from catalog');
+  const del = el('button', p.active ? 'danger' : null, p.active ? 'Remove from catalog' : 'Restore to catalog');
   del.onclick = async () => {
-    if (!confirm('Remove “' + p.name + '” from the catalog? Past stops keep their records.')) return;
-    try { await api('PATCH', '/api/parts/' + p.id, {active: false}); await load(); } catch (e) { err.textContent = e.message; }
+    if (p.active && !confirm('Remove “' + p.name + '” from the catalog? Past stops keep their records.')) return;
+    try { await api('PATCH', '/api/parts/' + p.id, {active: !p.active}); await load(); } catch (e) { err.textContent = e.message; }
   };
   const acts = el('div', 'row'); acts.append(save, del);
   edit.append(el('label', null, 'Truck stock'), stock, note, grid, flags, acts, err);
@@ -106,6 +149,7 @@ function partRow(p) {
 }
 
 document.getElementById('filter').oninput = render;
+document.getElementById('showoff').onchange = () => load().catch(e => { listEl.textContent = e.message; });
 
 document.querySelectorAll('#tabs button').forEach(b => {
   b.onclick = () => {
@@ -162,7 +206,8 @@ async function showShopping() {
     const w = el('div', 'group'); w.append(el('h3', null, g.vendor));
     text += g.vendor + '\n';
     g.items.forEach(it => {
-      const line = it.suggest + ' ' + it.unit + ' × ' + it.name + (it.sku ? ' (' + it.sku + ')' : '');
+      const line = (it.packs ? it.packs + ' ' + (it.pack_unit || 'pack') + (it.packs > 1 ? 's' : '') + ' of ' + it.pack_size + ' (' + it.suggest + ' ' + it.unit + ')'
+                           : it.suggest + ' ' + it.unit) + ' × ' + it.name + (it.sku ? ' (' + it.sku + ')' : '');
       w.append(el('div', null, line)); w.append(el('div', 'hint', 'have ' + it.on_hand + ', reorder at ' + it.reorder_at + (it.kind === 'consumable' ? ' · consumable' : '')));
       text += '  ' + line + '\n';
     });
@@ -178,14 +223,23 @@ async function showShopping() {
 document.getElementById('countbtn').onclick = () => showCount().catch(e => { tools.textContent = e.message; });
 document.getElementById('shopbtn').onclick = () => showShopping().catch(e => { tools.textContent = e.message; });
 
+function fillAddForm() {
+  const swap = (id, sel) => { const old = document.getElementById(id); sel.id = id; old.replaceWith(sel); };
+  const keep = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+  const [v, c, u, pu] = ['a_vendor', 'a_category', 'a_unit', 'a_packunit'].map(keep);
+  swap('a_vendor', vendorSel(v)); swap('a_category', categorySel(c));
+  swap('a_unit', unitSel(u)); swap('a_packunit', packUnitSel(pu));
+}
+
 document.getElementById('a_go').onclick = async () => {
   const err = document.getElementById('a_err'); err.textContent = '';
   const v = id => document.getElementById(id).value;
   try {
     await api('POST', '/api/parts', {name: v('a_name'), sku: v('a_sku'), unit: v('a_unit'),
       unit_cost: v('a_cost'), on_hand: v('a_oh'), billable: document.getElementById('a_bill').checked,
-      type: v('a_kind'), vendor: v('a_vendor')});
-    ['a_name', 'a_sku', 'a_unit', 'a_cost', 'a_oh', 'a_vendor'].forEach(id => { document.getElementById(id).value = ''; });
+      type: v('a_kind'), vendor: v('a_vendor'), category: v('a_category'), reorder_at: v('a_reorder'),
+      pack_size: v('a_pack'), pack_unit: v('a_packunit')});
+    ['a_name', 'a_sku', 'a_cost', 'a_oh', 'a_reorder', 'a_pack'].forEach(id => { document.getElementById(id).value = ''; });
     await load();
   } catch (e) { err.textContent = e.message; }
 };

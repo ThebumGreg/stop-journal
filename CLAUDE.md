@@ -246,6 +246,23 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   "Non-billable materials" table in the PDF; "Records to update" lists parts only. Schema stays "1" (additive).
 - Planned, not built: purchase/restock log with cost and a consumables cost summary (phase 3); install kits (phase 4).
 
+## Parts: units, packs, dropdowns (built) and the action plan (not built)
+- `parts.unit` is one of `parts.UNITS` (ea, pair, pack, box, bag, case, roll, ft, gal, lb); the Truck page uses a dropdown, the API and
+  CSV accept common spellings (each, feet, bx...) and REJECT anything else (an older stored unit still saves while unchanged).
+  Stock is always counted in `unit`. `pack_size` + `pack_unit` describe how it is bought ("bag" of 25): the stock row has
+  "+ Add bag (25)" (`/adjust {packs}`), and the shopping list rounds up to whole packs ("1 bag of 25 (25 ea)").
+- Vendor and Category are dropdowns with "+ New…" (`/api/parts/choices`: vendors = saved vendor Places plus vendors on parts;
+  categories = those already used). Stock buttons read "+ Add stock", "− Remove stock", "Set stock count to". The Truck page has a
+  Low stock tab and "Show removed items" (with Restore).
+- Action plan for parts, in the order to build (none built yet):
+  1. New-part prompt on the job sheet: typing a part that is not in the catalog asks for unit and cost, so the PDF is never blank there.
+  2. Export warning for billable parts with no unit cost (same list as the other export warnings).
+  3. Bin / location field ("Shelf 2"); the truck count sheet sorts by it.
+  4. Shopping list: "Mark bought" (adds the stock, in packs) and a share/copy text that pastes cleanly into Notes.
+  5. Purchase log (phase 3): "+ Add stock" also records what was paid and from whom; last cost updates the part; consumables cost summary.
+  6. Possible-duplicate check when adding (similar name or part #).
+  7. Install kits (phase 4): one tap adds a bundle of parts to a stop.
+
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.
 - Show each milestone working before starting the next.

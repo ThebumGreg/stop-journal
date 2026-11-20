@@ -347,6 +347,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         kind = request.args.get("kind") if request.args.get("kind") in parts.KINDS else None
         return catalog(lambda conn: {"parts": parts.list_parts(conn, q, everything, kind)})
 
+    @app.get("/api/parts/choices")
+    def parts_choices():
+        return catalog(parts.choices)
+
     @app.get("/api/parts/count-sheet")
     def parts_count_sheet():
         kind = request.args.get("kind") if request.args.get("kind") in parts.KINDS else None
@@ -387,7 +391,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         b = request.get_json(silent=True) or {}
 
         def go(conn):
-            parts.adjust(conn, pid, b.get("delta"), b.get("set"), b.get("note", ""))
+            parts.adjust(conn, pid, b.get("delta"), b.get("set"), b.get("note", ""), b.get("packs"))
             return parts.part_dict(parts.get_part(conn, pid))
         return catalog(go)
 

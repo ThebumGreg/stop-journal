@@ -182,6 +182,8 @@ MIGRATIONS = [
     ("stops", "visit_result", "TEXT"),
     ("parts", "kind", "TEXT DEFAULT 'part'"),
     ("parts", "vendor", "TEXT"),
+    ("parts", "pack_size", "REAL"),
+    ("parts", "pack_unit", "TEXT"),
     ("stop_parts", "kind", "TEXT DEFAULT 'part'"),
     ("stops", "edited", "INTEGER DEFAULT 0"),
     ("stops", "times_edited", "INTEGER DEFAULT 0"),

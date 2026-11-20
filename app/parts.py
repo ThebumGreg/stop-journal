@@ -7,16 +7,19 @@
 * Stock may go negative (the truck count is often behind reality); the UI flags it.
 
 CSV import format (header row required, order free, extra columns ignored):
-  name (required), sku, type, unit, unit_cost, billable, category, vendor, on_hand, reorder_at
+  name (required), sku, type, unit, unit_cost, billable, category, vendor, on_hand, reorder_at, pack_size, pack_unit
   type is "part" (default), "consumable" (tape, gloves, solvent: used up, normally not billed;
   consumables default to not billable) or "expense" (parking, tolls, a purchase: money, not stock;
   never tracked or counted, not billable unless ticked).
 Common alternative headers are accepted (see ALIASES). Rows are matched to an
 existing part by sku, else by name; blank cells never overwrite existing values.
 A non-blank on_hand sets the truck count and switches tracking on.
+unit is one of UNITS (a row with any other unit is rejected; common spellings like "each" or "feet" are accepted).
+pack_size / pack_unit describe how the item is bought ("bag" of 25): stock is always counted in `unit`.
 """
 import csv
 import io
+import math
 import math
 import sqlite3
 import time
@@ -24,7 +27,12 @@ import time
 from .errors import EditError
 
 COLUMNS = ["sku", "name", "type", "unit", "unit_cost", "billable", "category", "vendor", "on_hand",
-           "reorder_at"]
+           "reorder_at", "pack_size", "pack_unit"]
+UNITS = {"ea": "Each", "pair": "Pair", "pack": "Pack", "box": "Box", "bag": "Bag", "case": "Case",
+         "roll": "Roll", "ft": "Foot", "gal": "Gallon", "lb": "Pound"}
+UNIT_WORDS = {"each": "ea", "pc": "ea", "pcs": "ea", "piece": "ea", "pieces": "ea", "feet": "ft", "foot": "ft",
+              "bx": "box", "boxes": "box", "bags": "bag", "packs": "pack", "pairs": "pair", "rolls": "roll",
+              "cases": "case", "gallon": "gal", "gallons": "gal", "pound": "lb", "pounds": "lb", "lbs": "lb"}
 KINDS = ("part", "consumable", "expense")
 KIND_WORDS = {"part": "part", "parts": "part", "billable": "part", "material": "part",
               "consumable": "consumable", "consumables": "consumable", "supply": "consumable",
@@ -41,6 +49,7 @@ ALIASES = {
     "minimum": "reorder_at", "min_qty": "reorder_at", "par": "reorder_at",
     "group": "category", "kind": "type", "item_type": "type", "part_type": "type",
     "supplier": "vendor", "preferred_vendor": "vendor", "buy_from": "vendor",
+    "pack": "pack_size", "case_qty": "pack_size", "pack_qty": "pack_size", "buy_unit": "pack_unit",
 }
 MAX_ROWS = 20000
 TRUE = {"1", "y", "yes", "true", "t", "billable"}
@@ -87,6 +96,31 @@ def _text(v, what, limit=200, required=False):
     return t
 
 
+def _unit(v, current=None):
+    """One of UNITS (blank = each). A unit the part already has is left alone, so older data still saves."""
+    t = str(v or "").strip().lower().rstrip(".")
+    if not t:
+        return "ea"
+    t = UNIT_WORDS.get(t, t)
+    if t in UNITS:
+        return t
+    if current and str(v).strip() == current:
+        return current
+    raise EditError("Unit must be one of: " + ", ".join(UNITS.values()) + ".")
+
+
+def _pack(f, current_unit=None):
+    """(pack_size or None, pack_unit) from a form/CSV record. A pack size needs a buy unit (default pack)."""
+    size = _num(f.get("pack_size"), "Pack size", 0)
+    if size is not None and size <= 0:
+        size = None
+    unit = str(f.get("pack_unit") or "").strip().lower().rstrip(".")
+    unit = UNIT_WORDS.get(unit, unit)
+    if unit and unit not in UNITS:
+        raise EditError("Pack unit must be one of: " + ", ".join(UNITS.values()) + ".")
+    return (size, unit or "pack") if size else (None, None)      # no size, no buy unit
+
+
 def _kind(v):
     """'part' | 'consumable' | 'expense' | None (blank). Anything else is an error."""
     t = str(v or "").strip().lower()
@@ -105,6 +139,7 @@ def part_dict(r):
             "category": r["category"] or "", "on_hand": r["on_hand"] or 0,
             "reorder_at": r["reorder_at"], "tracked": tracked, "active": bool(r["active"]),
             "kind": r["kind"] or "part", "vendor": r["vendor"] or "",
+            "pack_size": r["pack_size"], "pack_unit": r["pack_unit"] or "",
             "low": bool(low), "negative": bool(tracked and (r["on_hand"] or 0) < 0)}
 
 
@@ -167,11 +202,11 @@ def create_part(conn, f, tracked=False):
         tracked = True
     cur = conn.execute(
         "INSERT INTO parts(sku,name,unit,unit_cost,billable,category,on_hand,reorder_at,tracked,active,"
-        "kind,vendor) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)",
-        (sku, name, _text(f.get("unit"), "Unit", 20) or "ea", cost,
+        "kind,vendor,pack_size,pack_unit) VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?)",
+        (sku, name, _unit(f.get("unit")), cost,
          1 if billable else 0, _text(f.get("category"), "Category", 80) or None,
          0 if on_hand is None else on_hand, reorder, 1 if tracked else 0, kind,
-         _text(f.get("vendor"), "Vendor", 80) or None))
+         _text(f.get("vendor"), "Vendor", 80) or None, *_pack(f)))
     if on_hand:
         _log(conn, cur.lastrowid, on_hand, "initial")
     return cur.lastrowid
@@ -187,7 +222,7 @@ def update_part(conn, pid, f):
         _check_sku_free(conn, sku, pid)
         upd["sku"] = sku
     if "unit" in f:
-        upd["unit"] = _text(f["unit"], "Unit", 20) or "ea"
+        upd["unit"] = _unit(f["unit"], p["unit"])
     if "unit_cost" in f:
         upd["unit_cost"] = _num(f["unit_cost"], "Unit cost", 0)
     if "reorder_at" in f:
@@ -196,6 +231,10 @@ def update_part(conn, pid, f):
         upd["category"] = _text(f["category"], "Category", 80) or None
     if "vendor" in f:
         upd["vendor"] = _text(f["vendor"], "Vendor", 80) or None
+    if "pack_size" in f or "pack_unit" in f:
+        size, unit = _pack({"pack_size": f.get("pack_size", p["pack_size"]),
+                            "pack_unit": f.get("pack_unit", p["pack_unit"])})
+        upd["pack_size"], upd["pack_unit"] = size, unit
     if "type" in f or "kind" in f:
         k = _kind(f.get("type", f.get("kind")))
         if k:
@@ -231,8 +270,14 @@ def move(conn, part, delta, reason, sp_id=None, note=""):
     _log(conn, part["id"], delta, reason, sp_id, note)
 
 
-def adjust(conn, pid, delta=None, set_to=None, note=""):
+def adjust(conn, pid, delta=None, set_to=None, note="", packs=None):
     p = get_part(conn, pid)
+    packs = _num(packs, "Packs")
+    if packs is not None:             # received whole packs: add pack_size units for each
+        if not p["pack_size"]:
+            raise EditError("Set a pack size on this item first.")
+        delta = round(packs * p["pack_size"], 4)
+        note = note or f"{packs:g} x {p['pack_unit'] or 'pack'} of {p['pack_size']:g}"
     delta, set_to = _num(delta, "Change"), _num(set_to, "Count")
     if (delta is None) == (set_to is None):
         raise EditError("Give either a change or a new count.")
@@ -335,14 +380,16 @@ def export_csv(conn):
         w.writerow([_safe(p["sku"]), _safe(p["name"]), p["kind"], _safe(p["unit"]),
                     _g(p["unit_cost"]), "yes" if p["billable"] else "no",
                     _safe(p["category"]), _safe(p["vendor"]),
-                    _g(p["on_hand"]) if p["tracked"] else "", _g(p["reorder_at"])])
+                    _g(p["on_hand"]) if p["tracked"] else "", _g(p["reorder_at"]),
+                    _g(p["pack_size"]), p["pack_unit"]])
     return out.getvalue()
 
 
 def template_csv():
-    return ("sku,name,type,unit,unit_cost,billable,category,vendor,on_hand,reorder_at\r\n"
-            "BV-050,1/2 in. brass ball valve,part,ea,8.75,yes,Plumbing,Ferguson,12,4\r\n"
-            "TAPE-PTFE,PTFE thread tape,consumable,roll,1.20,no,Plumbing,Home Depot,30,10\r\n")
+    return ("sku,name,type,unit,unit_cost,billable,category,vendor,on_hand,reorder_at,pack_size,pack_unit\r\n"
+            "BV-050,1/2 in. brass ball valve,part,ea,8.75,yes,Plumbing,Ferguson,12,4,,\r\n"
+            "JACK-1,Telephone jack,part,ea,1.10,yes,Cabling,Graybar,40,10,25,bag\r\n"
+            "TAPE-PTFE,PTFE thread tape,consumable,roll,1.20,no,Plumbing,Home Depot,30,10,,\r\n")
 
 
 # ---- per-stop usage ----------------------------------------------------
@@ -515,9 +562,25 @@ def shopping_list(conn):
         if not (p["tracked"] and p["low"]):
             continue
         need = max(round(p["reorder_at"] * 2 - p["on_hand"], 4), 1)
+        packs = None
+        if p["pack_size"]:                 # bought in packs: round up to whole packs
+            packs = max(math.ceil(need / p["pack_size"]), 1)
+            need = round(packs * p["pack_size"], 4)
         groups.setdefault(p["vendor"] or "No vendor set", []).append({
             "id": p["id"], "name": p["name"], "sku": p["sku"], "unit": p["unit"], "kind": p["kind"],
             "on_hand": p["on_hand"], "reorder_at": p["reorder_at"], "suggest": need,
+            "packs": packs, "pack_unit": p["pack_unit"] if packs else "", "pack_size": p["pack_size"],
             "unit_cost": p["unit_cost"]})
     return [{"vendor": v, "items": items} for v, items in sorted(groups.items(),
             key=lambda kv: (kv[0] == "No vendor set", kv[0].lower()))]
+
+
+def choices(conn):
+    """Values for the Truck page dropdowns: vendors (saved vendor places plus any used on a part) and categories."""
+    vend = {r[0].strip() for r in conn.execute(
+        "SELECT vendor FROM parts WHERE COALESCE(vendor,'')!='' UNION "
+        "SELECT name FROM known_sites WHERE kind='vendor' AND COALESCE(name,'')!=''")}
+    cats = {r[0].strip() for r in conn.execute("SELECT category FROM parts WHERE COALESCE(category,'')!=''")}
+    key = lambda x: x.lower()
+    return {"vendors": sorted(vend, key=key), "categories": sorted(cats, key=key),
+            "units": [{"value": k, "label": v} for k, v in UNITS.items()]}

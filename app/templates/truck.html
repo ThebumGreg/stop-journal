@@ -28,7 +28,9 @@
     <button type="button" data-k="part">Parts</button>
     <button type="button" data-k="consumable">Consumables</button>
     <button type="button" data-k="expense">Expenses</button>
+    <button type="button" data-k="low">Low stock</button>
   </div>
+  <label class="chk"><input type="checkbox" id="showoff"> Show removed items</label>
   <input id="filter" placeholder="Search by name, part number, category or vendor">
 
   <h2>Count &amp; shopping</h2>
@@ -43,10 +45,14 @@
     <div><label>Name</label><input id="a_name"></div>
     <div><label>Type</label><select id="a_kind"><option value="part">Part (billable)</option><option value="consumable">Consumable (not billed)</option><option value="expense">Expense (money, not stock)</option></select></div>
     <div><label>Part #</label><input id="a_sku"></div>
-    <div><label>Vendor</label><input id="a_vendor"></div>
-    <div><label>Unit</label><input id="a_unit" placeholder="ea"></div>
+    <div><label>Vendor</label><select id="a_vendor"></select></div>
+    <div><label>Category</label><select id="a_category"></select></div>
+    <div><label>Unit (what you use or sell)</label><select id="a_unit"></select></div>
     <div><label>Unit cost</label><input id="a_cost" inputmode="decimal"></div>
     <div><label>On truck now (optional)</label><input id="a_oh" inputmode="decimal"></div>
+    <div><label>Reorder at</label><input id="a_reorder" inputmode="decimal"></div>
+    <div><label>Comes in packs of (optional)</label><input id="a_pack" inputmode="decimal" placeholder="e.g. 25"></div>
+    <div><label>Pack is a</label><select id="a_packunit"></select></div>
     <div><label><input type="checkbox" id="a_bill" checked> Billable</label><button class="primary" id="a_go" type="button">Add</button></div>
   </div>
   <div class="err" id="a_err"></div>
@@ -62,8 +68,8 @@
     <div class="hint" style="margin-top:6px">
       <a href="/api/parts/template.csv">Download template</a> ·
       <a href="/api/parts/export.csv">Export current parts</a>.
-      Columns: <code>name</code> (required), <code>sku</code>, <code>type</code> (part, consumable or expense), <code>unit</code>,
-      <code>unit_cost</code>, <code>billable</code>, <code>category</code>, <code>vendor</code>, <code>on_hand</code>, <code>reorder_at</code>.
+      Columns: <code>name</code> (required), <code>sku</code>, <code>type</code> (part, consumable or expense), <code>unit</code> (each, pair, pack, box, bag, case, roll, foot, gallon or pound; any other unit rejects the row),
+      <code>unit_cost</code>, <code>billable</code>, <code>category</code>, <code>vendor</code>, <code>on_hand</code>, <code>reorder_at</code>, <code>pack_size</code>, <code>pack_unit</code>.
       Matching is by part number, else name. <b>Check file</b> shows what an import would do without changing anything. A filled <code>on_hand</code> sets the truck count and turns tracking on.
     </div>
     <div id="csvres"></div>
