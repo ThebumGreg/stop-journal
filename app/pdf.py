@@ -47,7 +47,7 @@ INSTRUCTIONS = [
     "Follow-ups: what is still open, who owns it and when it is due. Create a task for each one.",
     "Drive from previous stop: the mileage leg that ends at this stop, from Home, Client, Office or Vendor (the kind of "
     "place the previous stop was; the first stop starts from Home). Minutes are "
-    "shown only when that drive counted as work time. If the user stopped for lunch between two jobs, the drives before "
+    "shown only when that drive counted as work time; \"estimated: no location data\" means the phone sent no location points for part of the trip, so the minutes are a distance-based estimate. If the user stopped for lunch between two jobs, the drives before "
     "and after lunch are added together as one drive, and the miles are the direct distance between the two jobs. "
     "If the user left a site for lunch or a personal break and came back to it, that is shown as one stop: Time on "
     "site leaves out the lunch or break (listed as Lunch (non-billable) or Personal break (unpaid)), and the trip adds "
@@ -270,7 +270,7 @@ def _stop_block(s, st):
         origin = drive.get("from_type") or drive.get("from")      # the kind of place, not its name
         drive_txt = f"{drive['miles_approx']} mi" + (f" from {origin}" if origin else "")
         if drive["minutes"] is not None:
-            drive_txt += f", {drive['minutes']} min"
+            drive_txt += f", {drive['minutes']} min" + (" (estimated: no location data)" if drive.get("estimated") else "")
     if drive and drive["notes"]:
         drive_txt += f". Drive notes: {drive['notes']}"
     latlon = "(no GPS data)" if s["latitude"] is None else f"{s['latitude']:.6f}, {s['longitude']:.6f}"

@@ -41,6 +41,7 @@ class Config:
     alert_low_stock: str = "on"
     routing_url: str = ""    # "" = off; from_env defaults to the public OSRM server
     languagetool_url: str = ""   # "" = grammar check off
+    auto_sync_min: int = 2       # day page for today syncs this often while open; 0 = off
 
     @classmethod
     def from_env(cls):
@@ -79,4 +80,5 @@ class Config:
             alert_low_stock=e("ALERT_LOW_STOCK", "on"),
             routing_url=e("ROUTING_URL", "https://router.project-osrm.org").strip().rstrip("/"),
             languagetool_url=e("LANGUAGETOOL_URL", "").strip().rstrip("/"),
+            auto_sync_min=_int("AUTO_SYNC_MIN", 2),
         )

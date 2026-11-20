@@ -43,7 +43,7 @@ async function api(method, url, body) {
 
 function applyDay(d) {
   S.stops = d.stops; S.drives = d.drives; S.totals = d.totals; S.undo = d.undo || null;
-  S.marks = d.marks || {}; S.endDay = d.end_day || null;
+  S.marks = d.marks || {}; S.endDay = d.end_day || null; S.autoMin = d.auto_sync_min;
   if (d.path) S.path = d.path;
 }
 
@@ -458,6 +458,29 @@ function stopCard(s, i) {
     if (!s.work_category) miss.push('category');
     if (miss.length) body.append(el('div', 'need', 'Needs ' + miss.join(' and ')));
   }
+  if (s.here_now) {
+    body.append(el('div', 'here', '● Here now · keeps growing while you are on site'));
+    if (s.status === 'Draft' || s.status === 'Confirmed') {
+      const lv = el('button', 'quick', 'Leaving now'); lv.type = 'button';
+      lv.title = 'Set the departure to the current time';
+      lv.onclick = async ev => {
+        ev.stopPropagation();
+        try { applyDay(await api('POST', '/api/stops/' + s.id + '/leave')); render(false); }
+        catch (e) { alert(e.message); }
+      };
+      body.append(lv);
+    }
+  }
+  if (s.vendor_hint) {
+    const vb = el('button', 'quick', 'Save as Vendor'); vb.type = 'button';
+    vb.title = 'A supply shop: later visits are pre-filled and the report says "from Vendor"';
+    vb.onclick = async ev => {
+      ev.stopPropagation();
+      try { applyDay(await api('POST', '/api/stops/' + s.id + '/save-place', {kind: 'vendor'})); render(false); }
+      catch (e) { alert(e.message); }
+    };
+    body.append(vb);
+  }
   head.append(el('div', 'num', String(i + 1)), body, el('span', 'chip', s.status));
   if (s.suggest) {
     const q = el('button', 'quick', (s.business_name ? 'Confirm ' : 'Confirm as ') + s.suggest.name);
@@ -595,6 +618,15 @@ function buildEdit(edit, s, i) {
   eb.title = s.status === 'Personal' ? 'Work day ends when you arrived here' : 'Work day ends when you left this stop';
   eb.onclick = () => markHere(s, 'end', err);
   more.append(sb, eb);
+  if (s.lat != null) {
+    [['vendor', 'Vendor'], ['office', 'Office'], ['home', 'Home']].forEach(([k, t]) => {
+      if (s.site_kind === k) return;
+      const pb = el('button', null, 'Save as ' + t); pb.type = 'button';
+      pb.title = 'Remember this spot as a ' + t + ' place; later stops here are pre-filled';
+      pb.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/save-place', {kind: k}), err);
+      more.append(pb);
+    });
+  }
 
   const prev = S.stops[i - 1], next = S.stops[i + 1];
   const mergeWith = other => run(() => api('POST', '/api/stops/merge', {ids: [s.id, other.id]}), err);
@@ -629,7 +661,12 @@ function driveRow(dr) {
   const key = 'd' + dr.id;
   const row = el('div', 'drive');
   row.append(el('div', null, '↓ Drive ' + dr.depart + ' – ' + dr.arrive + ' · ' + dur(dr.minutes) +
-    ' · ~' + dr.miles_approx + ' mi (approx.)' + (dr.counts === false ? ' · not counted' : '') + (dr.notes ? ' · has notes' : '')));
+    ' · ~' + dr.miles_approx + ' mi (approx.)' + (dr.estimated ? ' · estimated' : '') + (dr.counts === false ? ' · not counted' : '') + (dr.notes ? ' · has notes' : '')));
+  if (dr.gap) {
+    row.append(el('div', 'gapnote', '⚠ No location data ' + dr.gap.from + ' – ' + dr.gap.to + ' (' + dur(dr.gap.minutes) + ')' +
+      (dr.estimated ? '. Drive time is an estimate from the distance. Tap here and enter the real times if you remember them.'
+                    : '. Times were set by you.')));
+  }
   const edit = el('div', 'edit'); edit.hidden = !S.openDrives.has(dr.id);
   const d = Object.assign({depart: dr.depart, arrive: dr.arrive, notes: dr.notes}, S.drafts[key] || {});
   const remember = (k, v) => { d[k] = v; (S.drafts[key] = S.drafts[key] || {})[k] = v; };
@@ -796,6 +833,29 @@ function shift(n) {
   dateEl.value = x.toLocaleDateString('en-CA'); loadParts();
 load();
 }
+// ---- auto-sync: while today's page is open, pick up new points and stops every few minutes ---------------
+(function () {
+  let busy = false, last = '';
+  const sig = () => JSON.stringify([S.stops.map(x => [x.id, x.arrive_ts, x.depart_ts, x.here_now, x.status]),
+                                    S.drives.map(x => [x.id, x.depart_ts, x.arrive_ts]), S.totals]);
+  const typing = () => { const a = document.activeElement; return a && listEl.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); };
+  async function tick() {
+    const isToday = S.date === new Date().toLocaleDateString('en-CA');
+    if (busy || document.hidden || !isToday || !S.autoMin || sheet.id || S.tool || typing()) return;
+    busy = true;
+    try {
+      const d = await api('POST', '/api/day/' + S.date + '/auto-sync');
+      const before = sig();
+      applyDay(d);
+      if (sig() !== before && !sheet.id && !typing()) render(false);
+    } catch (e) { /* Recorder or network down: try again next time */ }
+    busy = false;
+  }
+  let next = 0;
+  setInterval(() => { if (Date.now() >= next && S.autoMin) { next = Date.now() + S.autoMin * 60000; tick(); } }, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.autoMin) tick(); });
+})();
+
 document.getElementById('prev').onclick = () => shift(-1);
 document.getElementById('next').onclick = () => shift(1);
 dateEl.onchange = load;

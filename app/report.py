@@ -114,7 +114,8 @@ def _timesheet(stops, drives):
     for d in drives:
         if d["counts"]:
             frm, to = by_id[d["from_stop_id"]], by_id[d["to_stop_id"]]
-            add(d["depart_ts"], d["depart"], d["arrive"], "drive", f"Drive: {name(frm)} to {name(to)}",
+            add(d["depart_ts"], d["depart"], d["arrive"], "drive",
+                f"Drive: {name(frm)} to {name(to)}" + (" (estimated, no location data)" if d.get("estimated") else ""),
                 d["arrive_ts"] - d["depart_ts"], True)
     return [r for _, r in sorted(rows, key=lambda x: x[0])]
 
@@ -191,10 +192,10 @@ def build_day(payload, cfg):
                     minutes += d0["minutes"]
             drive = {"minutes": minutes, "miles_approx": leg["miles"],
                      "from": leg["from"], "from_type": "Home" if leg["from"] == "Home" else prev_type,
-                     "notes": d["notes"] if d else ""}
+                     "notes": d["notes"] if d else "", **_gap_fields(d, counted)}
         elif counted:
             drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "from": "", "from_type": "",
-                     "notes": d["notes"]}
+                     "notes": d["notes"], **_gap_fields(d, counted)}
         used, consumed, spent = _split_parts(s["parts"])
         cat = s["work_category"]
         prev_type = PLACE_TYPE.get(s.get("site_kind"), "Client")
@@ -283,6 +284,17 @@ def follow_ups(days):
     return rows
 
 
+def _gap_fields(d, counted):
+    """Additive drive fields: `estimated` when the phone recorded nothing for part of the trip and the minutes are
+    distance-based, and the stretch with no data."""
+    gap = d and d.get("gap")
+    return {"estimated": bool(counted and gap and d.get("estimated")),
+            "no_location_data": {"from": gap["from"], "to": gap["to"]} if gap else None}
+
+
+LENGTH_WORDS = ("cable", "wire", "conduit", "pipe", "tubing", "hose", "rope", "tape measure")
+
+
 def warnings(report):
     """Things worth a look before exporting. They never block: each names a stop or follow-up."""
     out = []
@@ -293,10 +305,25 @@ def warnings(report):
                 out.append(f"{who}: no category chosen.")
             if not s["work_performed"].strip():
                 out.append(f"{who}: no work performed written.")
+            dv = s["drive_from_previous_stop"] or {}
+            if dv.get("estimated"):
+                nd = dv["no_location_data"]
+                out.append(f"{who}: the drive time is an estimate (no location data from {nd['from']} to {nd['to']}). "
+                           "Correct the departure and arrival times if you remember them.")
+            for p in s["parts_used"]:
+                if p["billable"] and not p["unit_cost"]:
+                    out.append(f"{who}: billable part “{p['name']}” has no unit cost.")
+                if (p["unit"] or "ea") == "ea" and any(w in p["name"].lower() for w in LENGTH_WORDS):
+                    out.append(f"{who}: “{p['name']}” is counted in each; is the quantity really a count (not feet)?")
             for f in s["follow_ups"]:
                 miss = [w for w, v in (("an owner", f["owner"]), ("a due date", f["due"])) if not v]
                 if miss:
                     out.append(f"{who}: follow-up “{f['what']}” has no {' or '.join(m.split(' ', 1)[1] for m in miss)}.")
+        if day["stops"] and day.get("day_end"):
+            last = max(st["departure"] for st in day["stops"])
+            if day["day_end"] < last:
+                out.append(f"{day['date']}: End Day is {day['day_end']} but the last stop departs {last}. "
+                           "Change End Day, or the stop's departure, so they agree.")
     return out
 
 

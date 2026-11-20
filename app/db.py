@@ -187,6 +187,8 @@ MIGRATIONS = [
     ("stop_parts", "kind", "TEXT DEFAULT 'part'"),
     ("stops", "edited", "INTEGER DEFAULT 0"),
     ("stops", "times_edited", "INTEGER DEFAULT 0"),
+    ("stops", "arrive_set", "INTEGER DEFAULT 0"),
+    ("stops", "depart_set", "INTEGER DEFAULT 0"),
     ("drives", "edited", "INTEGER DEFAULT 0"),
     ("known_sites", "kind", "TEXT DEFAULT 'client'"),
     ("known_sites", "default_status", "TEXT DEFAULT 'Draft'"),

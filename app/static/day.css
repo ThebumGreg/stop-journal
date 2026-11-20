@@ -178,3 +178,6 @@ body.sheet-open { overflow:hidden; }
 .gram-msg { margin-bottom:4px; }
 .gram-row .quick { margin-right:6px; }
 .gram-ok { color:var(--ok); font-size:14px; margin-top:6px; }
+
+.here { color:var(--ok); font-size:13px; font-weight:600; margin-top:2px; }
+.gapnote { color:var(--warn, #b35900); font-size:13px; margin-top:2px; }

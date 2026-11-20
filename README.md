@@ -98,6 +98,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `APP_URL` | | address that notification taps open, e.g. `http://192.168.x.x:8000` |
 | `ALERT_NO_DATA`, `ALERT_NO_DATA_MIN`, `WORK_DAYS`, `WORK_START`, `WORK_END`, `ALERT_REPEAT_MIN` | on, 60, Mon-Fri, 07:00, 17:00, 0 | the no-data alert (tapping Start/End day overrides the work hours for that day) |
 | `ALERT_DRAFTS`, `ALERT_LOW_STOCK` | on, on | end-of-day "stops still in Draft" reminder, low truck stock alert (generic text only) |
+| `AUTO_SYNC_MIN` | `2` | while today's day page is open, pick up new points and stops every this many minutes (0 = off); also a Settings value |
 | `LANGUAGETOOL_URL` | blank (off) | your own LanguageTool server, e.g. `http://192.168.1.10:8010`; adds a **Check grammar** button to the notes sheet. Only the note text is sent, to that address. Also a Settings value |
 | `ROUTING_URL` | public OSRM server | road distance used only to document miles from where the day ended to Home; coordinates are rounded to ~100 m; blank = off (estimate) |
 | `BACKUP_KEEP` | 14 | daily database snapshots to keep (0 = off) |

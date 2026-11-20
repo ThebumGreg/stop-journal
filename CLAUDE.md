@@ -275,6 +275,32 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Community image `erikvl87/languagetool` (port 8010, about 1 GB RAM) is a commented example in docker-compose.yml; confirm it
   before relying on it. Not planned unless asked: an AI "polish my notes" button (sends customer notes outside, costs per use).
 
+## Data gaps, open stops, vendor marking, auto-sync (built; from the 2026-11-20 day)
+Found on 2026-11-20: the phone sent nothing 08:54:55 to 09:55:12; the app drew a 60-minute counted "drive" for 2.7 km, and the tech
+then hand-edited times (which froze the stop). The export also said "from Client" for a Home Depot stop, End Day 12:00 while the last
+stop departed 12:21, and listed billable parts with no cost.
+- **Data gaps** (`service.data_gap`, `_gap_estimate`): a drive whose points have a hole longer than STOP_MAX_GAP_MIN counts as
+  distance / ~25 mph (min 5 min) ending when the next point arrived, not the whole silence. Not applied when you typed the previous
+  stop's departure or the next stop's arrival, or edited the drive (`_times_typed`). Drive payload `gap {from,to,minutes}` and
+  `estimated`; the day view shows "No location data 8:54 – 9:55" under the drive; report drive has `estimated` and
+  `no_location_data`; PDF says "(estimated: no location data)"; the recap row is labelled too.
+- **Still on site**: `stops.arrive_set` / `depart_set` pin only the side you edited (`times_edited` still pins both, for split/merge/
+  manual). Sync keeps growing an unpinned side. Payload `here_now` (last stop, newest point under 15 min old and inside it) shows "Here now"
+  and a **Leaving now** button (`POST /api/stops/<id>/leave`, today only). Changing the departure of the stop that ended the day moves the
+  End Day mark with it (a Personal/off-clock stop does not).
+- **Save as place**: the stop card's More menu has Save as Vendor / Office / Home (`POST /api/stops/<id>/save-place`). `vendor_hint`
+  offers a one-tap "Save as Vendor" when the name matches a vendor used on parts or the place type is a supply shop. Confirming a stop on
+  a Vendor place with no category sets Internal operations. A named Personal stop is no longer silently saved as a vendor (only a name
+  containing "home" is saved, as Home).
+- **Auto-sync**: Settings, OwnTracks tab, "Auto-sync every (min)" (`AUTO_SYNC_MIN`, default 2, 0 = off). While TODAY's page is open and
+  visible the page POSTs `/api/day/<date>/auto-sync`; the server checks `last_tst` and fetches only points after the newest stored one
+  (`points.load_day(..., incremental=True)`), then runs `sync_new`. It does nothing while the notes sheet, a form or a typed field is
+  open. No server-side background sync for stops (the 60 s alert thread only watches `last_tst`).
+- **Export warnings added**: estimated drive, billable part with no unit cost, length-type part counted in "ea" (cable, wire, pipe...),
+  End Day earlier than the last departure.
+- Phone-side (not code): OwnTracks Move mode, Location Always, Background App Refresh on, Low Power Mode off (the gap looked like iOS
+  freezing the app).
+
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.
 - Show each milestone working before starting the next.

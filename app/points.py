@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from .recorder import local_day_bounds
 
 
-def load_day(conn, client, cfg, date_str, refresh=False):
+def load_day(conn, client, cfg, date_str, refresh=False, incremental=False):
     """Return the day's points (sorted, unfiltered) as dicts, using the cache."""
     cached = conn.execute(
         "SELECT fetched_at FROM days WHERE date=? AND fetched_at IS NOT NULL",
@@ -13,6 +13,11 @@ def load_day(conn, client, cfg, date_str, refresh=False):
     ).fetchone()
     start, end = local_day_bounds(date_str, cfg.app_tz)
     if refresh or not cached:
+        if incremental and cached:      # only what arrived since the newest stored point
+            last = conn.execute("SELECT MAX(tst_utc) FROM points WHERE device=? AND tst_utc BETWEEN ? AND ?",
+                                (cfg.recorder_device, int(start.timestamp()), int(end.timestamp()))).fetchone()[0]
+            if last:
+                start = max(start, datetime.fromtimestamp(last - 1, timezone.utc))
         raw = client.fetch(start, end)
         rows = [
             (cfg.recorder_device, int(p["tst"]), p["lat"], p["lon"],

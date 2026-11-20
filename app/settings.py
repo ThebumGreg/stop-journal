@@ -47,6 +47,9 @@ SPEC = [
              help="Use “Find on Recorder” below to pick it."),
         dict(key="recorder_device", label="Recorder device", kind="text",
              help="Use “Find on Recorder” below to pick it."),
+        dict(key="auto_sync_min", label="Auto-sync every (min)", kind="int", lo=0, hi=60,
+             help="While today's page is open on screen, new points are fetched this often and new stops appear by "
+                  "themselves. 0 turns it off (use Sync new data instead)."),
     ]),
     ("Stop detection", [
         dict(key="stop_min_minutes", label="Minimum stop length (min)", kind="int", lo=1, hi=240,

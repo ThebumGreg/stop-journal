@@ -97,6 +97,40 @@ def _resequence(conn, date):
         conn.execute("UPDATE stops SET seq=? WHERE id=?", (i, r["id"]))
 
 
+GAP_SPEED_MS = 11.2      # about 25 mph: used to estimate a drive the phone did not record
+GAP_MIN_DRIVE_S = 300
+HERE_NOW_S = 900         # a stop is 'here now' while its newest point is less than 15 minutes old
+
+
+def data_gap(conn, cfg, date, start, end):
+    """The longest stretch with no location points between start and end, as (from_ts, to_ts), or None
+    when it is not longer than the max-gap setting."""
+    times = [start] + [p["tst"] for p in kept_points(conn, cfg, date, start, end)] + [end]
+    best = max(zip(times, times[1:]), key=lambda g: g[1] - g[0], default=None)
+    if best and best[1] - best[0] > cfg.stop_max_gap_min * 60:
+        return best
+    return None
+
+
+def _times_typed(a, b):
+    """True when you typed the departure of stop a or the arrival of stop b: those times are trusted as they are."""
+    return bool(a["times_edited"] or a["depart_set"] or b["times_edited"] or b["arrive_set"])
+
+
+def _gap_estimate(conn, cfg, date, a, b, dep, arr, dist):
+    """A drive that crosses a hole in the data (phone off or frozen) is not an hour long just because the phone was
+    silent. Unless you typed one of the times yourself, assume the trip took distance / ~25 mph (min 5 min) and ended
+    when the next point arrived. Returns the departure to use."""
+    if _times_typed(a, b):
+        return dep
+    if not data_gap(conn, cfg, date, dep, arr):
+        return dep
+    if not dist and a["lat"] is not None and b["lat"] is not None:
+        dist = haversine_m(a["lat"], a["lon"], b["lat"], b["lon"]) * CROW_FLIES_FACTOR
+    est = max(GAP_MIN_DRIVE_S, int(dist / GAP_SPEED_MS))
+    return max(dep, arr - est)
+
+
 CROW_FLIES_FACTOR = 1.25   # straight-line to road distance, only when a drive has no GPS points
 
 
@@ -112,6 +146,8 @@ def rebuild_drives(conn, cfg, date):
         else:
             dep, arr = a["depart_utc"], max(b["arrive_utc"], a["depart_utc"])
         dist = _dist(conn, cfg, date, dep, arr)
+        if not (d and d["edited"]):
+            dep = _gap_estimate(conn, cfg, date, a, b, dep, arr, dist)
         if not dist and a["lat"] is not None and b["lat"] is not None:
             dist = haversine_m(a["lat"], a["lon"], b["lat"], b["lon"]) * CROW_FLIES_FACTOR  # no points: estimate
         if d:
@@ -212,8 +248,11 @@ def sync_new(conn, cfg, date, kept, run_cfg):
             conn.execute("UPDATE stops SET arrive_utc=?, depart_utc=?, lat=?, lon=?, "
                          "kind=? WHERE id=?", (it["arrive"], it["depart"], it["lat"],
                                                it["lon"], it["kind"], s["id"]))
-        elif not s["times_edited"] and (it["depart"] > s["depart_utc"] or it["arrive"] < s["arrive_utc"]):
-            arrive, depart = min(s["arrive_utc"], it["arrive"]), max(s["depart_utc"], it["depart"])
+        elif (not s["times_edited"] and
+              ((not s["depart_set"] and it["depart"] > s["depart_utc"]) or
+               (not s["arrive_set"] and it["arrive"] < s["arrive_utc"]))):
+            arrive = s["arrive_utc"] if s["arrive_set"] else min(s["arrive_utc"], it["arrive"])
+            depart = s["depart_utc"] if s["depart_set"] else max(s["depart_utc"], it["depart"])
             if _free(conn, date, s["id"], arrive, depart):
                 kind = "stop" if depart - arrive >= run_cfg.stop_min_minutes * 60 else s["kind"]
                 conn.execute("UPDATE stops SET arrive_utc=?, depart_utc=?, kind=? WHERE id=?",
@@ -487,7 +526,14 @@ def patch_stop(conn, cfg, sid, f):
         d = parse_time(cfg, date, f["depart"]) if "depart" in f else s["depart_utc"]
         _check_window(conn, cfg, date, sid, a, d)
         upd["arrive_utc"], upd["depart_utc"] = a, d
-        upd["times_edited"] = 1
+        # only the side you actually changed is pinned: edit the arrival and the departure keeps growing while you are on site
+        if a != s["arrive_utc"]:
+            upd["arrive_set"] = 1
+        if d != s["depart_utc"]:
+            upd["depart_set"] = 1
+            end_ts = day_marks(conn, cfg, date)["end_ts"]
+            if end_ts and end_ts == s["depart_utc"] and s["status"] not in OFF_CLOCK:
+                set_mark(conn, cfg, date, "end", ts=d)       # End Day was "here": it follows the new departure
 
     status = upd.get("status", s["status"])
     name = upd.get("business_name", s["business_name"] or "")
@@ -502,6 +548,11 @@ def patch_stop(conn, cfg, sid, f):
                 upd.get("category", s["category"] or ""))
         if s["status"] != "Confirmed" and not upd.get("work_category", s["work_category"]):
             hint = last_category(conn, s["id"], name, upd.get("known_site_id", s["known_site_id"]))
+            if not hint:     # a vendor stop (parts pickup) is internal work unless you say otherwise
+                site = conn.execute("SELECT kind FROM known_sites WHERE id=?",
+                                    (upd.get("known_site_id", s["known_site_id"]),)).fetchone()
+                if site and site["kind"] == "vendor":
+                    hint = "Internal operations"
             if hint:         # same business as before: start from the category used last time
                 upd["work_category"] = hint
     upd["edited"] = 1
@@ -510,10 +561,23 @@ def patch_stop(conn, cfg, sid, f):
     _finish(conn, cfg, date)
     cur = _stop(conn, sid)
     if (status == "Personal" and s["status"] != "Personal" and name and cur["lat"] is not None
-            and not cur["known_site_id"]):
-        # a named Personal stop is saved as a place automatically (home if it says so), so it is pre-filled next time
-        save_place(conn, cfg, sid, {"kind": "home" if "home" in name.lower() else "vendor", "name": name})
+            and not cur["known_site_id"] and "home" in name.lower()):
+        # a Personal stop named Home is saved as the Home place so it is pre-filled next time. Anything else (a
+        # vendor, an office) is saved on purpose with "Save as place" in the card's More menu.
+        save_place(conn, cfg, sid, {"kind": "home", "name": name})
     return date
+
+
+def leave_now(conn, cfg, sid):
+    """You are leaving this stop right now: set its departure to the current time (today only)."""
+    s = _stop(conn, sid)
+    now = int(time.time())
+    lo, hi = day_range(s["date"], cfg.app_tz)
+    if not lo <= now <= hi:
+        raise EditError("Leaving now only works for today. Enter the departure time instead.")
+    if now <= s["arrive_utc"] + 60:
+        raise EditError("You arrived less than a minute ago.")
+    return patch_stop(conn, cfg, sid, {"depart": fmt_time(cfg, now)})
 
 
 def last_category(conn, sid, name, site_id):
@@ -627,6 +691,8 @@ def save_place(conn, cfg, sid, f):
     site_id = known.create_site(conn, site)
     conn.execute("UPDATE stops SET business_name=?, known_site_id=?, category=?, edited=1 WHERE id=?",
                  (name, site_id, f"place={kind}", sid))
+    if kind == "vendor" and not s["work_category"]:
+        conn.execute("UPDATE stops SET work_category='Internal operations' WHERE id=?", (sid,))
     apply_places(conn, s["date"])
     _finish(conn, cfg, s["date"])
     return s["date"]
@@ -927,12 +993,32 @@ def totals(stops, drives, marks=None):
     }
 
 
+VENDOR_SHOPS = {"hardware", "doityourself", "trade", "electrical", "electronics", "computer", "building_materials",
+                "tool_hire", "plumbing", "paint", "car_parts", "wholesale"}
+
+
+def _looks_like_vendor(stop, vendor_names):
+    """Offer 'Save as Vendor' when the name matches a vendor used on parts or the place type is a supply shop."""
+    name = (stop["business_name"] or "").strip().lower()
+    if not name:
+        return False
+    if any(v and (v in name or name in v) for v in vendor_names):
+        return True
+    cat = stop["category"] or ""
+    kind, _, val = cat.partition("=")
+    return (kind == "shop" and val in VENDOR_SHOPS) or (
+        kind == "google" and val in ("hardware_store", "home_improvement_store", "electronics_store"))
+
+
 def day_payload(conn, cfg, date, include_path=False):
     used = parts.for_day(conn, date)
     fups = followups_for_day(conn, date)
     site_kind = {r["id"]: r["kind"] for r in conn.execute("SELECT id, kind FROM known_sites")}
+    vendor_names = {(r["vendor"] or "").strip().lower() for r in
+                    conn.execute("SELECT DISTINCT vendor FROM parts WHERE vendor IS NOT NULL")} - {""}
     stops = [{
         "site_kind": site_kind.get(r["known_site_id"]) or "",
+        "vendor_hint": site_kind.get(r["known_site_id"]) in (None, "client") and _looks_like_vendor(r, vendor_names),
         "parts": used.get(r["id"], []), "follow_ups": fups.get(r["id"], []),
         "work_category": r["work_category"] or "", "ticket": r["ticket"] or "",
         "visit_result": r["visit_result"] or "",
@@ -950,6 +1036,15 @@ def day_payload(conn, cfg, date, include_path=False):
         "edited": bool(r["edited"]), "suggest": suggestion(conn, r),
         "usual": parts.usual_for(conn, r) if r["status"] not in OFF_CLOCK + ("Traffic",) else [],
     } for r in _ordered(conn, date)]
+    now = int(time.time())
+    lo, hi = day_range(date, cfg.app_tz)
+    pts = kept_points(conn, cfg, date) if lo <= now <= hi else []
+    last_tst = pts[-1]["tst"] if pts else None
+    fresh = bool(last_tst and now - last_tst <= HERE_NOW_S)
+    for i, st in enumerate(stops):
+        # still on site: the newest point is recent and sits inside this (the last) stop
+        st["here_now"] = bool(fresh and i == len(stops) - 1 and st["depart_ts"] >= last_tst - 300
+                              and st["arrive_ts"] <= last_tst)
     drives = [{
         "id": r["id"], "from_stop_id": r["from_stop_id"], "to_stop_id": r["to_stop_id"],
         "depart": fmt_time(cfg, r["depart_utc"]), "arrive": fmt_time(cfg, r["arrive_utc"]),
@@ -959,6 +1054,13 @@ def day_payload(conn, cfg, date, include_path=False):
         "distance_m": r["distance_m"] or 0,
         "notes": r["notes"] or "", "edited": bool(r["edited"]),
     } for r in conn.execute("SELECT * FROM drives WHERE date=? ORDER BY seq", (date,))]
+    by_id = {r["id"]: r for r in _ordered(conn, date)}
+    for d in drives:
+        a, b = by_id.get(d["from_stop_id"]), by_id.get(d["to_stop_id"])
+        gap = data_gap(conn, cfg, date, a["depart_utc"], b["arrive_utc"]) if a and b else None
+        d["gap"] = {"from": fmt_time(cfg, gap[0]), "to": fmt_time(cfg, gap[1]),
+                    "minutes": round((gap[1] - gap[0]) / 60)} if gap else None
+        d["estimated"] = bool(gap and not d["edited"] and not _times_typed(a, b))
     marks = day_marks(conn, cfg, date)
     ok = drive_counts(stops, drives, marks)
     for d in drives:
@@ -967,7 +1069,7 @@ def day_payload(conn, cfg, date, include_path=False):
     mil = mileage(conn, cfg, stops, drives)
     if mil:
         tot["miles_approx"] = mil["total_miles"]
-    out = {"date": date, "tz": cfg.app_tz, "stops": stops, "drives": drives,
+    out = {"date": date, "tz": cfg.app_tz, "auto_sync_min": cfg.auto_sync_min, "stops": stops, "drives": drives,
            "totals": tot, "undo": undo_available(conn, date),
            "marks": marks, "mileage": mil, "end_day": end_info(conn, cfg, stops, marks, mil)}
     if include_path:

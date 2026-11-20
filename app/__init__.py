@@ -176,6 +176,29 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                             "added": n})
         return with_conn(go)
 
+    @app.post("/api/day/<date>/auto-sync")
+    def day_auto_sync(date):
+        """The page's timer: fetch only the points newer than the ones stored, and only when the Recorder has some."""
+        def go(conn, cfg):
+            check_date(date)
+            ensure_day(conn, cfg, date)
+            if cfg.recorder_url and cfg.recorder_user and cfg.recorder_device:
+                try:
+                    last = client.last_tst()
+                    stored = conn.execute("SELECT MAX(tst_utc) FROM points WHERE device=?",
+                                          (cfg.recorder_device,)).fetchone()[0] or 0
+                    if last and last > stored:
+                        points.load_day(conn, client, cfg, date, refresh=True, incremental=True)
+                        service.sync_new(conn, cfg, date, service.kept_points(conn, cfg, date), cfg)
+                except Exception:
+                    return jsonify(error="Recorder not reachable"), 502
+            return jsonify(service.day_payload(conn, cfg, date))
+        return with_conn(go)
+
+    @app.post("/api/stops/<int:sid>/leave")
+    def stop_leave(sid):
+        return mutate(lambda conn, cfg: service.leave_now(conn, cfg, sid))
+
     @app.post("/api/day/<date>/confirm-known")
     def day_confirm_known(date):
         def go(conn, cfg):
