@@ -138,14 +138,17 @@ async function loadCands(s, box, q, pick, google) {
 const partList = document.createElement('datalist');
 partList.id = 'partlist';
 document.body.append(partList);
+const expList = document.createElement('datalist');
+expList.id = 'explist';
+document.body.append(expList);
 async function loadParts() {
   try {
     S.parts = (await api('GET', '/api/parts')).parts;
-    partList.replaceChildren();
+    partList.replaceChildren(); expList.replaceChildren();
     S.parts.forEach(p => {
       const o = document.createElement('option');
       o.value = p.name; if (p.sku) o.label = p.sku;
-      partList.append(o);
+      (p.kind === 'expense' ? expList : partList).append(o);
     });
   } catch (e) { /* autocomplete is optional */ }
 }
@@ -153,7 +156,7 @@ async function loadParts() {
 function partsBlock(s, err) {
   const box = el('div');
   box.append(el('label', null, 'Parts used'));
-  (s.parts || []).forEach(p => {
+  (s.parts || []).filter(p => !p.expense).forEach(p => {
     const row = el('div', 'prow');
     row.append(el('div', 'pn', p.name + (p.sku ? ' · ' + p.sku : '') + (p.unit && p.unit !== 'ea' ? ' (' + p.unit + ')' : '') + (p.consumable ? ' · consumable' : '')));
     const q = el('input'); q.type = 'number'; q.step = 'any'; q.min = '0'; q.value = p.qty; q.title = 'Quantity';
@@ -192,6 +195,213 @@ function partsBlock(s, err) {
   return box;
 }
 
+// ---- notes & parts sheet (slides up over the day) ------------------------------
+// Work performed, category and the other job fields autosave a moment after you stop typing (and when you leave
+// a field); the status line says whether what you typed is saved. Parts, expenses and follow-ups save as you add them.
+const CATS = ['Time & Material', 'Quoted project', 'White-label migration', 'Internal operations',
+              'Administrative', 'Customer outreach', 'Training'];
+const RESULTS = [['complete', 'Complete'], ['return', 'Return visit needed'], ['waiting', 'Waiting (parts or customer)']];
+const FIELDS = ['notes', 'work_category', 'ticket', 'visit_result'];
+const sheet = {id: null, vals: {}, timer: null, saving: false, again: false, failed: false};
+const backEl = el('div', 'sheet-back'), sheetEl = el('div', 'sheet');
+backEl.hidden = sheetEl.hidden = true;
+document.body.append(backEl, sheetEl);
+let sh = {};
+
+const curStop = () => S.stops.find(x => x.id === sheet.id);
+const sheetDirty = () => { const s = curStop(); return !!s && FIELDS.some(k => sheet.vals[k] !== s[k]); };
+
+function setStat(kind, msg) {
+  if (!sh.stat) return;
+  const t = {unsaved: 'Unsaved changes', saving: 'Saving…', saved: 'Saved ' + new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}),
+             clean: 'Saved', error: msg || 'Could not save'}[kind];
+  sh.stat.textContent = t; sh.stat.className = 'sheet-stat ' + kind;
+}
+function touched() {
+  setStat('unsaved'); clearTimeout(sheet.timer);
+  sheet.timer = setTimeout(saveSheet, 2000);
+}
+
+// Saves what changed; returns true when everything is saved.
+async function saveSheet() {
+  clearTimeout(sheet.timer);
+  const s = curStop();
+  if (!s) return true;
+  if (sheet.saving) { sheet.again = true; return false; }
+  const body = {};
+  FIELDS.forEach(k => { if (sheet.vals[k] !== s[k]) body[k] = sheet.vals[k]; });
+  if (!Object.keys(body).length) { if (!sheet.failed) setStat(sh.everSaved ? 'saved' : 'clean'); return true; }
+  sheet.saving = true; setStat('saving');
+  try {
+    applyDay(await api('PATCH', '/api/stops/' + s.id, body));
+    sheet.failed = false; sh.everSaved = true;
+    render(false);
+  } catch (e) {
+    sheet.failed = true; setStat('error', 'Could not save: ' + e.message);
+  }
+  sheet.saving = false;
+  if (!sheet.failed) {
+    if (sheet.again || sheetDirty()) { sheet.again = false; return saveSheet(); }
+    setStat('saved');
+  }
+  return !sheet.failed && !sheetDirty();
+}
+
+async function closeSheet(force) {
+  if (!force && sheet.id) {
+    const ok = await saveSheet();
+    if (!ok && !confirm('Your changes could not be saved yet. Close anyway?')) return;
+  }
+  clearTimeout(sheet.timer);
+  sheet.id = null; sheet.failed = false;
+  sheetEl.hidden = backEl.hidden = true;
+  document.body.classList.remove('sheet-open');
+  sheetEl.replaceChildren();
+}
+backEl.onclick = () => closeSheet();
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet.id) closeSheet(); });
+window.addEventListener('beforeunload', e => { if (sheet.id && sheetDirty()) { e.preventDefault(); e.returnValue = ''; } });
+if (window.visualViewport) {          // keep the sheet above the iPhone keyboard
+  const fit = () => {
+    const v = window.visualViewport;
+    sheetEl.style.bottom = Math.max(0, window.innerHeight - v.height - v.offsetTop) + 'px';
+    sheetEl.style.maxHeight = Math.round(v.height * 0.94) + 'px';
+  };
+  window.visualViewport.addEventListener('resize', fit);
+  window.visualViewport.addEventListener('scroll', fit);
+}
+
+function expensesBlock(s, err) {
+  const box = el('div');
+  box.append(el('label', null, 'Expenses (parking, tolls, purchases)'));
+  (s.parts || []).filter(p => p.expense).forEach(p => {
+    const row = el('div', 'prow');
+    row.append(el('div', 'pn', p.name));
+    const a = el('input'); a.type = 'number'; a.step = '0.01'; a.min = '0'; a.inputMode = 'decimal'; a.title = 'Amount';
+    a.value = p.unit_cost == null ? '' : p.unit_cost;
+    a.onchange = () => run(() => api('PATCH', '/api/stop-parts/' + p.id, {unit_cost: a.value}), err);
+    const b = el('input'); b.type = 'checkbox'; b.checked = p.billable; b.title = 'Billable to the customer';
+    b.onchange = () => run(() => api('PATCH', '/api/stop-parts/' + p.id, {billable: b.checked}), err);
+    const x = el('button', 'danger', '✕'); x.type = 'button'; x.title = 'Remove';
+    x.onclick = () => run(() => api('DELETE', '/api/stop-parts/' + p.id), err);
+    row.append(a, b, x);
+    box.append(row);
+  });
+  const add = el('div', 'prow add');
+  const name = el('input'); name.setAttribute('list', 'explist'); name.placeholder = 'Expense (e.g. Parking)';
+  const amt = el('input'); amt.type = 'number'; amt.step = '0.01'; amt.min = '0'; amt.inputMode = 'decimal'; amt.placeholder = '$'; amt.title = 'Amount';
+  const go = el('button', null, 'Add'); go.type = 'button';
+  go.onclick = () => {
+    const v = name.value.trim();
+    if (!v) { err.textContent = 'Enter what the expense was.'; return; }
+    const m = S.parts.find(p => p.name.toLowerCase() === v.toLowerCase());
+    if (m && m.kind !== 'expense') { err.textContent = '“' + v + '” is a ' + m.kind + ' in your catalog. Use another name.'; return; }
+    const body = {name: v, qty: 1, unit_cost: amt.value};
+    if (m) body.part_id = m.id; else body.type = 'expense';
+    run(() => api('POST', '/api/stops/' + s.id + '/parts', body), err, () => { loadParts(); });
+  };
+  add.append(name, amt, go);
+  box.append(add);
+  return box;
+}
+
+function followBlock(s, err) {
+  const box = el('div');
+  box.append(el('label', null, 'Follow-ups (what is still open)'));
+  (s.follow_ups || []).forEach(f => {
+    const row = el('div', 'fu');
+    const patch = body => run(() => api('PATCH', '/api/follow-ups/' + f.id, body), err);
+    const t = el('input'); t.value = f.text; t.onchange = () => patch({text: t.value});
+    const o = el('input'); o.value = f.owner; o.placeholder = 'Owner'; o.onchange = () => patch({owner: o.value});
+    const d = el('input'); d.type = 'date'; d.value = f.due; d.title = 'Due date'; d.onchange = () => patch({due: d.value});
+    const x = el('button', 'danger', '✕'); x.type = 'button'; x.title = 'Remove';
+    x.onclick = () => run(() => api('DELETE', '/api/follow-ups/' + f.id), err);
+    const two = el('div', 'two'); two.append(o, d);
+    row.append(t, two, x);
+    if (!f.owner || !f.due) row.append(el('div', 'need', 'Needs ' + (!f.owner && !f.due ? 'an owner and a due date' : !f.owner ? 'an owner' : 'a due date') + '.'));
+    box.append(row);
+  });
+  const add = el('div', 'prow add one');
+  const t = el('input'); t.placeholder = 'What is still open?';
+  const go = el('button', null, 'Add'); go.type = 'button';
+  go.onclick = () => {
+    if (!t.value.trim()) { err.textContent = 'Say what the follow-up is.'; return; }
+    run(() => api('POST', '/api/stops/' + s.id + '/follow-ups', {text: t.value, owner: 'Me', due: ''}), err);
+  };
+  add.append(t, go);
+  box.append(add);
+  box.append(el('div', 'hint', '“Me” is you; change the owner if someone else has it. Pick a due date.'));
+  return box;
+}
+
+// the parts of the sheet that come from the server are rebuilt after every change; typed fields are left alone
+function refreshSheet() {
+  const s = curStop();
+  if (!s) { closeSheet(true); return; }
+  const n = S.stops.indexOf(s) + 1;
+  sh.title.textContent = n + ' · ' + (s.business_name || 'Stop') + ' · ' + s.arrive + '–' + s.depart;
+  sh.parts.replaceChildren(partsBlock(s, sh.err));
+  sh.more.replaceChildren(expensesBlock(s, sh.err), followBlock(s, sh.err));
+}
+
+function openSheet(id) {
+  const s = S.stops.find(x => x.id === id);
+  if (!s) return;
+  sheet.id = id; sheet.failed = false; sheet.again = false;
+  sheet.vals = {notes: s.notes, work_category: s.work_category, ticket: s.ticket, visit_result: s.visit_result};
+  sh = {everSaved: false};
+  sheetEl.replaceChildren();
+
+  const top = el('div', 'sheet-top');
+  sh.title = el('div', 'sheet-title');
+  const done = el('button', 'primary', 'Done'); done.type = 'button'; done.onclick = () => closeSheet();
+  top.append(sh.title, done);
+  sh.stat = el('div', 'sheet-stat');
+  sh.err = el('div', 'err');
+
+  const notes = el('textarea', 'sheet-notes'); notes.value = s.notes;
+  notes.placeholder = 'What was wrong, what you did, the result';
+  notes.oninput = () => { sheet.vals.notes = notes.value; touched(); };
+  notes.onblur = () => { if (sheetDirty()) saveSheet(); };
+
+  const cat = el('select');
+  [['', 'Choose a category…']].concat(CATS.map(c => [c, c])).forEach(([v, t]) => { const o = el('option', null, t); o.value = v; cat.append(o); });
+  cat.value = s.work_category;
+  cat.onchange = () => { sheet.vals.work_category = cat.value; saveSheet(); };
+  const catBox = labeled('Category', cat);
+  if (!s.work_category && s.category_hint) {
+    const q = el('button', 'quick', 'Use ' + s.category_hint + ' (last time here)'); q.type = 'button';
+    q.onclick = () => { cat.value = s.category_hint; sheet.vals.work_category = cat.value; q.remove(); saveSheet(); };
+    catBox.append(q);
+  }
+
+  const ticket = el('input'); ticket.value = s.ticket; ticket.placeholder = 'e.g. #1042, or the project / milestone';
+  ticket.oninput = () => { sheet.vals.ticket = ticket.value; touched(); };
+  ticket.onblur = () => { if (sheetDirty()) saveSheet(); };
+  const result = el('select');
+  [['', '—']].concat(RESULTS).forEach(([v, t]) => { const o = el('option', null, t); o.value = v; result.append(o); });
+  result.value = s.visit_result;
+  result.onchange = () => { sheet.vals.visit_result = result.value; saveSheet(); };
+
+  sh.parts = el('div');
+  const det = el('details', 'sheet-more');
+  det.append(el('summary', null, 'More details'));
+  det.open = !!(s.ticket || s.visit_result || (s.follow_ups || []).length || (s.parts || []).some(p => p.expense));
+  sh.more = el('div', 'sheet-grid');
+  det.append(labeled('Job / ticket / project', ticket), labeled('Visit result', result), sh.more);
+
+  const done2 = el('button', 'primary wide', 'Done'); done2.type = 'button'; done2.onclick = () => closeSheet();
+  const body = el('div', 'sheet-body');
+  body.append(sh.stat, sh.err, labeled('Work performed', notes), catBox, sh.parts, det, done2);
+  sheetEl.append(top, body);
+  refreshSheet();
+  setStat('clean');
+  backEl.hidden = sheetEl.hidden = false;
+  document.body.classList.add('sheet-open');
+  sheetEl.scrollTop = 0;
+  sheetEl.style.bottom = '0px';
+}
+
 // ---- stop card ---------------------------------------------------------
 function labeled(label, input) {
   const w = el('div'); w.append(el('label', null, label), input); return w;
@@ -207,6 +417,12 @@ function stopCard(s, i) {
   const t = el('div', 't', s.arrive + ' – ' + s.depart + ' · ' + dur(s.minutes));
   if (s.kind === 'short') t.append(' ', el('span', 'chip', 'short'));
   body.append(t, el('div', 'm', s.business_name || (s.source === 'manual' ? 'Manual stop' : 'Unnamed stop')));
+  if (s.status === 'Confirmed') {
+    const miss = [];
+    if (!s.notes.trim()) miss.push('notes');
+    if (!s.work_category) miss.push('category');
+    if (miss.length) body.append(el('div', 'need', 'Needs ' + miss.join(' and ')));
+  }
   head.append(el('div', 'num', String(i + 1)), body, el('span', 'chip', s.status));
   if (s.suggest) {
     const q = el('button', 'quick', (s.business_name ? 'Confirm ' : 'Confirm as ') + s.suggest.name);
@@ -241,7 +457,7 @@ async function markHere(s, which, err) {
 
 function buildEdit(edit, s, i) {
   const key = 's' + s.id;
-  const d = Object.assign({business_name: s.business_name, address: s.address, notes: s.notes,
+  const d = Object.assign({business_name: s.business_name, address: s.address,
     arrive: s.arrive, depart: s.depart, status: s.status, category: s.category,
     known_site_id: s.known_site_id}, S.drafts[key] || {});
   const remember = (k, v) => { d[k] = v; (S.drafts[key] = S.drafts[key] || {})[k] = v; };
@@ -281,8 +497,18 @@ function buildEdit(edit, s, i) {
   depIn.oninput = () => remember('depart', depIn.value);
   const times = el('div', 'two'); times.append(labeled('Arrived', arrIn), labeled('Departed', depIn));
 
-  const notes = el('textarea'); notes.value = d.notes; notes.placeholder = 'Describe the work performed';
-  notes.oninput = () => remember('notes', notes.value);
+  const flat = (s.notes || '').replace(/\s+/g, ' ').trim();
+  const np = el('button', 'notesbtn'); np.type = 'button';
+  const bits = [];
+  const nParts = (s.parts || []).filter(p => !p.expense).length, nExp = (s.parts || []).filter(p => p.expense).length;
+  if (nParts) bits.push(nParts + ' part' + (nParts > 1 ? 's' : ''));
+  if (nExp) bits.push(nExp + ' expense' + (nExp > 1 ? 's' : ''));
+  if ((s.follow_ups || []).length) bits.push(s.follow_ups.length + ' follow-up' + (s.follow_ups.length > 1 ? 's' : ''));
+  if (s.work_category) bits.push(s.work_category);
+  np.append(el('span', 'nb-t', 'Notes & parts ›'),
+            el('span', 'nb-m' + (flat ? '' : ' nb-empty'), flat ? flat.slice(0, 110) + (flat.length > 110 ? '…' : '') : 'No work notes yet'),
+            el('span', 'nb-m', bits.join(' · ') || 'No parts yet'));
+  np.onclick = () => openSheet(s.id);
 
   const seg = el('div', 'seg');
   const segBtns = ['Draft', 'Confirmed', 'Personal', 'Lunch', 'Traffic'].map(st => {
@@ -298,7 +524,7 @@ function buildEdit(edit, s, i) {
   async function save() {
     err.textContent = '';
     const body = {};
-    ['business_name', 'address', 'notes', 'arrive', 'depart', 'status', 'category']
+    ['business_name', 'address', 'arrive', 'depart', 'status', 'category']
       .forEach(k => { if (d[k] !== s[k]) body[k] = d[k]; });
     if (d.known_site_id !== s.known_site_id) body.known_site_id = d.known_site_id;
     if (!Object.keys(body).length) { err.textContent = 'Nothing to save.'; return; }
@@ -346,8 +572,9 @@ function buildEdit(edit, s, i) {
   };
   more.append(del);
 
-  edit.append(seg, acts, more, splitRow, err, labeled('Business', nameIn), labeled('Address', addrIn), find, times,
-              labeled('Work performed', notes), partsBlock(s, err));
+  edit.append(seg, acts, more, splitRow, err);
+  if (s.status === 'Draft' || s.status === 'Confirmed') edit.append(np);
+  edit.append(labeled('Business', nameIn), labeled('Address', addrIn), find, times);
   if (s.lat != null) edit.append(el('div', 'hint', 'Tip: tap this stop\'s pin on the map, then drag it to move the location.'));
 }
 
@@ -512,12 +739,14 @@ function render(fit) {
     dur(Math.round((t.drive_s || 0) / 60)) + ' · ~' + (t.miles_approx || 0) + ' mi · ' + (t.confirmed || 0) +
     ' confirmed' + drafts + (t.personal ? ' · ' + t.personal + ' personal' : '') + (t.lunch ? ' · lunch' : '') + (t.traffic ? ' · ' + t.traffic + ' traffic' : '');
   footEl.style.color = t.draft ? 'var(--err)' : '';
+  if (sheet.id) refreshSheet();
 }
 
 async function load() {
   S.date = dateEl.value;
   document.getElementById('toolslink').href = '/tools?date=' + S.date;
   history.replaceState(null, '', '/day/' + S.date);
+  if (sheet.id) await closeSheet();
   S.tool = null; S.sel = null; S.flash = ''; S.drafts = {}; S.open.clear(); S.openDrives.clear();
   pathLayer.clearLayers(); candLayer.clearLayers(); markers = {};
   const m = el('div', null, 'Loading…'); m.id = 'msg'; listEl.replaceChildren(m);

@@ -36,8 +36,15 @@ INSTRUCTIONS = [
     "drive home is not work time (its miles are still in the mileage).",
     "Stop blocks: one per confirmed stop, in order. Work performed is the full text the technician wrote. Parts used "
     "lists parts consumed at the stop. Non-billable materials (supplies such as tape or solvent) are listed separately "
-    "and are not for billing. A blank HubSpot company ID means it is not known yet: match the company by business name "
-    "and address.",
+    "and are not for billing. Expenses (parking, tolls, purchases) are listed with their cost; Billable says whether "
+    "they are charged to the customer. A blank HubSpot company ID means it is not known yet: match the company by "
+    "business name and address.",
+    "Category is one of seven: Time & Material (billed hourly), Quoted project and White-label migration (hours "
+    "tracked against the project), and Internal operations, Administrative, Customer outreach and Training "
+    "(non-billable). Job / ticket / project is the reference the technician entered (for a migration it may name the "
+    "milestone). Visit result says whether the job is complete, needs a return visit, or is waiting on parts or the "
+    "customer. Hours by category adds up on-site time only. A dash means nothing was entered.",
+    "Follow-ups: what is still open, who owns it and when it is due. Create a task for each one.",
     "Drive from previous stop: the mileage leg that ends at this stop (the first stop starts from Home). Minutes are "
     "shown only when that drive counted as work time. If the user stopped for lunch between two jobs, the drives before "
     "and after lunch are added together as one drive, and the miles are the direct distance between the two jobs. "
@@ -105,7 +112,7 @@ def _recap(day, st, multi):
     unpaid = sum(r["minutes"] for r in sheet if r["type"] == "break")
     totals = [("On site", _dur(on_site))]
     if lunch:
-        totals.append(("Lunch (paid)", _dur(lunch)))
+        totals.append(("Lunch (paid, not billed)", _dur(lunch)))
     totals += [("Drive", _dur(drive)), ("Total paid time", _dur(on_site + drive + lunch))]
     if unpaid:
         totals.append(("Personal breaks (unpaid, not included)", f"({_dur(unpaid)})"))
@@ -122,7 +129,7 @@ def _recap(day, st, multi):
                            ("BACKGROUND", (0, first_tot + 1), (-1, -1), colors.HexColor("#f6f6f6"))]))
     title = "Day recap (timesheet)" + (f": {day['date']}" if multi else "")
     head = _p(f"Clock in {start or '—'}  ·  Clock out {end or '—'}  (day framed Home to Home)", B)
-    return [Paragraph(title, st["h1"]), head, Spacer(1, 3), t]
+    return [KeepTogether([Paragraph(title, st["h1"]), head, Spacer(1, 3), t])]
 
 
 def _styles():
@@ -174,7 +181,7 @@ MAX_ROW_H = 560  # points; a page frame is ~672 tall
 
 
 def _hm(minutes):
-    return f"{minutes} min ({minutes // 60} h {minutes % 60:02d} min)"
+    return f"{minutes} min ({minutes // 60} h {minutes % 60:02d} min)" if minutes >= 60 else f"{minutes} min"
 
 
 def _kv(rows, st, label_w=1.75 * inch, width=7 * inch):
@@ -206,6 +213,54 @@ def _parts_table(parts, st):
                  [1.65 * inch, 0.9 * inch, 0.45 * inch, 0.5 * inch, 0.8 * inch, 0.75 * inch], st)
 
 
+_BILLING = {"hourly": "billed hourly", "project": "tracked against the project", "non_billable": "non-billable"}
+
+
+def _money(v):
+    return "" if v is None else f"{v:.2f}"
+
+
+def _expenses_table(items, st):
+    rows = [[_p(e["name"], st["small"]), _p(f"{e['quantity']:g}", st["small"]), _p(_money(e["unit_cost"]), st["small"]),
+             _p(_money(e["line_cost"]), st["small"]), _p("yes" if e["billable"] else "no", st["small"])] for e in items]
+    total = sum(e["line_cost"] or 0 for e in items)
+    rows.append([Paragraph("Total", st["th"]), _p("", st["small"]), _p("", st["small"]),
+                 Paragraph(f"{total:.2f}", st["th"]), _p("", st["small"])])
+    return _grid(["Expense", "Qty", "Unit cost", "Cost", "Billable"], rows,
+                 [1.85 * inch, 0.45 * inch, 0.8 * inch, 0.8 * inch, 0.75 * inch], st)
+
+
+def _followups_table(items, st, extra=None, total=7.0):
+    head = ["Follow-up", "Owner", "Due"]
+    widths = [3.5, 1.0, 0.9]
+    if extra:
+        head.insert(0, "Business")
+        widths.insert(0, 1.4)
+    scale = total / sum(widths)
+    widths = [w * scale * inch for w in widths]
+    rows = []
+    for f in items:
+        row = [_p(f["what"], st["small"]), _p(f["owner"], st["small"]), _p(f["due"], st["small"])]
+        if extra:
+            row.insert(0, _p(f["business_name"], st["small"]))
+        rows.append(row)
+    return _grid(head, rows, widths, st)
+
+
+def _category_table(day, st):
+    rows = day["summary"].get("hours_by_category") or []
+    if not rows:
+        return []
+    bill = {"hourly": "Billed hourly", "project": "Tracked against the project", "non_billable": "Non-billable", "": "—"}
+    body = [[_p(r["category"], st["base"]), _p(bill.get(r["billing"], "—"), st["base"]),
+             _p(_hm(r["on_site_minutes"]), st["right"])] for r in rows]
+    return [Spacer(1, 6), Paragraph("Hours by category (on-site time)", st["h2"]),
+            _grid(["Category", "Billing", "On-site time"], body, [2.4 * inch, 2.6 * inch, 2.0 * inch], st)]
+
+
+LABEL_W = 2.2 * inch
+
+
 def _stop_block(s, st):
     drive = s["drive_from_previous_stop"]
     if not drive:
@@ -231,13 +286,19 @@ def _stop_block(s, st):
     if brk:
         rows.append(("Personal break (unpaid)", "; ".join(f"{x['from']} to {x['to']}, {x['minutes']} min" for x in brk)))
     rows += [("Drive from previous stop", drive_txt),
-             ("HubSpot company ID", s["hubspot_company_id"])]
-    for i, piece in enumerate(_fit(s["work_performed"], st["base"], 7 * inch - 1.75 * inch - 12, MAX_ROW_H)):
+             ("HubSpot company ID", s["hubspot_company_id"]),
+             ("Category", s["category"] + (f" ({_BILLING[s['billing']]})" if s["category"] and s["billing"] else "")),
+             ("Job / ticket / project", s["job_reference"]), ("Visit result", s["visit_result"])]
+    for i, piece in enumerate(_fit(s["work_performed"], st["base"], 7 * inch - LABEL_W - 12, MAX_ROW_H)):
         rows.append(("Work performed" if i == 0 else "Work performed (continued)", piece))
     rows.append(("Parts used", _parts_table(s["parts_used"], st)))
     if s.get("consumables_used"):
         rows.append(("Non-billable materials", _parts_table(s["consumables_used"], st)))
-    return [Paragraph(f"Stop {s['stop_number']}", st["h2"]), _kv(rows, st)]
+    if s.get("expenses"):
+        rows.append(("Expenses", _expenses_table(s["expenses"], st)))
+    if s.get("follow_ups"):
+        rows.append(("Follow-ups", _followups_table(s["follow_ups"], st, total=4.7)))
+    return [Paragraph(f"Stop {s['stop_number']}", st["h2"]), _kv(rows, st, label_w=LABEL_W)]
 
 
 def render(report):
@@ -272,12 +333,15 @@ def render(report):
                  ("Total paid time", _hm(sm.get("paid_minutes", sm["on_site_minutes"] + sm["drive_minutes"]))),
                  ("Approximate miles", f"{sm['miles_approx']} mi (approximate)"),
                  ("Stops confirmed", str(sm["stops_confirmed"]))]
+        if sm.get("expenses_total"):
+            rows.append(("Expenses", f"{sm['expenses_total']:.2f}"))
         if day.get("day_start") or day.get("day_end"):
             rows.append(("Work day", f"{day.get('day_start') or '—'} to {day.get('day_end') or '—'}"))
         return rows + _end_day_rows(day.get("end_day"))
 
     if not multi:       # one day: the header and the day summary are a single section
         story.append(_kv(head_rows + summary_rows(report["days"][0]), st, label_w=2.2 * inch))
+        story.extend(_category_table(report["days"][0], st))
     else:
         story.append(_kv(head_rows, st))
 
@@ -286,6 +350,7 @@ def render(report):
         if multi:
             story.append(Paragraph(f"Day summary: {datetime.fromisoformat(d).strftime('%A, %Y-%m-%d')}", st["h1"]))
             story.append(_kv(summary_rows(day), st, label_w=2.2 * inch))
+            story.extend(_category_table(day, st))
         if not day["stops"]:
             story.append(Spacer(1, 4))
             story.append(_p("No confirmed stops.", st["base"]))
@@ -294,8 +359,9 @@ def render(report):
             story.extend(blk)
 
     story.append(Paragraph("Records to update", st["h1"]))
-    head = ["Business name", "Address", "Arrival", "Departure", "Work performed", "Parts used"]
-    widths = [1.1, 1.15, 0.65, 0.85, 1.85, 1.4]
+    head = ["Business name", "Address", "Arrival", "Departure", "Category", "Job / ticket", "Work performed",
+            "Parts used"]
+    widths = [0.95, 0.95, 0.7, 0.95, 0.85, 0.7, 1.4, 1.2]
     if multi:
         head.insert(0, "Date")
         widths.insert(0, 0.8)
@@ -309,10 +375,11 @@ def render(report):
             if i == 0:
                 row = [_p(r["business_name"], st["small"]), _p(r["address"], st["small"]),
                        _p(r["arrival"], st["small"]), _p(r["departure"], st["small"]),
+                       _p(r["category"], st["small"]), _p(r["job_reference"], st["small"]),
                        _p(piece, st["small"]), _p(parts, st["small"])]
             else:  # long text continues on following rows (a table row cannot span pages)
                 blank = Paragraph("", st["small"])
-                row = [_p(f"(continued) {r['business_name']}", st["small"]), blank, blank, blank,
+                row = [_p(f"(continued) {r['business_name']}", st["small"]), blank, blank, blank, blank, blank,
                        _p(piece, st["small"]), blank]
             if multi:
                 row.insert(0, _p(r["date"], st["small"]))
@@ -321,6 +388,14 @@ def render(report):
         story.append(_grid(head, rows, widths, st))
     else:
         story.append(_p("No confirmed stops in this period.", st["base"]))
+
+    story.append(Paragraph("Follow-ups", st["h1"]))
+    if report.get("follow_ups"):
+        fl = [dict(f, what=f["what"], business_name=(f["date"] + " " if multi else "") + f["business_name"])
+              for f in report["follow_ups"]]
+        story.append(_followups_table(fl, st, extra=True))
+    else:
+        story.append(_p("None.", st["base"]))
 
     for day in report["days"]:
         story.extend(_mileage_table(day, st))

@@ -130,6 +130,15 @@ CREATE TABLE IF NOT EXISTS stops (
   times_edited INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS follow_ups (
+  id INTEGER PRIMARY KEY,
+  stop_id INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  owner TEXT,
+  due TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_stop ON follow_ups(stop_id);
+
 CREATE TABLE IF NOT EXISTS route_cache (
   key TEXT PRIMARY KEY,
   meters REAL NOT NULL,
@@ -168,6 +177,9 @@ CREATE TABLE IF NOT EXISTS drives (
 MIGRATIONS = [
     ("stops", "kind", "TEXT DEFAULT 'stop'"),
     ("stops", "category", "TEXT"),
+    ("stops", "work_category", "TEXT"),
+    ("stops", "ticket", "TEXT"),
+    ("stops", "visit_result", "TEXT"),
     ("parts", "kind", "TEXT DEFAULT 'part'"),
     ("parts", "vendor", "TEXT"),
     ("stop_parts", "kind", "TEXT DEFAULT 'part'"),

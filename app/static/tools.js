@@ -24,6 +24,7 @@ function exportForm() {
   const to = el('input'); to.type = 'date'; to.value = DATE;
   const two = el('div', 'two'); two.append(labeled('From', from), labeled('To', to));
   const info = el('div', 'hint', 'Checking…');
+  const warn = el('div', 'box warnbox'); warn.hidden = true;
   const pdf = el('a', 'btn primary', 'Download PDF'), js = el('a', 'btn', 'Download JSON');
   const dbg = el('a', 'btn', 'Debug data');
   dbg.title = 'Raw GPS points, detected stops and your edits for the “From” day (contains locations)';
@@ -53,6 +54,13 @@ function exportForm() {
       info.textContent = bits.join(' · ') + (c.not_confirmed
         ? '. Confirm each one, or mark it Personal, Lunch or Traffic, before exporting.' : '.');
       info.className = c.not_confirmed ? 'err' : 'hint';
+      warn.replaceChildren();
+      const ws = c.warnings || [];
+      if (ws.length) {
+        warn.append(el('div', 'wtitle', 'Worth a look before you export (you can still export):'));
+        const ul = el('ul'); ws.forEach(w => ul.append(el('li', null, w))); warn.append(ul);
+      }
+      warn.hidden = !ws.length;
       blocked = c.not_confirmed > 0;
       over.hidden = !blocked; overBox.checked = false;
       setLinks();
@@ -62,7 +70,7 @@ function exportForm() {
   from.onchange = () => { if (to.value < from.value) to.value = from.value; refresh(); };
   to.onchange = refresh;
   f.append(el('div', 'hint', 'Only Confirmed stops are included in detail. Pick a range to export several days.'),
-           two, info, over, acts);
+           two, info, warn, over, acts);
   refresh();
   return f;
 }

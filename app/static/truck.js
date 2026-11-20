@@ -48,7 +48,7 @@ function partRow(p) {
   const head = el('div', 'head');
   const body = el('div', 'body');
   body.append(el('div', 'n', p.name),
-    el('div', 'm', [p.kind === 'consumable' ? 'consumable' : '', p.sku, p.category, p.vendor, money(p.unit_cost),
+    el('div', 'm', [p.kind !== 'part' ? p.kind : '', p.sku, p.category, p.vendor, money(p.unit_cost),
       p.billable ? 'billable' : 'not billable',
       p.low ? 'LOW – reorder at ' + p.reorder_at : ''].filter(Boolean).join(' · ')));
   const q = qtyText(p);
@@ -78,10 +78,10 @@ function partRow(p) {
     mk('unit_cost', 'Unit cost', p.unit_cost, 'decimal'), mk('category', 'Category', p.category),
     mk('reorder_at', 'Reorder at', p.reorder_at, 'decimal'), mk('vendor', 'Vendor', p.vendor));
   const kind = el('select');
-  [['part', 'Part (billable)'], ['consumable', 'Consumable (not billed)']].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; kind.append(o); });
+  [['part', 'Part (billable)'], ['consumable', 'Consumable (not billed)'], ['expense', 'Expense (money, not stock)']].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; kind.append(o); });
   kind.value = p.kind;
   grid.append(lab('Type', kind));
-  kind.onchange = () => { bill.checked = kind.value !== 'consumable'; };
+  kind.onchange = () => { bill.checked = kind.value === 'part'; };
   const bill = el('input'); bill.type = 'checkbox'; bill.checked = p.billable;
   const trk = el('input'); trk.type = 'checkbox'; trk.checked = p.tracked;
   const bl = el('label'); bl.append(bill, ' Billable');
@@ -114,7 +114,7 @@ document.querySelectorAll('#tabs button').forEach(b => {
     render();
   };
 });
-document.getElementById('a_kind').onchange = ev => { document.getElementById('a_bill').checked = ev.target.value !== 'consumable'; };
+document.getElementById('a_kind').onchange = ev => { document.getElementById('a_bill').checked = ev.target.value === 'part'; };
 
 // ---- count the truck / shopping list ----------------------------------------
 const tools = document.getElementById('tools');

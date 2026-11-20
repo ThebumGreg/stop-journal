@@ -1,8 +1,8 @@
 :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --line:#d8dee4; --sel:#e8f1ff; --acc:#0b66d0;
-        --err:#d1242f; --ok:#1a7f37; --draft:#d1242f; --conf:#1a7f37; --pers:#8a8f98; --map-h:42%; --list-w:380px; }
+        --err:#d1242f; --ok:#1a7f37; --draft:#d1242f; --conf:#1a7f37; --pers:#8a8f98; --map-h:42%; --list-w:380px; --warn:#b35900; }
 @media (prefers-color-scheme: dark) {
   :root { --bg:#14181d; --fg:#e6e9ec; --muted:#98a2ad; --line:#2c333b; --sel:#1d2b3f; --acc:#5aa2ff;
-          --err:#ff7b72; --ok:#56d364; --draft:#ff7b72; --conf:#56d364; --pers:#8a8f98; }
+          --err:#ff7b72; --ok:#56d364; --draft:#ff7b72; --conf:#56d364; --pers:#8a8f98; --warn:#f0a050; }
 }
 * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 html { -webkit-text-size-adjust:100%; }
@@ -32,7 +32,7 @@ nav a { color:var(--acc); text-decoration:none; padding:10px 8px; font-size:15px
 
 main { flex:1; display:flex; min-height:0; }
 #list { overflow:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
-#map { background:var(--sel); }
+#map { background:var(--sel); position:relative; z-index:0; }
 #split { touch-action:none; display:flex; align-items:center; justify-content:center; background:var(--bg);
          border:solid var(--line); cursor:row-resize; -webkit-user-select:none; user-select:none; flex:none; }
 #split .grip { background:var(--muted); opacity:.55; border-radius:3px; }
@@ -136,3 +136,39 @@ select { padding:8px 10px; width:100%; min-height:40px; -webkit-appearance:menul
 .more { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
 .more button { font-size:14px; padding:4px 6px; min-height:38px; }
 .edit .acts button { flex:1; }
+
+.need { color:var(--err); font-size:13px; font-weight:600; }
+.notesbtn { display:grid; gap:2px; text-align:left; width:100%; padding:10px 12px; min-height:56px; }
+.notesbtn .nb-t { font-weight:700; color:var(--acc); }
+.notesbtn .nb-m { color:var(--muted); font-size:14px; overflow-wrap:anywhere; }
+.notesbtn .nb-empty { color:var(--err); }
+
+/* slide-up sheet for notes, parts and job details */
+.sheet-back { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:2000; }
+.sheet { position:fixed; left:0; right:0; bottom:0; max-height:94vh; max-height:94dvh; max-width:760px; margin:0 auto; z-index:2001;
+         background:var(--bg); border-radius:16px 16px 0 0; box-shadow:0 -4px 24px rgba(0,0,0,.35); overflow:auto;
+         -webkit-overflow-scrolling:touch; overscroll-behavior:contain; animation:sheetup .18s ease-out; }
+@keyframes sheetup { from { transform:translateY(40px); opacity:.5; } to { transform:none; opacity:1; } }
+.sheet-top { position:sticky; top:0; z-index:2; display:flex; gap:10px; align-items:center; justify-content:space-between;
+             padding:12px 14px 8px; background:var(--bg); border-bottom:1px solid var(--line); }
+.sheet-title { font-weight:700; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sheet-top .primary, .sheet .primary { background:var(--acc); color:#fff; border-color:var(--acc); min-width:84px; }
+.sheet .wide { width:100%; }
+.sheet-body { padding:10px 14px max(18px, env(safe-area-inset-bottom)); display:grid; gap:12px; }
+.sheet label { font-size:13px; color:var(--muted); display:block; margin-bottom:3px; }
+.sheet-stat { font-size:13px; font-weight:600; color:var(--ok); }
+.sheet-stat.unsaved, .sheet-stat.saving { color:var(--warn, #b35900); }
+.sheet-stat.error { color:var(--err); }
+.sheet-notes { min-height:150px; }
+.sheet-more > summary { cursor:pointer; padding:10px 0; font-weight:700; color:var(--acc); }
+.sheet-more[open] > summary { border-bottom:1px solid var(--line); margin-bottom:10px; }
+.sheet-more > div + div, .sheet-more > label + div { margin-top:10px; }
+.sheet-grid { display:grid; gap:14px; margin-top:12px; }
+.fu { display:grid; gap:6px; padding:8px; border:1px solid var(--line); border-radius:8px; margin-bottom:8px; grid-template-columns:1fr 44px; }
+.fu > .two { grid-column:1; }
+.fu > .need { grid-column:1 / -1; }
+.fu > input:first-child { grid-column:1; }
+.fu > .danger { grid-row:1; grid-column:2; }
+body.sheet-open { overflow:hidden; }
+.sheet .err:empty { display:none; }
+.sheet .prow.add.one { grid-template-columns:1fr 64px; }

@@ -27,6 +27,7 @@
     <button type="button" data-k="" class="on">All</button>
     <button type="button" data-k="part">Parts</button>
     <button type="button" data-k="consumable">Consumables</button>
+    <button type="button" data-k="expense">Expenses</button>
   </div>
   <input id="filter" placeholder="Search by name, part number, category or vendor">
 
@@ -40,7 +41,7 @@
   <h2>Add an item</h2>
   <div class="grid" id="addform">
     <div><label>Name</label><input id="a_name"></div>
-    <div><label>Type</label><select id="a_kind"><option value="part">Part (billable)</option><option value="consumable">Consumable (not billed)</option></select></div>
+    <div><label>Type</label><select id="a_kind"><option value="part">Part (billable)</option><option value="consumable">Consumable (not billed)</option><option value="expense">Expense (money, not stock)</option></select></div>
     <div><label>Part #</label><input id="a_sku"></div>
     <div><label>Vendor</label><input id="a_vendor"></div>
     <div><label>Unit</label><input id="a_unit" placeholder="ea"></div>
@@ -61,7 +62,7 @@
     <div class="hint" style="margin-top:6px">
       <a href="/api/parts/template.csv">Download template</a> ·
       <a href="/api/parts/export.csv">Export current parts</a>.
-      Columns: <code>name</code> (required), <code>sku</code>, <code>type</code> (part or consumable), <code>unit</code>,
+      Columns: <code>name</code> (required), <code>sku</code>, <code>type</code> (part, consumable or expense), <code>unit</code>,
       <code>unit_cost</code>, <code>billable</code>, <code>category</code>, <code>vendor</code>, <code>on_hand</code>, <code>reorder_at</code>.
       Matching is by part number, else name. <b>Check file</b> shows what an import would do without changing anything. A filled <code>on_hand</code> sets the truck count and turns tracking on.
     </div>

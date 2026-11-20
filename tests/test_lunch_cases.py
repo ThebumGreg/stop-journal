@@ -93,7 +93,7 @@ def test_lunch_is_paid_in_the_timesheet(tmp_path):
     from tests.test_export import pdf_text
     import re
     flat = re.sub(r"\s+", " ", pdf_text(c.get(f"/api/export.pdf?from={D}")))
-    assert "Lunch (paid, not billed)" in flat and "Lunch (paid) 40 min" in flat and "(40 min)" not in flat
+    assert "Lunch (paid, not billed)" in flat and "Lunch (paid, not billed) 40 min" in flat and "(40 min)" not in flat
 
 
 def test_same_site_lunch_gap_is_paid_but_not_billable(tmp_path):

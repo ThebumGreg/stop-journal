@@ -8,8 +8,9 @@
 
 CSV import format (header row required, order free, extra columns ignored):
   name (required), sku, type, unit, unit_cost, billable, category, vendor, on_hand, reorder_at
-  type is "part" (default) or "consumable" (tape, gloves, solvent: used up, normally not billed;
-  consumables default to not billable).
+  type is "part" (default), "consumable" (tape, gloves, solvent: used up, normally not billed;
+  consumables default to not billable) or "expense" (parking, tolls, a purchase: money, not stock;
+  never tracked or counted, not billable unless ticked).
 Common alternative headers are accepted (see ALIASES). Rows are matched to an
 existing part by sku, else by name; blank cells never overwrite existing values.
 A non-blank on_hand sets the truck count and switches tracking on.
@@ -24,10 +25,10 @@ from .errors import EditError
 
 COLUMNS = ["sku", "name", "type", "unit", "unit_cost", "billable", "category", "vendor", "on_hand",
            "reorder_at"]
-KINDS = ("part", "consumable")
+KINDS = ("part", "consumable", "expense")
 KIND_WORDS = {"part": "part", "parts": "part", "billable": "part", "material": "part",
               "consumable": "consumable", "consumables": "consumable", "supply": "consumable",
-              "supplies": "consumable"}
+              "supplies": "consumable", "expense": "expense", "expenses": "expense"}
 ALIASES = {
     "part_number": "sku", "part_no": "sku", "partnumber": "sku", "part_#": "sku",
     "item_number": "sku", "item_no": "sku", "item_#": "sku",
@@ -87,12 +88,12 @@ def _text(v, what, limit=200, required=False):
 
 
 def _kind(v):
-    """'part' | 'consumable' | None (blank). Anything else is an error."""
+    """'part' | 'consumable' | 'expense' | None (blank). Anything else is an error."""
     t = str(v or "").strip().lower()
     if not t:
         return None
     if t not in KIND_WORDS:
-        raise EditError("Type must be “part” or “consumable”.")
+        raise EditError("Type must be “part”, “consumable” or “expense”.")
     return KIND_WORDS[t]
 
 
@@ -157,8 +158,10 @@ def create_part(conn, f, tracked=False):
     kind = _kind(f.get("type", f.get("kind"))) or "part"
     billable = _bool(f.get("billable"))
     if billable is None:
-        billable = kind != "consumable"      # consumables are not billed unless said otherwise
+        billable = kind == "part"            # consumables and expenses are not billed unless said otherwise
     on_hand = _num(f.get("on_hand"), "On hand")
+    if kind == "expense":                    # an expense is money, not stock
+        on_hand, tracked = None, False
     reorder = _num(f.get("reorder_at"), "Reorder level", 0)
     if on_hand is not None:
         tracked = True
@@ -197,10 +200,12 @@ def update_part(conn, pid, f):
         k = _kind(f.get("type", f.get("kind")))
         if k:
             upd["kind"] = k
+            if k == "expense":
+                upd["tracked"] = 0
     if "billable" in f:
         b = _bool(f["billable"])
         upd["billable"] = 1 if b is None or b else 0
-    if "tracked" in f:
+    if "tracked" in f and upd.get("kind", p["kind"]) != "expense":
         upd["tracked"] = 1 if f["tracked"] else 0
     if "active" in f:
         upd["active"] = 1 if f["active"] else 0
@@ -219,7 +224,7 @@ def _log(conn, pid, delta, reason, sp_id=None, note=""):
 
 def move(conn, part, delta, reason, sp_id=None, note=""):
     """Change truck stock for a tracked part (no-op for untracked parts)."""
-    if not part or not part["tracked"] or not delta:
+    if not part or not part["tracked"] or not delta or part["kind"] == "expense":
         return
     conn.execute("UPDATE parts SET on_hand=round(COALESCE(on_hand,0)+?, 4) WHERE id=?",
                  (delta, part["id"]))
@@ -303,7 +308,7 @@ def _update_from_row(conn, existing, rec):
     f["active"] = True
     update_part(conn, existing["id"], f)
     oh = _num(rec.get("on_hand"), "On hand")
-    if oh is not None:
+    if oh is not None and get_part(conn, existing["id"])["kind"] != "expense":
         conn.execute("UPDATE parts SET tracked=1 WHERE id=?", (existing["id"],))
         move(conn, get_part(conn, existing["id"]), round(oh - (existing["on_hand"] or 0), 4), "import")
 
@@ -347,7 +352,8 @@ def stop_part_dict(r):
             "sku": r["sku"] or "", "unit": r["unit"] or "ea", "qty": r["qty"], "unit_cost": cost,
             "line_cost": None if cost is None else round(cost * r["qty"], 2),
             "billable": bool(r["billable"]), "notes": r["notes"] or "",
-            "kind": r["kind"] or "part", "consumable": (r["kind"] or "part") == "consumable"}
+            "kind": r["kind"] or "part", "consumable": (r["kind"] or "part") == "consumable",
+            "expense": (r["kind"] or "part") == "expense"}
 
 
 def _qty(v):
@@ -368,9 +374,14 @@ def add_to_stop(conn, stop_id, f):
         part = find_part(conn, name, f.get("sku"))
         if part is None:  # ad-hoc: remember it in the catalog, but don't track stock
             part = get_part(conn, create_part(conn, {"name": name, "sku": f.get("sku"),
-                                                      "unit_cost": f.get("unit_cost")}))
-    row = conn.execute("SELECT * FROM stop_parts WHERE stop_id=? AND part_id=?",
-                       (stop_id, part["id"])).fetchone()
+                                                      "unit_cost": f.get("unit_cost"), "type": f.get("type"),
+                                                      "billable": f.get("billable")}))
+    expense = part["kind"] == "expense"
+    cost = part["unit_cost"]
+    if expense and str(f.get("unit_cost") if f.get("unit_cost") is not None else "").strip():
+        cost = _num(f.get("unit_cost"), "Amount", 0)        # each receipt has its own amount
+    row = None if expense else conn.execute("SELECT * FROM stop_parts WHERE stop_id=? AND part_id=?",
+                                           (stop_id, part["id"])).fetchone()   # two receipts stay two lines
     if row:
         conn.execute("UPDATE stop_parts SET qty=round(qty+?,4) WHERE id=?", (qty, row["id"]))
         sp_id = row["id"]
@@ -378,7 +389,7 @@ def add_to_stop(conn, stop_id, f):
         sp_id = conn.execute(
             "INSERT INTO stop_parts(stop_id,part_id,name,sku,unit,qty,unit_cost,billable,notes,kind) "
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (stop_id, part["id"], part["name"], part["sku"], part["unit"], qty, part["unit_cost"],
+            (stop_id, part["id"], part["name"], part["sku"], part["unit"], qty, cost,
              part["billable"], _text(f.get("notes"), "Notes", 500) or None,
              part["kind"] or "part")).lastrowid
     move(conn, part, -qty, "used", sp_id)

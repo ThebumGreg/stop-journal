@@ -26,6 +26,16 @@ from .places import known
 STATUSES = ("Draft", "Confirmed", "Personal", "Lunch", "Traffic")
 OFF_CLOCK = ("Personal", "Lunch")   # not work: the stop and the drives to and from it are excluded
 
+# Work categories (the SOP's seven). The value is how the hours are billed: hourly (time and material),
+# project (tracked against a quote or migration) or non_billable. The technician only picks the category.
+WORK_CATEGORIES = {
+    "Quoted project": "project", "Time & Material": "hourly", "White-label migration": "project",
+    "Internal operations": "non_billable", "Administrative": "non_billable",
+    "Customer outreach": "non_billable", "Training": "non_billable",
+}
+VISIT_RESULTS = {"complete": "Complete", "return": "Return visit needed",
+                 "waiting": "Waiting (parts or customer)"}
+
 
 
 
@@ -222,8 +232,9 @@ def _free(conn, date, sid, a, d):
 def redetect(conn, cfg, date, kept, run_cfg):
     """Discard detected stops (and all their edits) and detect again. Manual stops stay."""
     snapshot_day(conn, date, "Re-detected the day")
-    parts.release_stops(conn, [r["id"] for r in conn.execute(
-        "SELECT id FROM stops WHERE date=? AND source!='manual'", (date,))])
+    gone = [r["id"] for r in conn.execute("SELECT id FROM stops WHERE date=? AND source!='manual'", (date,))]
+    parts.release_stops(conn, gone)
+    conn.executemany("DELETE FROM follow_ups WHERE stop_id=?", [(i,) for i in gone])
     conn.execute("DELETE FROM stops WHERE date=? AND source!='manual'", (date,))
     conn.execute("DELETE FROM drives WHERE date=?", (date,))
     materialize(conn, cfg, date, kept, run_cfg)
@@ -364,10 +375,12 @@ def snapshot_day(conn, date, label):
     marks = ",".join("?" * len(ids))
     sp = [dict(r) for r in conn.execute(
         f"SELECT * FROM stop_parts WHERE stop_id IN ({marks})", ids)] if ids else []
+    fu = [dict(r) for r in conn.execute(
+        f"SELECT * FROM follow_ups WHERE stop_id IN ({marks})", ids)] if ids else []
     drives = [dict(r) for r in conn.execute("SELECT * FROM drives WHERE date=?", (date,))]
     conn.execute("INSERT INTO undo_log(date,ts,label,payload) VALUES (?,?,?,?)",
                  (date, int(time.time()), label,
-                  json.dumps({"stops": stops, "drives": drives, "stop_parts": sp})))
+                  json.dumps({"stops": stops, "drives": drives, "stop_parts": sp, "follow_ups": fu})))
     conn.execute("DELETE FROM undo_log WHERE date=? AND id NOT IN "
                  "(SELECT id FROM undo_log WHERE date=? ORDER BY id DESC LIMIT ?)",
                  (date, date, UNDO_KEEP))
@@ -387,8 +400,9 @@ def undo_last(conn, cfg, date):
     if not row:
         raise EditError("Nothing to undo for this day.")
     snap = json.loads(row["payload"])
-    parts.release_stops(conn, [r["id"] for r in conn.execute(
-        "SELECT id FROM stops WHERE date=?", (date,))])
+    gone = [r["id"] for r in conn.execute("SELECT id FROM stops WHERE date=?", (date,))]
+    parts.release_stops(conn, gone)
+    conn.executemany("DELETE FROM follow_ups WHERE stop_id=?", [(i,) for i in gone])
     conn.execute("DELETE FROM drives WHERE date=?", (date,))
     conn.execute("DELETE FROM stops WHERE date=?", (date,))
 
@@ -406,6 +420,8 @@ def undo_last(conn, cfg, date):
         part = conn.execute("SELECT * FROM parts WHERE id=?", (rec["part_id"],)).fetchone() \
             if rec.get("part_id") else None
         parts.move(conn, part, -rec["qty"], "used", rec["id"], "undo")
+    for rec in snap.get("follow_ups", []):
+        put("follow_ups", rec)
     conn.execute("DELETE FROM undo_log WHERE id=?", (row["id"],))
     _finish(conn, cfg, date)
     return date
@@ -444,6 +460,21 @@ def patch_stop(conn, cfg, sid, f):
             upd[k] = str(f[k] or "").strip() if k != "notes" else str(f[k] or "")
     if "known_site_id" in f:
         upd["known_site_id"] = int(f["known_site_id"]) if f["known_site_id"] else None
+    if "work_category" in f:
+        wc = str(f["work_category"] or "").strip()
+        if wc and wc not in WORK_CATEGORIES:
+            raise EditError("Choose one of the listed categories.")
+        upd["work_category"] = wc or None
+    if "ticket" in f:
+        t = str(f["ticket"] or "").strip()
+        if len(t) > 80:
+            raise EditError("The job or ticket reference is too long (80 characters at most).")
+        upd["ticket"] = t or None
+    if "visit_result" in f:
+        vr = str(f["visit_result"] or "").strip()
+        if vr and vr not in VISIT_RESULTS:
+            raise EditError("Choose one of the listed visit results.")
+        upd["visit_result"] = vr or None
     if "status" in f:
         if f["status"] not in STATUSES:
             raise EditError("Status must be Draft, Confirmed, Personal, Lunch or Traffic.")
@@ -469,6 +500,10 @@ def patch_stop(conn, cfg, sid, f):
             upd["known_site_id"] = known.learn(
                 conn, name, upd.get("address", s["address"] or ""), lat, lon,
                 upd.get("category", s["category"] or ""))
+        if s["status"] != "Confirmed" and not upd.get("work_category", s["work_category"]):
+            hint = last_category(conn, s["id"], name, upd.get("known_site_id", s["known_site_id"]))
+            if hint:         # same business as before: start from the category used last time
+                upd["work_category"] = hint
     upd["edited"] = 1
     sets = ", ".join(f"{k}=?" for k in upd)  # keys are whitelisted above
     conn.execute(f"UPDATE stops SET {sets} WHERE id=?", (*upd.values(), sid))
@@ -481,10 +516,20 @@ def patch_stop(conn, cfg, sid, f):
     return date
 
 
+def last_category(conn, sid, name, site_id):
+    """The work category last used for this business (saved place, else same name), or ''."""
+    r = conn.execute(
+        "SELECT work_category FROM stops WHERE id!=? AND status='Confirmed' AND COALESCE(work_category,'')!='' "
+        "AND ((? IS NOT NULL AND known_site_id=?) OR (?!='' AND lower(business_name)=lower(?))) "
+        "ORDER BY date DESC, arrive_utc DESC LIMIT 1", (sid, site_id, site_id, name or "", name or "")).fetchone()
+    return r["work_category"] if r else ""
+
+
 def delete_stop(conn, cfg, sid):
     date = _stop(conn, sid)["date"]
     snapshot_day(conn, date, "Deleted a stop")
     parts.release_stops(conn, [sid])
+    conn.execute("DELETE FROM follow_ups WHERE stop_id=?", (sid,))
     conn.execute("DELETE FROM stops WHERE id=?", (sid,))
     _finish(conn, cfg, date)
     return date
@@ -553,12 +598,14 @@ def merge_stops(conn, cfg, id_a, id_b):
     kind = "stop" if "stop" in (a["kind"], b["kind"]) else "short"
     conn.execute(
         "UPDATE stops SET arrive_utc=?, depart_utc=?, lat=?, lon=?, business_name=?, "
-        "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, edited=1, times_edited=1 "
-        "WHERE id=?",
+        "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, work_category=?, ticket=?, "
+        "visit_result=?, edited=1, times_edited=1 WHERE id=?",
         (a["arrive_utc"], b["depart_utc"], lat, lon, first["business_name"],
          first["address"], first["category"], first["known_site_id"], notes, status,
-         kind, a["id"]))
+         kind, a["work_category"] or b["work_category"], a["ticket"] or b["ticket"],
+         b["visit_result"] or a["visit_result"], a["id"]))
     conn.execute("UPDATE stop_parts SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
+    conn.execute("UPDATE follow_ups SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
     conn.execute("DELETE FROM stops WHERE id=?", (b["id"],))
     _finish(conn, cfg, a["date"])
     return a["date"]
@@ -604,6 +651,75 @@ def remove_stop_part(conn, cfg, spid):
     stop_id = parts.remove_from_stop(conn, spid)
     conn.commit()
     return _stop(conn, stop_id)["date"]
+
+
+# ---- follow-ups (what is still open, who owns it, when it is due) --------
+def _followup_fields(f, full):
+    out = {}
+    if full or "text" in f:
+        t = str(f.get("text") or "").strip()
+        if not t:
+            raise EditError("Say what the follow-up is.")
+        if len(t) > 300:
+            raise EditError("The follow-up is too long (300 characters at most).")
+        out["text"] = t
+    if full or "owner" in f:
+        o = str(f.get("owner") or "").strip()
+        if len(o) > 60:
+            raise EditError("The owner is too long (60 characters at most).")
+        out["owner"] = o
+    if full or "due" in f:
+        d = str(f.get("due") or "").strip()
+        if d:
+            try:
+                datetime.strptime(d, "%Y-%m-%d")
+            except ValueError:
+                raise EditError("The due date looks like 2026-11-18.")
+        out["due"] = d
+    return out
+
+
+def add_followup(conn, cfg, stop_id, f):
+    date = _stop(conn, stop_id)["date"]
+    v = _followup_fields(f, True)
+    conn.execute("INSERT INTO follow_ups(stop_id,text,owner,due) VALUES (?,?,?,?)",
+                 (stop_id, v["text"], v["owner"], v["due"]))
+    conn.execute("UPDATE stops SET edited=1 WHERE id=?", (stop_id,))
+    conn.commit()
+    return date
+
+
+def _followup(conn, fid):
+    r = conn.execute("SELECT * FROM follow_ups WHERE id=?", (fid,)).fetchone()
+    if not r:
+        raise EditError("That follow-up no longer exists.")
+    return r
+
+
+def patch_followup(conn, cfg, fid, f):
+    r = _followup(conn, fid)
+    v = _followup_fields(f, False)
+    if v:
+        sets = ", ".join(f"{k}=?" for k in v)   # keys come from _followup_fields
+        conn.execute(f"UPDATE follow_ups SET {sets} WHERE id=?", (*v.values(), fid))
+        conn.commit()
+    return _stop(conn, r["stop_id"])["date"]
+
+
+def remove_followup(conn, cfg, fid):
+    r = _followup(conn, fid)
+    conn.execute("DELETE FROM follow_ups WHERE id=?", (fid,))
+    conn.commit()
+    return _stop(conn, r["stop_id"])["date"]
+
+
+def followups_for_day(conn, date):
+    out = {}
+    for r in conn.execute("SELECT f.* FROM follow_ups f JOIN stops s ON s.id=f.stop_id WHERE s.date=? "
+                          "ORDER BY f.id", (date,)):
+        out.setdefault(r["stop_id"], []).append({"id": r["id"], "text": r["text"],
+                                                  "owner": r["owner"] or "", "due": r["due"] or ""})
+    return out
 
 
 # ---- drive operations --------------------------------------------------
@@ -813,8 +929,13 @@ def totals(stops, drives, marks=None):
 
 def day_payload(conn, cfg, date, include_path=False):
     used = parts.for_day(conn, date)
+    fups = followups_for_day(conn, date)
     stops = [{
-        "parts": used.get(r["id"], []),
+        "parts": used.get(r["id"], []), "follow_ups": fups.get(r["id"], []),
+        "work_category": r["work_category"] or "", "ticket": r["ticket"] or "",
+        "visit_result": r["visit_result"] or "",
+        "category_hint": "" if r["work_category"] else last_category(
+            conn, r["id"], r["business_name"], r["known_site_id"]),
         "id": r["id"], "seq": r["seq"], "kind": r["kind"] or "stop", "source": r["source"],
         "lat": r["lat"], "lon": r["lon"],
         "arrive": fmt_time(cfg, r["arrive_utc"]), "depart": fmt_time(cfg, r["depart_utc"]),

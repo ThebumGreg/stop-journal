@@ -319,6 +319,19 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def stop_part_delete(spid):
         return mutate(service.remove_stop_part, spid)
 
+    # ---- follow-ups ----------------------------------------------------
+    @app.post("/api/stops/<int:sid>/follow-ups")
+    def followup_add(sid):
+        return mutate(service.add_followup, sid, request.get_json(silent=True) or {})
+
+    @app.patch("/api/follow-ups/<int:fid>")
+    def followup_patch(fid):
+        return mutate(service.patch_followup, fid, request.get_json(silent=True) or {})
+
+    @app.delete("/api/follow-ups/<int:fid>")
+    def followup_delete(fid):
+        return mutate(service.remove_followup, fid)
+
     # ---- catalog / truck inventory ------------------------------------
     def catalog(fn):
         """Run fn(conn) -> JSON-able; EditError -> 400."""

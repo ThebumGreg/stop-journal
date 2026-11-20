@@ -47,9 +47,17 @@ def _part(p):
 
 def _split_parts(lines):
     """Parts go to `parts_used`; consumables (tape, solvent...) to `consumables_used`, so the
-    reader does not mistake them for billable materials."""
-    return ([_part(p) for p in lines if not p.get("consumable")],
-            [_part(p) for p in lines if p.get("consumable")])
+    reader does not mistake them for billable materials; expenses (parking, tolls) to `expenses`."""
+    return ([_part(p) for p in lines if not p.get("consumable") and not p.get("expense")],
+            [_part(p) for p in lines if p.get("consumable")],
+            [_part(p) for p in lines if p.get("expense")])
+
+
+def _line_total(p):
+    return p["line_cost"] if p["line_cost"] is not None else 0.0
+
+
+NO_CATEGORY = "No category"
 
 
 def _timesheet(stops, drives):
@@ -133,11 +141,17 @@ def build_day(payload, cfg):
                and service.same_site(s, stops[cur + 2])):
             left, nxt = stops[cur], stops[cur + 2]
             m = merged.setdefault(s["id"], {"gaps": [], "notes": [s["notes"]], "parts": list(s["parts"]),
-                                            "minutes": s["minutes"]})
+                                            "minutes": s["minutes"], "follow_ups": list(s["follow_ups"]),
+                                            "ticket": s["ticket"], "visit_result": s["visit_result"],
+                                            "work_category": s["work_category"]})
             m["gaps"].append({"kind": stops[cur + 1]["status"], "from": left["depart"], "to": nxt["arrive"],
                               "secs": nxt["arrive_ts"] - left["depart_ts"]})
             m["notes"].append(nxt["notes"])
             m["parts"] += nxt["parts"]
+            m["follow_ups"] += nxt["follow_ups"]
+            m["ticket"] = m["ticket"] or nxt["ticket"]
+            m["work_category"] = m["work_category"] or nxt["work_category"]
+            m["visit_result"] = nxt["visit_result"] or m["visit_result"]
             m["minutes"] += nxt["minutes"]
             m["depart"], m["depart_ts"] = nxt["depart"], nxt["depart_ts"]
             absorbed.add(nxt["id"])
@@ -155,7 +169,8 @@ def build_day(payload, cfg):
                       for g in m["gaps"] if g["kind"] == "Personal"]
             s = dict(s, depart=m["depart"], depart_ts=m["depart_ts"], parts=m["parts"],
                      notes="\n\n".join(n for n in m["notes"] if n),
-                     minutes=m["minutes"])
+                     minutes=m["minutes"], follow_ups=m["follow_ups"], ticket=m["ticket"],
+                     visit_result=m["visit_result"], work_category=m["work_category"])
         if s["status"] != "Confirmed":
             reason = {"Personal": "End Day" if s["id"] == end_id else "Personal", "Lunch": "Lunch",
                       "Traffic": "Traffic (counted as drive time)"}.get(s["status"]) or \
@@ -176,7 +191,8 @@ def build_day(payload, cfg):
                      "from": leg["from"], "notes": d["notes"] if d else ""}
         elif counted:
             drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "from": "", "notes": d["notes"]}
-        used, consumed = _split_parts(s["parts"])
+        used, consumed, spent = _split_parts(s["parts"])
+        cat = s["work_category"]
         out_stops.append({
             "stop_number": len(out_stops) + 1,
             "business_name": s["business_name"], "address": s["address"],
@@ -189,9 +205,15 @@ def build_day(payload, cfg):
             "personal_breaks_unpaid": breaks,
             "drive_from_previous_stop": drive,
             "hubspot_company_id": s["hubspot_company_id"],
+            "category": cat,
+            "billing": service.WORK_CATEGORIES.get(cat, ""),
+            "job_reference": s["ticket"],
+            "visit_result": service.VISIT_RESULTS.get(s["visit_result"], ""),
             "work_performed": s["notes"],
             "parts_used": used,
             "consumables_used": consumed,
+            "expenses": spent,
+            "follow_ups": [{"what": f["text"], "owner": f["owner"], "due": f["due"]} for f in s["follow_ups"]],
         })
     drive_min = sum(s["drive_from_previous_stop"]["minutes"] or 0 for s in out_stops if s["drive_from_previous_stop"])
     miles = sum(s["drive_from_previous_stop"]["miles_approx"] for s in out_stops if s["drive_from_previous_stop"])
@@ -210,13 +232,20 @@ def build_day(payload, cfg):
     if mil:
         miles = mil["total_miles"]     # billable mileage is always Home to Home, personal stops left out
     marks = payload.get("marks") or {}
+    by_cat = {}
+    for o in out_stops:
+        row = by_cat.setdefault(o["category"] or NO_CATEGORY, {"category": o["category"] or NO_CATEGORY,
+                                                                "billing": o["billing"], "on_site_minutes": 0})
+        row["on_site_minutes"] += o["time_on_site_minutes"]
+    expenses_total = round(sum(_line_total(e) for o in out_stops for e in o["expenses"]), 2)
     return {"date": payload["date"],
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
                         "drive_minutes": drive_min, "traffic_minutes": traffic,
                         "lunch_minutes": lunch_min, "break_minutes_unpaid": break_min,
                         "paid_minutes": sum(s["time_on_site_minutes"] for s in out_stops) + drive_min + lunch_min, "miles_approx": round(miles, 1),
-                        "stops_confirmed": len(out_stops), "stops_excluded": len(excluded)},
+                        "stops_confirmed": len(out_stops), "stops_excluded": len(excluded),
+                        "hours_by_category": list(by_cat.values()), "expenses_total": expenses_total},
             "drive_after_last_stop": final,
             "timesheet": sheet,
             "mileage": mil,
@@ -231,11 +260,39 @@ def records_to_update(days):
             rows.append({"date": day["date"], "stop_number": s["stop_number"],
                          "business_name": s["business_name"], "address": s["address"],
                          "arrival": s["arrival"], "departure": s["departure"],
+                         "category": s["category"], "job_reference": s["job_reference"],
                          "work_performed": s["work_performed"],
                          "parts_used": [f"{p['quantity']:g} x {p['name']}" + (f" ({p['part_number']})" if p["part_number"] else "")
                                         for p in s["parts_used"]],
                          "hubspot_company_id": s["hubspot_company_id"]})
     return rows
+
+
+def follow_ups(days):
+    rows = []
+    for day in days:
+        for s in day["stops"]:
+            for f in s["follow_ups"]:
+                rows.append({"date": day["date"], "stop_number": s["stop_number"],
+                             "business_name": s["business_name"], **f})
+    return rows
+
+
+def warnings(report):
+    """Things worth a look before exporting. They never block: each names a stop or follow-up."""
+    out = []
+    for day in report["days"]:
+        for s in day["stops"]:
+            who = f"{day['date']} stop {s['stop_number']} ({s['business_name']})"
+            if not s["category"]:
+                out.append(f"{who}: no category chosen.")
+            if not s["work_performed"].strip():
+                out.append(f"{who}: no work performed written.")
+            for f in s["follow_ups"]:
+                miss = [w for w, v in (("an owner", f["owner"]), ("a due date", f["due"])) if not v]
+                if miss:
+                    out.append(f"{who}: follow-up “{f['what']}” has no {' or '.join(m.split(' ', 1)[1] for m in miss)}.")
+    return out
 
 
 def build(conn, cfg, dates, ensure, now=None):
@@ -248,7 +305,7 @@ def build(conn, cfg, dates, ensure, now=None):
     return {"schema_version": SCHEMA_VERSION, "report": "JobHub daily summary",
             "date_from": dates[0], "date_to": dates[-1], "timezone": cfg.app_tz,
             "generated_at": now.isoformat(timespec="seconds"),
-            "days": days, "records_to_update": records_to_update(days)}
+            "days": days, "records_to_update": records_to_update(days), "follow_ups": follow_ups(days)}
 
 
 def check(report):
@@ -262,4 +319,5 @@ def check(report):
         out["confirmed"] += d["summary"]["stops_confirmed"]
         out["not_confirmed"] += nc
         out["personal"] += pe
+    out["warnings"] = warnings(report)
     return out

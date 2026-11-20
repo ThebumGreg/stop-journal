@@ -24,6 +24,9 @@ Single user. Your location data stays on your own server.
 - Tag a stop **Lunch** (left out, by time only) or **Traffic** (a slow-down: its minutes count as drive time). Export is blocked until no stop is left in Draft.
 - **Start day / End day** buttons (either can be used alone; any stop can also be made the start or end, and **End at home** adds a basic Home stop), **one-tap confirm** for saved places (and Confirm all known),
   "usual parts" per business, and **Undo** for delete, merge, split and re-detect.
+- A **Notes & parts** sheet per stop slides up for the work performed, category, job/ticket reference, parts, expenses (parking,
+  tolls) and follow-ups, with autosave and a Saved / Unsaved line. The report adds hours by category, expenses and follow-ups, and
+  the Export page warns about missing categories or notes (it never blocks).
 - Daily database **backups**, and a **Debug data** download of a day (raw points, stops, edits) for troubleshooting.
 - Works well on an iPhone and can be added to the Home Screen.
 

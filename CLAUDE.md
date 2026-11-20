@@ -215,6 +215,23 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   section has no timezone / generated-at / schema / drive-after-last-stop rows (the timezone is in the notes, the schema
   version in the footer). Order: top, stops, Records to update, Mileage, Day recap (times in "3 h 48 min" form).
 - Parts CSV import has a "Check file" dry run (`/api/parts/import?dry=1`, runs on an in-memory copy of the database).
+- **Notes & parts sheet** (day page): each Draft/Confirmed stop card has a "Notes & parts" button that slides a sheet up. Work
+  performed, Category, Job/ticket/project and Visit result autosave ~2 s after typing stops (and on leaving a field); a status line
+  reads Unsaved changes / Saving… / Saved <time>. **Done** saves and closes. Parts, expenses and follow-ups save as they are added.
+  Cards show "Needs notes / category" on Confirmed stops that lack them. The card's own Save no longer carries notes.
+- Stop job fields (`stops.work_category`, `ticket`, `visit_result`; `stops.category` is the OSM place type, do not reuse):
+  `service.WORK_CATEGORIES` (the SOP's seven; value = billing: hourly | project | non_billable), `VISIT_RESULTS`
+  (complete | return | waiting). Confirming a stop with no category copies the one last used for the same business
+  (`last_category`; the sheet also offers it as a button). Follow-ups are a `follow_ups` table (stop_id, text, owner, due),
+  included in Undo snapshots, moved on merge, deleted with the stop; the sheet adds them with owner "Me".
+- Expenses are parts with `kind='expense'` (parking, tolls, purchases): never tracked, no stock, not billable unless ticked; each use
+  takes its own amount (`unit_cost`) and two uses stay two lines. CSV `type` accepts expense. Report: `expenses` per stop, an Expenses
+  table in the stop block, `summary.expenses_total`; they never appear in `parts_used`.
+- Report additions (schema stays "1"): per stop `category`, `billing`, `job_reference`, `visit_result`, `follow_ups`, `expenses`;
+  `summary.hours_by_category` (on-site minutes only) and `expenses_total`; top-level `follow_ups`; records_to_update has category and
+  job_reference. PDF: "Hours by category" under the top section, Category / Job / Visit result rows, a Follow-ups section after
+  Records to update. `/api/export/check` returns `warnings` (no category, empty work performed, follow-up without owner or due date);
+  the Export page lists them but never blocks. Times under an hour print as "50 min"; the recap stays on one page.
 - Undo (`undo_log`, last 10 per day) for delete, merge, split, re-detect and Confirm all; one-tap confirm for
   Draft stops that sit on a saved place; "usual parts" per business.
 - Alerts (Pushover, generic text only): no data, Recorder down, end-of-day Draft review, low truck stock.
