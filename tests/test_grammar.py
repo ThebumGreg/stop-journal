@@ -57,3 +57,15 @@ def test_settings_test_button(tmp_path):
         assert c.post("/settings/test-grammar", data={"languagetool_url": "http://x"}).json["ok"] is False
     with mock.patch("app.grammar.requests.post", side_effect=OSError):
         assert "Could not reach" in c.post("/settings/test-grammar", data={"languagetool_url": "http://x"}).json["message"]
+
+
+def test_settings_page_has_one_tab_per_integration(tmp_path):
+    import re
+    c = client(tmp_path)
+    html = c.get("/settings").get_data(as_text=True)
+    tabs = re.findall(r'data-tab="\d+"[^>]*>([^<●]+)', html)
+    assert tabs == ["OwnTracks", "Places", "Pushover", "Road distance", "Grammar", "General"]
+    from app import settings
+    assert sorted(g for _, gs in settings.TABS for g in gs) == sorted(g for g, _ in settings.SPEC)
+    bad = c.post("/settings", data={"stop_radius_m": "abc"}).get_data(as_text=True)
+    assert "●" in bad

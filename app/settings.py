@@ -62,11 +62,13 @@ SPEC = [
              help="Adjacent stops at the same spot closer in time than this are merged."),
         dict(key="max_acc_m", label="Drop points worse than (m accuracy)", kind="int", lo=10, hi=1000,
              help="GPS fixes with a larger error are ignored."),
+    ]),
+    ("Road distance (OSRM)", [
         dict(key="routing_url", label="Road distance service (OSRM)", kind="url",
              help="Used only to document the miles from where the day ended to Home. Coordinates are rounded to about "
                   "100 m before they are sent. Blank turns it off (a straight-line estimate is used)."),
     ]),
-    ("Notes", [
+    ("Grammar check (LanguageTool)", [
         dict(key="languagetool_url", label="Grammar check server (LanguageTool)", kind="url",
              help="Your own LanguageTool container, for example http://192.168.1.10:8010. Only the note text is "
                   "sent to it. Blank turns the Check grammar button off."),
@@ -118,6 +120,15 @@ SPEC += [
         dict(key="backup_keep", label="Daily backups to keep", kind="int", lo=0, hi=365,
              help="One snapshot of the database is saved each day. 0 turns automatic backups off."),
     ]),
+]
+# Settings page tabs: one per integration, then the app's own settings. All tabs belong to one form.
+TABS = [
+    ("OwnTracks", ["Recorder"]),
+    ("Places", ["Business suggestions"]),
+    ("Pushover", ["Notifications (Pushover)", "Alerts"]),
+    ("Road distance", ["Road distance (OSRM)"]),
+    ("Grammar", ["Grammar check (LanguageTool)"]),
+    ("General", ["Stop detection", "Backups"]),
 ]
 FIELDS = {f["key"]: f for _, fs in SPEC for f in fs}
 

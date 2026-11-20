@@ -660,7 +660,9 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         secret_info = {k: {"hint": settings.key_hint(getattr(cfg, k)),
                            "from_env": bool(getattr(base, k)) and not ov.get(k)}
                        for k in settings.SECRETS}
-        return dict(spec=settings.SPEC, values=values, defaults=defaults, secret_info=secret_info,
+        by_group = dict(settings.SPEC)
+        tabs = [(t, [(g, by_group[g]) for g in gs]) for t, gs in settings.TABS]
+        return dict(tabs=tabs, values=values, defaults=defaults, secret_info=secret_info,
                     usage=UsageCounter(base.data_dir, "google").count(),
                     cap=cfg.google_daily_cap, provider=cfg.places_provider,
                     pushover_ready=notify.configured(cfg), recent=recent,

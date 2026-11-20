@@ -9,6 +9,11 @@
   .field { margin:14px 0; }
   .field > label { font-size:15px; font-weight:600; color:var(--fg); margin-bottom:4px; }
   .chk input { width:22px; }
+  .tabs { display:flex; gap:6px; overflow-x:auto; margin:8px 0 14px; padding-bottom:4px; -webkit-overflow-scrolling:touch; }
+  .tabs button { flex:none; white-space:nowrap; }
+  .tabs button[aria-selected=true] { background:var(--acc); color:#fff; border-color:transparent; font-weight:600; }
+  .tabpanel[hidden] { display:none; }
+  .tabs .dot { color:#c01c28; margin-left:4px; }
 </style>
 </head>
 <body>
@@ -22,7 +27,12 @@
   {% endif %}
 
   <form method="post">
-    {% for group, fields in spec %}
+    <div class="tabs" role="tablist">
+      {% for tab, groups in tabs %}<button type="button" role="tab" data-tab="{{ loop.index0 }}" aria-selected="false">{{ tab }}{% set ns = namespace(bad=false) %}{% for g, fs in groups %}{% for f in fs %}{% if errors.get(f.key) %}{% set ns.bad = true %}{% endif %}{% endfor %}{% endfor %}{% if ns.bad %}<span class="dot">●</span>{% endif %}</button>{% endfor %}
+    </div>
+    {% for tab, groups in tabs %}
+    <section class="tabpanel" id="tab{{ loop.index0 }}" hidden>
+    {% for group, fields in groups %}
       <h2>{{ group }}</h2>
       {% for f in fields %}
         <div class="field">
@@ -55,7 +65,7 @@
           <div class="help">Looks up the users and devices on the address above (even if not saved yet). Tap a device to fill in both fields, then Save settings.</div>
         </div>
       {% endif %}
-      {% if group == 'Notes' %}
+      {% if group == 'Grammar check (LanguageTool)' %}
         <div class="box">
           <div class="row"><button type="button" id="testgram">Test grammar server</button><span id="gramtestmsg"></span></div>
           <div class="help">Sends one made-up sentence (not your notes) to the address above, even if it is not saved yet.</div>
@@ -101,7 +111,10 @@
         </div>
       {% endif %}
     {% endfor %}
+    </section>
+    {% endfor %}
     <div class="row" style="margin-top:20px"><button class="primary" type="submit">Save settings</button></div>
+    <div class="help">One Save button covers every tab.</div>
   </form>
   {% if has_password %}
   <form method="post" action="/logout" style="margin-top:28px"><button type="submit">Sign out</button></form>
@@ -109,6 +122,20 @@
   <p class="help" style="margin-top:24px">Recorder login (RECORDER_AUTH), timezone and the app password are set in <code>.env</code> and not editable here.</p>
 </main>
 <script>
+(function () {
+  const tabs = [...document.querySelectorAll('.tabs button')], panels = [...document.querySelectorAll('.tabpanel')];
+  function show(i) {
+    tabs.forEach((b, k) => b.setAttribute('aria-selected', k === i));
+    panels.forEach((p, k) => { p.hidden = k !== i; });
+    tabs[i].scrollIntoView({inline: 'center', block: 'nearest'});
+    try { history.replaceState(null, '', '#' + tabs[i].textContent.replace('●', '').trim().toLowerCase().replace(/\s+/g, '-')); } catch (e) {}
+  }
+  tabs.forEach((b, k) => { b.onclick = () => show(k); });
+  const want = location.hash.slice(1);
+  let first = tabs.findIndex(b => b.textContent.includes('●'));
+  if (first < 0) first = tabs.findIndex(b => b.textContent.replace('●', '').trim().toLowerCase().replace(/\s+/g, '-') === want);
+  show(first < 0 ? 0 : first);
+})();
 function wire(btnId, msgId, url) {
   document.getElementById(btnId).onclick = async () => {
     const out = document.getElementById(msgId);
