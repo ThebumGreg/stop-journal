@@ -166,16 +166,30 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Daily SQLite snapshots in `/data/backups` (`BACKUP_KEEP`), Back up now + download in Settings.
 - Live status banner (`/api/live`): last position, place name or OSM address, time at the spot.
 - Day start/end marks (`day_marks`): optional; shown in the report (`day_start`, `day_end`, schema stays "1"),
-  and they override the work-hours window for no-data alerts. They also decide the commute: the day's first drive out
-  of a Personal stop (home) counts if Start day was tapped before it ended, and the last drive into a Personal stop
-  counts if End day was tapped before it ended (`service.drive_counts`); mid-day Personal stops stay excluded.
-- Start day and End day are independent: End can be tapped without Start (the toolbar shows both until one is set).
+  and they override the work-hours window for no-data alerts. They also decide the commute (`service.drive_counts`):
+  the day's first drive out of a Personal stop (home) counts if Start day was set before it ended (not if set on arrival);
+  the drive INTO the stop where the day ended counts when that stop is Personal (home, or an errand on the way home), so
+  work time ends on arriving there; drives after it never count. Ending at a customer or vendor stops the clock when you
+  leave it: the drive home does not count as work time. Mid-day Personal stops stay excluded.
+- **Mileage is always Home -> work stops in order -> Home** (`service.mileage`, report `mileage` + `summary.miles_approx`),
+  independent of the time rules and of Start/End taps, because it is what a customer may be billed. Personal and Lunch stops
+  are left out: a detour through one is replaced by the direct road distance; Traffic stops are summed from the real drives;
+  legs next to a detected Home stop use the recorded drive. Needs a Home place; until then the old per-drive miles are used.
+  `end_day` (time, kind home|personal|job, miles_to_home = last work stop to Home, method, counted = drive home counted as time).
+- Miles to Home come from `app/routing.py` (public OSRM by default, `ROUTING_URL`; blank = straight-line x1.25 estimate).
+  Coordinates are rounded to ~100 m before leaving the server and routes are cached (`route_cache`).
 - Stop statuses are Draft, Confirmed, Personal, Lunch, Traffic. Lunch: left out of on-site time, the drives to and
   from it do not count, and the report lists it by time only ("Lunch"). Traffic: a slow-down detected as a stop; not on-site
   time, its minutes are added to drive time (`traffic_minutes` in the report summary). The Export panel blocks PDF/JSON
   while any stop is still Draft (an "Export anyway" tickbox overrides). Start day within 2 minutes of arriving
   (`START_SLACK_S`) means you started on arrival, so that commute is not counted.
 - Export, Re-detect and Debug data live on the **Export & tools** page (`/tools?date=`, linked from the header on every page), not on the day page. Tapping End day with no Drafts left jumps there.
+- Any stop can be the start or end of the day ("Start day here" = arrival; "End day here" = departure, or arrival for a
+  Personal stop). **End at home** ends the day at the saved Home place: it uses a detected Personal Home stop if the day
+  ends there, otherwise adds a one-minute manual Personal Home stop (distance to it is estimated straight-line x1.25).
+- Places are saved automatically: Confirming learns the business; a named Personal stop is saved as a place (home if the
+  name says so). There is no "Save as place" button on the day page (the Places page still manages them).
+- The day toolbar sits at the top of the day page in a 3-column grid.
 - Undo (`undo_log`, last 10 per day) for delete, merge, split, re-detect and Confirm all; one-tap confirm for
   Draft stops that sit on a saved place; "usual parts" per business.
 - Alerts (Pushover, generic text only): no data, Recorder down, end-of-day Draft review, low truck stock.

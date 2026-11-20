@@ -21,7 +21,7 @@ Single user. Your location data stays on your own server.
 - **Alerts** to your phone through Pushover (for example: no location data during work hours).
 - A **live status** box: where the phone is now and how long it has been there.
 - Tag a stop **Lunch** (left out, by time only) or **Traffic** (a slow-down: its minutes count as drive time). Export is blocked until no stop is left in Draft.
-- **Start day / End day** buttons (either can be used alone), **one-tap confirm** for saved places (and Confirm all known),
+- **Start day / End day** buttons (either can be used alone; any stop can also be made the start or end, and **End at home** adds a basic Home stop), **one-tap confirm** for saved places (and Confirm all known),
   "usual parts" per business, and **Undo** for delete, merge, split and re-detect.
 - Daily database **backups**, and a **Debug data** download of a day (raw points, stops, edits) for troubleshooting.
 - Works well on an iPhone and can be added to the Home Screen.
@@ -94,6 +94,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `APP_URL` | | address that notification taps open, e.g. `http://192.168.x.x:8000` |
 | `ALERT_NO_DATA`, `ALERT_NO_DATA_MIN`, `WORK_DAYS`, `WORK_START`, `WORK_END`, `ALERT_REPEAT_MIN` | on, 60, Mon-Fri, 07:00, 17:00, 0 | the no-data alert (tapping Start/End day overrides the work hours for that day) |
 | `ALERT_DRAFTS`, `ALERT_LOW_STOCK` | on, on | end-of-day "stops still in Draft" reminder, low truck stock alert (generic text only) |
+| `ROUTING_URL` | public OSRM server | road distance used only to document miles from where the day ended to Home; coordinates are rounded to ~100 m; blank = off (estimate) |
 | `BACKUP_KEEP` | 14 | daily database snapshots to keep (0 = off) |
 | `PUID`, `PGID` | 1000 | compose only: the user the container runs as |
 
@@ -112,7 +113,7 @@ The SQLite file in `/data` is the entire state (stops, edits, parts, places, set
 - Do **not** expose the app to the internet without protection. Safe options: LAN only, a VPN
   (WireGuard/Tailscale), or a reverse proxy with authentication and HTTPS. Always set `APP_PASSWORD`.
 - The only outbound calls are place lookups (coordinates and search text go to the provider you
-  choose), map tiles, and Pushover notifications (whose text never contains locations).
+  choose), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, map tiles, and Pushover notifications (whose text never contains locations).
 - Request URLs contain coordinates, so the server keeps its access log off. Nothing is logged to
   stdout that includes locations. No analytics or telemetry.
 - If you ever track technicians, that needs written consent and work-hours-only tracking. This app

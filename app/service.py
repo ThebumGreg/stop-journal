@@ -17,7 +17,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import detect, parts
+from . import detect, parts, routing
 from .errors import EditError
 from .geo import haversine_m
 from .places import known
@@ -86,6 +86,9 @@ def _resequence(conn, date):
         conn.execute("UPDATE stops SET seq=? WHERE id=?", (i, r["id"]))
 
 
+CROW_FLIES_FACTOR = 1.25   # straight-line to road distance, only when a drive has no GPS points
+
+
 def rebuild_drives(conn, cfg, date):
     stops = _ordered(conn, date)
     existing = {(d["from_stop_id"], d["to_stop_id"]): d for d in
@@ -98,6 +101,8 @@ def rebuild_drives(conn, cfg, date):
         else:
             dep, arr = a["depart_utc"], max(b["arrive_utc"], a["depart_utc"])
         dist = _dist(conn, cfg, date, dep, arr)
+        if not dist and a["lat"] is not None and b["lat"] is not None:
+            dist = haversine_m(a["lat"], a["lon"], b["lat"], b["lon"]) * CROW_FLIES_FACTOR  # no points: estimate
         if d:
             conn.execute("UPDATE drives SET seq=?, depart_utc=?, arrive_utc=?, "
                          "distance_m=? WHERE id=?", (seq, dep, arr, dist, d["id"]))
@@ -221,7 +226,7 @@ def day_marks(conn, cfg, date):
             "start_ts": s, "end_ts": e}
 
 
-def set_mark(conn, cfg, date, which, time_text=None, clear=False):
+def set_mark(conn, cfg, date, which, time_text=None, clear=False, ts=None):
     """Record when the work day started or ended. Time defaults to now (today only)."""
     if which not in ("start", "end"):
         raise EditError("Choose start or end.")
@@ -230,7 +235,9 @@ def set_mark(conn, cfg, date, which, time_text=None, clear=False):
         conn.execute("UPDATE day_marks SET %s=NULL WHERE date=?" % col, (date,))
         conn.commit()
         return date
-    if time_text:
+    if ts is not None:
+        pass
+    elif time_text:
         ts = parse_time(cfg, date, time_text)
     else:
         now = int(time.time())
@@ -245,6 +252,46 @@ def set_mark(conn, cfg, date, which, time_text=None, clear=False):
     conn.execute("INSERT INTO day_marks(date) VALUES (?) ON CONFLICT(date) DO NOTHING", (date,))
     conn.execute("UPDATE day_marks SET %s=? WHERE date=?" % col, (ts, date))
     conn.commit()
+    return date
+
+
+def mark_from_stop(conn, cfg, sid, which):
+    """Make a stop the start or the end of the work day. Start = when you arrived there. End = when
+    you left it, or when you arrived if it is a Personal stop (home): the day ends once you are home."""
+    s = _stop(conn, sid)
+    if which not in ("start", "end"):
+        raise EditError("Choose start or end.")
+    ts = s["arrive_utc"] if which == "start" or s["status"] == "Personal" else s["depart_utc"]
+    return set_mark(conn, cfg, s["date"], which, ts=ts)
+
+
+def end_at_home(conn, cfg, date, time_text=None):
+    """Basic end-of-day: end the day at the saved Home place. Uses the last stop if it is already a
+    Personal stop there; otherwise adds a one-minute Personal Home stop (no GPS) at the given time/now."""
+    home = conn.execute("SELECT * FROM known_sites WHERE kind='home' AND lat IS NOT NULL ORDER BY id LIMIT 1").fetchone()
+    stops = _ordered(conn, date)
+    last = stops[-1] if stops else None
+    if last is not None and last["status"] == "Personal" and (
+            home is None or last["known_site_id"] == home["id"]
+            or (last["lat"] is not None and haversine_m(last["lat"], last["lon"], home["lat"], home["lon"]) <= 200)):
+        return mark_from_stop(conn, cfg, last["id"], "end")
+    if home is None:
+        raise EditError("Save your Home first (Places page), or tap End day.")
+    if time_text:
+        a = parse_time(cfg, date, time_text)
+    else:
+        a = int(time.time())
+    lo, hi = day_range(date, cfg.app_tz)
+    if time_text is None and not lo <= a <= hi:
+        raise EditError("Enter a time for days other than today.")
+    d = a + 60
+    _check_window(conn, cfg, date, None, a, min(d, hi))
+    conn.execute(
+        "INSERT INTO stops(date,lat,lon,arrive_utc,depart_utc,business_name,address,known_site_id,category,"
+        "kind,status,source,edited) VALUES (?,?,?,?,?,?,?,?,?,'stop','Personal','manual',1)",
+        (date, home["lat"], home["lon"], a, min(d, hi), home["name"], home["address"] or "", home["id"], "place=home"))
+    _finish(conn, cfg, date)
+    set_mark(conn, cfg, date, "end", ts=a)
     return date
 
 
@@ -404,6 +451,11 @@ def patch_stop(conn, cfg, sid, f):
     sets = ", ".join(f"{k}=?" for k in upd)  # keys are whitelisted above
     conn.execute(f"UPDATE stops SET {sets} WHERE id=?", (*upd.values(), sid))
     _finish(conn, cfg, date)
+    cur = _stop(conn, sid)
+    if (status == "Personal" and s["status"] != "Personal" and name and cur["lat"] is not None
+            and not cur["known_site_id"]):
+        # a named Personal stop is saved as a place automatically (home if it says so), so it is pre-filled next time
+        save_place(conn, cfg, sid, {"kind": "home" if "home" in name.lower() else "vendor", "name": name})
     return date
 
 
@@ -497,8 +549,11 @@ def save_place(conn, cfg, sid, f):
     if kind not in ("home", "office", "vendor"):
         raise EditError("Choose Home, Office or Vendor.")
     name = str(f.get("name") or "").strip() or s["business_name"] or known.KIND_LABEL[kind]
-    site_id = known.create_site(conn, {"name": name, "lat": s["lat"], "lon": s["lon"], "kind": kind,
-                                       "address": s["address"] or str(f.get("address") or "")})
+    site = {"name": name, "lat": s["lat"], "lon": s["lon"], "kind": kind,
+            "address": s["address"] or str(f.get("address") or "")}
+    if s["status"] == "Personal":
+        site["default_status"] = "Personal"
+    site_id = known.create_site(conn, site)
     conn.execute("UPDATE stops SET business_name=?, known_site_id=?, category=?, edited=1 WHERE id=?",
                  (name, site_id, f"place={kind}", sid))
     apply_places(conn, s["date"])
@@ -555,17 +610,31 @@ def patch_drive(conn, cfg, did, f):
 START_SLACK_S = 120
 
 
+END_SLACK_S = 120
+
+
+def end_stop(stops, marks):
+    """The stop the day ended at: the last one you had arrived at when End day was set."""
+    end = (marks or {}).get("end_ts")
+    if not end:
+        return None
+    here = [s for s in stops if s["arrive_ts"] <= end + END_SLACK_S]
+    return here[-1] if here else None
+
+
 def drive_counts(stops, drives, marks=None):
-    """{drive id: counts toward work totals}. A drive counts unless one end is a Personal stop.
-    Exception, driven by the Start day / End day taps: the day's first drive out of a Personal
-    stop counts if Start day was tapped before that drive ended (you started work before arriving
-    at the first job), and the day's last drive into a Personal stop counts if End day was tapped
-    before it ended (you ended work before getting home). So a commute counts only on days you
-    start or end work around it.
-    Mid-day Personal stops (lunch, errands) always stay excluded."""
+    """{drive id: counts toward work totals}. A drive counts unless one end is a Personal or Lunch stop.
+    Exceptions, driven by the Start day / End day marks:
+      * the day's first drive out of a Personal stop (home) counts if Start day was set before that drive
+        ended (you started work before arriving at the first job), unless it was set on arrival;
+      * the drive INTO the stop where the day ended counts when that stop is Personal (home, or an errand on
+        the way home): work time ends on arriving there. Drives after it never count.
+    Ending at a customer or vendor stops the clock when you leave, so the drive home is not counted (its miles
+    are documented separately, see end_info). Mid-day Personal stops (errands) always stay excluded."""
     marks = marks or {}
     personal = {s["id"] for s in stops if s["status"] in OFF_CLOCK}
     lunch = {s["id"] for s in stops if s["status"] == "Lunch"}
+    last = end_stop(stops, marks)
     out = {}
     for i, d in enumerate(drives):
         frm, to = d["from_stop_id"] in personal, d["to_stop_id"] in personal
@@ -576,9 +645,94 @@ def drive_counts(stops, drives, marks=None):
         # Start day tapped within START_SLACK_S of arriving means "started on arrival": no commute
         if frm and not to and i == 0 and marks.get("start_ts") and marks["start_ts"] < d["arrive_ts"] - START_SLACK_S:
             ok = True
-        if to and not frm and i == len(drives) - 1 and marks.get("end_ts") and marks["end_ts"] < d["arrive_ts"]:
+        if (to and not frm and last is not None and d["to_stop_id"] == last["id"]
+                and last["status"] == "Personal"):
             ok = True
         out[d["id"]] = ok
+    return out
+
+
+def _home_site(conn):
+    return conn.execute("SELECT * FROM known_sites WHERE kind='home' AND lat IS NOT NULL ORDER BY id LIMIT 1").fetchone()
+
+
+def _is_home_stop(s, home):
+    return (home is not None and s["status"] == "Personal" and (
+        s["known_site_id"] == home["id"]
+        or (s["lat"] is not None and haversine_m(s["lat"], s["lon"], home["lat"], home["lon"]) <= 200)))
+
+
+def _counts_as_work(s):
+    return s["status"] not in OFF_CLOCK + ("Traffic",) and (s["kind"] == "stop" or s["status"] == "Confirmed")
+
+
+def mileage(conn, cfg, stops, drives):
+    """Billable mileage, always Home -> work stops in order -> Home. Personal and Lunch stops are left out:
+    where one sat between two work stops (or an errand came before the drive home) the direct road distance
+    is used instead of the detour. Traffic stops are on the road, so the real drives through them are summed.
+    Legs touching Home use the real drive when the phone recorded it (Home stop right next to the work stop),
+    otherwise the road distance. Returns None until a Home place is saved."""
+    home = _home_site(conn)
+    work = [i for i, s in enumerate(stops) if _counts_as_work(s)]
+    if home is None or not work:
+        return None
+    by_from = {d["from_stop_id"]: d for d in drives}
+
+    def chain(i, j):   # real drives from stop i to stop j
+        return sum((by_from.get(stops[k]["id"]) or {}).get("distance_m", 0) for k in range(i, j))
+
+    def only_traffic(i, j):
+        return all(stops[k]["status"] == "Traffic" for k in range(i + 1, j))
+
+    def name(i):
+        return stops[i]["business_name"] or f"Stop at {stops[i]['arrive']}"
+
+    def road(a_pt, b_pt, fallback):
+        if a_pt[0] is None or b_pt[0] is None:
+            return fallback, "gps"
+        m, how = routing.route_m(conn, cfg, a_pt, b_pt)
+        return m, how
+
+    pt = lambda s: (s["lat"], s["lon"])
+    hpt = (home["lat"], home["lon"])
+    legs = []
+
+    def add(a, b, m, how):
+        legs.append({"from": a, "to": b, "miles": round(m / 1609.344, 1), "method": how})
+
+    first, last = work[0], work[-1]
+    prev = next((k for k in range(first - 1, -1, -1) if stops[k]["status"] != "Traffic"), None)
+    if prev is not None and _is_home_stop(stops[prev], home) and only_traffic(prev, first):
+        add("Home", name(first), chain(prev, first), "gps")
+    else:
+        add("Home", name(first), *road(hpt, pt(stops[first]), 0))
+    for i, j in zip(work, work[1:]):
+        if only_traffic(i, j):
+            add(name(i), name(j), chain(i, j), "gps")
+        else:
+            add(name(i), name(j), *road(pt(stops[i]), pt(stops[j]), chain(i, j)))
+    nxt = next((k for k in range(last + 1, len(stops)) if stops[k]["status"] != "Traffic"), None)
+    if nxt is not None and _is_home_stop(stops[nxt], home) and only_traffic(last, nxt):
+        add(name(last), "Home", chain(last, nxt), "gps")
+    else:
+        add(name(last), "Home", *road(pt(stops[last]), hpt, 0))
+    return {"basis": "home-to-home", "total_miles": round(sum(l["miles"] for l in legs), 1), "legs": legs}
+
+
+def end_info(conn, cfg, stops, marks, mil=None):
+    """Where the day ended. The miles from the last work stop on to Home are part of the mileage either way;
+    `counted` says whether the drive home also counts as work time (only when the day ended at home)."""
+    last = end_stop(stops, marks)
+    if last is None:
+        return None
+    home = _home_site(conn)
+    at_home = _is_home_stop(last, home)
+    kind = "home" if at_home else ("personal" if last["status"] == "Personal" else "job")
+    out = {"time": marks["end"], "stop_id": last["id"], "kind": kind, "place": last["business_name"] or "",
+           "miles_to_home": None, "method": "", "counted": at_home}
+    if mil:
+        leg = mil["legs"][-1]
+        out["miles_to_home"], out["method"] = leg["miles"], leg["method"]
     return out
 
 
@@ -634,9 +788,13 @@ def day_payload(conn, cfg, date, include_path=False):
     ok = drive_counts(stops, drives, marks)
     for d in drives:
         d["counts"] = ok[d["id"]]
+    tot = totals(stops, drives, marks)
+    mil = mileage(conn, cfg, stops, drives)
+    if mil:
+        tot["miles_approx"] = mil["total_miles"]
     out = {"date": date, "tz": cfg.app_tz, "stops": stops, "drives": drives,
-           "totals": totals(stops, drives, marks), "undo": undo_available(conn, date),
-           "marks": marks}
+           "totals": tot, "undo": undo_available(conn, date),
+           "marks": marks, "mileage": mil, "end_day": end_info(conn, cfg, stops, marks, mil)}
     if include_path:
         pts = kept_points(conn, cfg, date)
         out["path"] = [[p["lat"], p["lon"]] for p in pts]

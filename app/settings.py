@@ -62,6 +62,9 @@ SPEC = [
              help="Adjacent stops at the same spot closer in time than this are merged."),
         dict(key="max_acc_m", label="Drop points worse than (m accuracy)", kind="int", lo=10, hi=1000,
              help="GPS fixes with a larger error are ignored."),
+        dict(key="routing_url", label="Road distance service (OSRM)", kind="url",
+             help="Used only to document the miles from where the day ended to Home. Coordinates are rounded to about "
+                  "100 m before they are sent. Blank turns it off (a straight-line estimate is used)."),
     ]),
     ("Business suggestions", [
         dict(key="places_provider", label="Provider", kind="choice", choices=["osm", "osm_google", "google"],

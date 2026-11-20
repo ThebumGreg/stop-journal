@@ -54,8 +54,9 @@ main { flex:1; display:flex; min-height:0; }
   #map { order:3; flex:1; }
 }
 
-.toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:8px max(12px, env(safe-area-inset-left)); border-bottom:1px solid var(--line); }
-.toolbar button { font-size:15px; padding:6px 12px; }
+.toolbar { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:6px 0 0; }
+.toolbar button { font-size:14px; padding:4px 6px; min-height:38px; line-height:1.15; }
+.toolbar .flash { grid-column:1 / -1; }
 .redo { padding:10px 12px; border-bottom:1px solid var(--line); background:var(--sel); display:grid; gap:8px; }
 .redo .r { display:flex; gap:6px; align-items:center; font-size:14px; flex-wrap:wrap; }
 .redo input { width:76px; }

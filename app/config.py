@@ -39,6 +39,7 @@ class Config:
     alert_drafts: str = "on"
     stop_short_min_s: int = 180
     alert_low_stock: str = "on"
+    routing_url: str = ""    # "" = off; from_env defaults to the public OSRM server
 
     @classmethod
     def from_env(cls):
@@ -75,4 +76,5 @@ class Config:
             alert_drafts=e("ALERT_DRAFTS", "on"),
             stop_short_min_s=_int("STOP_SHORT_MIN_S", 180),
             alert_low_stock=e("ALERT_LOW_STOCK", "on"),
+            routing_url=e("ROUTING_URL", "https://router.project-osrm.org").strip().rstrip("/"),
         )

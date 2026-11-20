@@ -5,6 +5,7 @@
 const S = {parts: [], date: null, path: [], stops: [], drives: [], totals: {}, tool: null,
            open: new Set(), openDrives: new Set(), sel: null, drafts: {}, flash: ''};
 const dateEl = document.getElementById('date');
+const barEl = document.getElementById('bar');
 const listEl = document.getElementById('list');
 const footEl = document.getElementById('foot');
 
@@ -42,7 +43,7 @@ async function api(method, url, body) {
 
 function applyDay(d) {
   S.stops = d.stops; S.drives = d.drives; S.totals = d.totals; S.undo = d.undo || null;
-  S.marks = d.marks || {};
+  S.marks = d.marks || {}; S.endDay = d.end_day || null;
   if (d.path) S.path = d.path;
 }
 
@@ -314,23 +315,13 @@ function buildEdit(edit, s, i) {
   };
   acts.append(splitB);
 
-  // save this stop's location as Home / Office / Vendor
-  const placeBox = el('div', 'panel'); placeBox.hidden = true;
-  const kindSel = el('select');
-  [['home', 'Home'], ['office', 'Office'], ['vendor', 'Vendor / supplier']].forEach(([v, t]) => {
-    const o = el('option', null, t); o.value = v; kindSel.append(o);
-  });
-  const placeName = el('input'); placeName.placeholder = 'Name (optional)'; placeName.value = s.business_name;
-  const placeGo = el('button', 'primary', 'Save place');
-  placeGo.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/save-place',
-    {kind: kindSel.value, name: placeName.value}), err, () => { placeBox.hidden = true; });
-  const placeHint = el('div', 'hint', 'Future stops here are pre-filled. Home pre-marks them Personal; you can still change any stop.');
-  placeBox.append(kindSel, placeName, placeGo, placeHint);
-  if (s.lat != null) {
-    const pb = el('button', null, 'Save as place…');
-    pb.onclick = () => { placeBox.hidden = !placeBox.hidden; };
-    acts.append(pb);
-  }
+  // make this stop the start and/or end of the work day
+  const sb = el('button', null, 'Start day here'); sb.title = 'Work day starts when you arrived at this stop';
+  sb.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/mark', {which: 'start'}), err);
+  const eb = el('button', null, 'End day here');
+  eb.title = s.status === 'Personal' ? 'Work day ends when you arrived here' : 'Work day ends when you left this stop';
+  eb.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/mark', {which: 'end'}), err);
+  acts.append(sb, eb);
 
   const prev = S.stops[i - 1], next = S.stops[i + 1];
   const mergeWith = other => run(() => api('POST', '/api/stops/merge', {ids: [s.id, other.id]}), err);
@@ -344,11 +335,22 @@ function buildEdit(edit, s, i) {
   acts.append(del);
 
   edit.append(labeled('Business', nameIn), labeled('Address', addrIn), find, times,
-              labeled('Work performed', notes), partsBlock(s, err), seg, acts, splitRow, placeBox, err);
+              labeled('Work performed', notes), partsBlock(s, err), seg, acts, splitRow, err);
   if (s.lat != null) edit.append(el('div', 'hint', 'Tip: tap this stop\'s pin on the map, then drag it to move the location.'));
 }
 
 // ---- drive row ---------------------------------------------------------
+function endRow(e) {
+  const r = el('div', 'drive');
+  let t = '■ End Day ' + e.time;
+  if (e.kind === 'home') t += ' · at home (drive home counted)';
+  else if (e.miles_to_home != null)
+    t += ' · ' + e.miles_to_home + ' mi from the last job to home' + (e.method === 'estimate' ? ' (est.)' : '') + ' (in mileage, not drive time)';
+  else t += ' · save a Home on the Places page to include the miles home';
+  r.append(el('div', 'hint', t));
+  return r;
+}
+
 function driveRow(dr) {
   const key = 'd' + dr.id;
   const row = el('div', 'drive');
@@ -390,11 +392,12 @@ function toolbar() {
     const openForm = () => { S.tool = S.tool === 'day' ? null : 'day'; render(false); };
     const b = mk('Start day', () => (mk0.end ? openForm() : markNow('start')));
     b.className = 'primary';
-    if (!mk0.end) mk('End day', () => markNow('end'));
+    if (!mk0.end) { mk('End day', () => markNow('end')); mk('End at home', endAtHome); }
     else mk('Day —–' + mk0.end, () => { S.tool = S.tool === 'day' ? null : 'day'; render(false); });
   } else if (isToday && !mk0.end) {
-    const b = mk('End day (started ' + mk0.start + ')', () => markNow('end'));
+    const b = mk('End day', () => markNow('end'));
     b.className = 'primary';
+    mk('End at home', endAtHome);
   } else {
     mk(mk0.start || mk0.end ? 'Day ' + (mk0.start || '—') + '–' + (mk0.end || '—') : 'Day times…',
        () => { S.tool = S.tool === 'day' ? null : 'day'; render(false); });
@@ -409,7 +412,7 @@ function toolbar() {
     });
     b.className = 'primary';
   }
-  mk('Sync new data', async () => {
+  mk('Sync', async () => {
     try {
       const d = await api('POST', '/api/day/' + S.date + '/sync');
       S.flash = d.added ? d.added + ' new stop' + (d.added > 1 ? 's' : '') + ' found.' : 'No new stops.';
@@ -425,8 +428,16 @@ function toolbar() {
     });
     u.className = 'undo';
   }
-  if (S.flash) bar.append(el('span', 'hint', S.flash));
+  if (S.flash) bar.append(el('span', 'hint flash', S.flash));
   return bar;
+}
+
+async function endAtHome() {
+  try {
+    const d = await api('POST', '/api/day/' + S.date + '/end-at-home', {});
+    applyDay(d);
+    S.flash = 'Day ended at home.'; render(true);
+  } catch (e) { alert(e.message); }
 }
 
 async function markNow(which) {
@@ -485,7 +496,8 @@ function addForm() {
 function render(fit) {
   const keep = listEl.scrollTop;
   pathLayer.clearLayers(); candLayer.clearLayers(); markers = {};
-  listEl.replaceChildren(toolbar());
+  barEl.replaceChildren(toolbar());
+  listEl.replaceChildren();
   if (S.tool === 'add') listEl.append(addForm());
   if (S.tool === 'day') listEl.append(dayForm());
   const bounds = [];
@@ -501,6 +513,7 @@ function render(fit) {
     listEl.append(stopCard(s, i));
     addMarker(s, i);
     if (s.lat != null && !S.path.length) bounds.push([s.lat, s.lon]);
+    if (S.endDay && S.endDay.stop_id === s.id) listEl.append(endRow(S.endDay));
     const dr = S.drives.find(x => x.from_stop_id === s.id);
     if (dr) listEl.append(driveRow(dr));
   });

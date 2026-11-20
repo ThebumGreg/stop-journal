@@ -62,10 +62,12 @@ def build_day(payload, cfg):
     def iso(ts):
         return datetime.fromtimestamp(ts, tz).isoformat(timespec="seconds")
 
+    end_day = payload.get("end_day")
+    end_id = end_day["stop_id"] if end_day else None
     out_stops, excluded = [], []
     for s in stops:
         if s["status"] != "Confirmed":
-            reason = {"Personal": "Personal", "Lunch": "Lunch",
+            reason = {"Personal": "End Day" if s["id"] == end_id else "Personal", "Lunch": "Lunch",
                       "Traffic": "Traffic (counted as drive time)"}.get(s["status"]) or \
                 "Not confirmed" + (" (short stop)" if s["kind"] == "short" else "")
             excluded.append({"arrival": s["arrive"], "departure": s["depart"], "reason": reason})
@@ -98,6 +100,9 @@ def build_day(payload, cfg):
         final = {"minutes": drives[-1]["minutes"], "miles_approx": drives[-1]["miles_approx"]}
         drive_min += final["minutes"]
         miles += final["miles_approx"]
+    mil = payload.get("mileage")
+    if mil:
+        miles = mil["total_miles"]     # billable mileage is always Home to Home, personal stops left out
     marks = payload.get("marks") or {}
     return {"date": payload["date"],
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
@@ -105,6 +110,8 @@ def build_day(payload, cfg):
                         "drive_minutes": drive_min, "traffic_minutes": traffic, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded)},
             "drive_after_last_stop": final,
+            "mileage": mil,
+            "end_day": end_day and {k: end_day[k] for k in ("time", "kind", "place", "miles_to_home", "method", "counted")},
             "stops": out_stops, "excluded": excluded}
 
 
@@ -140,7 +147,7 @@ def check(report):
     out = {"days": [], "confirmed": 0, "not_confirmed": 0, "personal": 0}
     for d in report["days"]:
         nc = sum(1 for e in d["excluded"] if e["reason"].startswith("Not confirmed"))
-        pe = sum(1 for e in d["excluded"] if e["reason"] in ("Personal", "Lunch") or e["reason"].startswith("Traffic"))
+        pe = sum(1 for e in d["excluded"] if e["reason"] in ("Personal", "Lunch", "End Day") or e["reason"].startswith("Traffic"))
         out["days"].append({"date": d["date"], "confirmed": d["summary"]["stops_confirmed"],
                             "not_confirmed": nc, "personal": pe})
         out["confirmed"] += d["summary"]["stops_confirmed"]

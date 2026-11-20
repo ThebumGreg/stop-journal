@@ -40,11 +40,34 @@ INSTRUCTIONS = [
     "first stop of the day or when the drive began at a personal stop (unless the user started the work "
     "day before that drive ended, in which case the commute is included). Drive after last stop: the "
     "drive home, included only when the user ended the work day before arriving.",
+    "Mileage is always measured Home to Home through the work stops in order. Personal stops and lunch are left out, so a detour to one is replaced by the direct road distance. Approximate miles in the summary is this figure. "
+    "End Day: when the work day ended. If it ended at home, the drive home counts as work time. Otherwise work time stopped there; the drive home is not work time but its miles are in the mileage. "
     "Records to update: one row per confirmed stop. This table is what to act on.",
     "Excluded: stops that were Personal, Lunch or not confirmed, shown by time only. They were left out on "
     "purpose; do not create records for them. A Traffic entry was a slow-down, not a visit: its minutes are "
     "already included in drive time.",
 ]
+
+
+def _end_day_rows(e):
+    if not e:
+        return []
+    where = {"home": "at home", "personal": "at a Personal stop", "job": "at " + (e["place"] or "the last stop")}[e["kind"]]
+    row = [("End Day", f"{e['time']}, {where}")]
+    if e["kind"] != "home":
+        row.append(("Drive home", "not counted as work time (miles are in the mileage)"))
+    return row
+
+
+def _mileage_lines(day, st):
+    m = day.get("mileage")
+    if not m:
+        return []
+    how = {"routed": "by road", "estimate": "estimated", "gps": "recorded"}
+    out = [_p("Mileage, Home to Home (Personal stops left out): " + f"{m['total_miles']} mi", st["base"])]
+    for lg in m["legs"]:
+        out.append(_p(f"{lg['from']} to {lg['to']}: {lg['miles']} mi ({how.get(lg['method'], lg['method'])})", st["small"]))
+    return out
 
 
 def _styles():
@@ -183,7 +206,9 @@ def render(report):
                                 f"{day['drive_after_last_stop']['miles_approx']} mi (included in the totals above)")]
                             if day.get("drive_after_last_stop") else [])
                          + ([("Work day", f"{day.get('day_start') or '—'} to {day.get('day_end') or '—'}")]
-                            if day.get("day_start") or day.get("day_end") else []), st))
+                            if day.get("day_start") or day.get("day_end") else [])
+                         + _end_day_rows(day.get("end_day")), st))
+        story.extend(_mileage_lines(day, st))
         if not day["stops"]:
             story.append(Spacer(1, 4))
             story.append(_p("No confirmed stops.", st["base"]))

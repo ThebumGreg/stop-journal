@@ -225,6 +225,21 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return payload(conn, cfg, date)
         return with_conn(go)
 
+    @app.post("/api/day/<date>/end-at-home")
+    def day_end_home(date):
+        b = request.get_json(silent=True) or {}
+
+        def go(conn, cfg):
+            check_date(date)
+            service.end_at_home(conn, cfg, date, b.get("time"))
+            return payload(conn, cfg, date)
+        return with_conn(go)
+
+    @app.post("/api/stops/<int:sid>/mark")
+    def stop_mark(sid):
+        b = request.get_json(silent=True) or {}
+        return mutate(service.mark_from_stop, sid, b.get("which"))
+
     @app.post("/api/day/<date>/undo")
     def day_undo(date):
         def go(conn, cfg):
