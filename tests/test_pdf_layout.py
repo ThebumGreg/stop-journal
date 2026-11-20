@@ -35,15 +35,20 @@ def test_layout(tmp_path):
     top = flat.split("Mileage")[0]
     assert "Timezone" in top and "On-site time" in top and "Generated at" in top      # one combined section
     m = c.get(f"/api/export.json?from={D}").json["days"][0]["mileage"]
-    mil = flat.split("Mileage")[1].split("Stop 1")[0]
-    assert "Home to Acme" in mil and "Acme to Home" in mil and f"Total mileage {m['total_miles']} mi" in mil
+    mil = flat.split("Mileage (Home to Home, miles)")[1].split("Stop 1")[0]
+    assert "From To Miles" in mil and "1 Home Acme" in mil and "2 Acme Home" in mil          # a table: #, From, To, Miles
+    assert f"{m['total_miles']:.1f}" in mil and mil.rindex("Total mileage") > mil.rindex("Acme Home")   # total last
     assert "by road" not in mil and "recorded" not in mil and "Personal stops left out" not in mil   # no notes
-    assert mil.rindex("Total mileage") > mil.rindex("Acme to Home")                        # total last
     # the stop shows the leg that ends at it
     assert f"Drive from previous stop {m['legs'][0]['miles']} mi from Home" in flat
     j = c.get(f"/api/export.json?from={D}").json["days"][0]["stops"][0]["drive_from_previous_stop"]
     assert j["miles_approx"] == m["legs"][0]["miles"] and j["from"] == "Home"
-    # recap: Home start and end with the mileage, no personal stops
-    recap = flat.split("Day recap")[1].split("How to read")[0]
-    assert "Start Home" in recap and "End Home, 10:45" in recap and f"{m['legs'][-1]['miles']} mi from Acme" in recap
+    # recap: a timesheet (in, out, activity, hours), no personal stops, totals and mileage at the bottom
+    recap = flat.split("Day recap (timesheet)")[1].split("How to read")[0]
+    assert "Clock out 10:45" in recap and "In Out Activity Hours" in recap
+    assert "08:20 10:20 Acme 2.00" in recap and "Total paid hours 2.33" in recap and "Drive 0.33" in recap
+    assert f"Mileage, Home to Home (miles) {m['total_miles']:.1f}" in recap
     assert "Personal" not in recap and "07:00" not in recap
+    assert "JobHub Daily Summary" in flat and "JobHub Job Report" not in flat
+    t = c.get(f"/api/export.json?from={D}").json["days"][0]["timesheet"]
+    assert [r["type"] for r in t] == ["on_site", "drive"] and t[1]["description"] == "Drive: Acme to Home"

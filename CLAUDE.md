@@ -198,8 +198,11 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - PDF layout (single day): one top section (date, timezone, generated, schema, totals, work day, End Day), a Mileage table
   (label/value rows, no notes, total last), stop blocks whose "Drive from previous stop" is the mileage leg ending at that
   stop (`drive_from_previous_stop.from`, minutes only when the drive counted as work time), Records to update, and a
-  **Day recap** (Start Home, lunch/traffic/unconfirmed by time, End Home with the last leg's miles, total). Personal stops
-  are never listed in the PDF (the JSON `excluded` list still has them).
+  **Day recap (timesheet)**: In / Out / Activity / Hours rows (on-site visits, counted drives, traffic, unpaid lunch in
+  brackets), then On site, Drive, Total paid hours, unpaid lunch and the Home-to-Home mileage (JSON `timesheet`). Personal stops
+  are never listed in the PDF (the JSON `excluded` list still has them). The document is titled "JobHub Daily Summary"
+  (files `jobhub-daily-summary-<date>`). The report's final counted drive is the drive INTO the End Day stop, even when
+  later stops follow it.
 - Lunch has two cases. (1) A visit, a Lunch stop, then the same site again (`service.same_site`: same saved place, or same name
   within 300 m) is ONE stop in the report: arrival of the first visit, departure of the last, work notes/parts combined,
   `lunch_non_billable` [{from,to,minutes}] and Time on site net of the lunch gap; the lunch trip adds no drive time or

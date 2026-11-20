@@ -42,7 +42,7 @@ def test_json_report_structure_and_values(tmp_path):
     c = make(tmp_path)
     scenario(c)
     r = c.get(f"/api/export.json?from={D}")
-    assert r.status_code == 200 and "attachment; filename=jobhub-2026-11-18.json" in r.headers["Content-Disposition"]
+    assert r.status_code == 200 and "attachment; filename=jobhub-daily-summary-2026-11-18.json" in r.headers["Content-Disposition"]
     rep = r.json
     assert rep["schema_version"] == "1" and rep["timezone"] == "America/Los_Angeles"
     day = rep["days"][0]
@@ -78,14 +78,14 @@ def test_pdf_text_extraction_every_field_in_sensible_order(tmp_path):
     c = make(tmp_path)
     scenario(c)
     r = c.get(f"/api/export.pdf?from={D}")
-    assert "attachment; filename=jobhub-2026-11-18.pdf" in r.headers["Content-Disposition"]
+    assert "attachment; filename=jobhub-daily-summary-2026-11-18.pdf" in r.headers["Content-Disposition"]
     text = pdf_text(r)
     flat = re.sub(r"\s+", " ", text)
     s1 = c.get(f"/api/export.json?from={D}").json["days"][0]["stops"][0]
     latlon = f"{s1['latitude']:.6f}, {s1['longitude']:.6f}"
 
     # header
-    for needle in ("JobHub Job Report", "Wednesday, 2026-11-18", "America/Los_Angeles", "Generated at",
+    for needle in ("JobHub Daily Summary", "Wednesday, 2026-11-18", "America/Los_Angeles", "Generated at",
                    "Report schema version", "1"):
         assert needle in flat
     # summary
@@ -101,13 +101,13 @@ def test_pdf_text_extraction_every_field_in_sensible_order(tmp_path):
         assert needle in flat, needle
     # records table, excluded section (times only), instructions
     assert "Personal" not in text.split("Day recap")[1].split("How to read")[0]      # personal stops are not listed
-    assert "13:30 to 14:00" in flat and "Not confirmed" in flat and "12:00 to 12:45" not in flat
+    assert "13:30 14:00 Not confirmed (left out)" in flat and "12:00 12:45" not in flat
     assert "Secret Diner" not in text and "Phone job" not in text
     assert "How to read this report" in flat and "do not create records for them" in flat
 
     pos = 0
     assert "Day summary" not in text and "Excluded" not in text        # header + summary are one section; recap replaces Excluded
-    for marker in ("JobHub Job Report", "On-site time", "Stop 1", "Stop 2", "Records to update",
+    for marker in ("JobHub Daily Summary", "On-site time", "Stop 1", "Stop 2", "Records to update",
                    "Day recap", "How to read this report"):
         i = text.find(marker, pos)
         assert i >= 0, marker
@@ -149,7 +149,7 @@ def test_date_range_export(tmp_path):
         st = c.get(f"/api/day/{d}").json["stops"][0]
         c.patch(f"/api/stops/{st['id']}", json={"status": "Confirmed", "business_name": f"Client {d[-2:]}"})
     r = c.get("/api/export.pdf?from=2026-11-18&to=2026-11-19")
-    assert "jobhub-2026-11-18_to_2026-11-19.pdf" in r.headers["Content-Disposition"]
+    assert "jobhub-daily-summary-2026-11-18_to_2026-11-19.pdf" in r.headers["Content-Disposition"]
     text = re.sub(r"\s+", " ", pdf_text(r))
     assert "2026-11-18 to 2026-11-19" in text and "Client 18" in text and "Client 19" in text
     assert "Date" in text and "Day summary: Thursday, 2026-11-19" in text

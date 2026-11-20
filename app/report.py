@@ -52,6 +52,52 @@ def _split_parts(lines):
             [_part(p) for p in lines if p.get("consumable")])
 
 
+def _timesheet(stops, drives):
+    """The paid and unpaid parts of the day in time order: on-site visits, counted drives, traffic, lunch.
+    Personal stops are never listed. A lunch with no counted drives around it spans the whole trip (leave the
+    last site to arrive at the next), so a lunch back to the same site shows as one unpaid gap."""
+    def name(s):
+        return {"Personal": "Home", "Lunch": "Lunch"}.get(s["status"]) or s["business_name"] or f"Stop at {s['arrive']}"
+
+    by_id = {s["id"]: s for s in stops}
+    by_from = {d["from_stop_id"]: d for d in drives}
+    by_to = {d["to_stop_id"]: d for d in drives}
+    rows = []
+
+    def add(ts, inn, out, kind, text, secs, paid):
+        rows.append((ts, {"in": inn, "out": out, "type": kind, "description": text,
+                          "minutes": round(secs / 60), "paid": paid}))
+
+    for s in stops:
+        st = s["status"]
+        if st == "Personal":
+            continue
+        if st == "Confirmed":
+            add(s["arrive_ts"], s["arrive"], s["depart"], "on_site", name(s), s["depart_ts"] - s["arrive_ts"], True)
+        elif st == "Traffic":
+            add(s["arrive_ts"], s["arrive"], s["depart"], "drive", "Traffic (counted as drive time)",
+                s["depart_ts"] - s["arrive_ts"], True)
+        elif st == "Lunch":
+            dp, dn = by_to.get(s["id"]), by_from.get(s["id"])
+            if (dp and dp["counts"]) or (dn and dn["counts"]):
+                                                              # drives around it are listed, so just the stop
+                add(s["arrive_ts"], s["arrive"], s["depart"], "lunch", "Lunch (unpaid)",
+                    s["depart_ts"] - s["arrive_ts"], False)
+            else:
+                ain, aout = (dp["depart_ts"], dp["depart"]) if dp else (s["arrive_ts"], s["arrive"])
+                bout, bts = (dn["arrive_ts"], dn["arrive"]) if dn else (s["depart_ts"], s["depart"])
+                add(ain, aout, bts, "lunch", "Lunch (unpaid)", bout - ain, False)
+        else:
+            add(s["arrive_ts"], s["arrive"], s["depart"], "unconfirmed", "Not confirmed (left out)",
+                s["depart_ts"] - s["arrive_ts"], False)
+    for d in drives:
+        if d["counts"]:
+            frm, to = by_id[d["from_stop_id"]], by_id[d["to_stop_id"]]
+            add(d["depart_ts"], d["depart"], d["arrive"], "drive", f"Drive: {name(frm)} to {name(to)}",
+                d["arrive_ts"] - d["depart_ts"], True)
+    return [r for _, r in sorted(rows, key=lambda x: x[0])]
+
+
 def build_day(payload, cfg):
     """payload: service.day_payload() for one date."""
     tz = ZoneInfo(cfg.app_tz)
@@ -74,11 +120,13 @@ def build_day(payload, cfg):
         while (cur + 2 < len(stops) and stops[cur + 1]["status"] == "Lunch" and stops[cur + 2]["status"] == "Confirmed"
                and service.same_site(s, stops[cur + 2])):
             left, nxt = stops[cur], stops[cur + 2]
-            m = merged.setdefault(s["id"], {"gaps": [], "notes": [s["notes"]], "parts": list(s["parts"])})
+            m = merged.setdefault(s["id"], {"gaps": [], "notes": [s["notes"]], "parts": list(s["parts"]),
+                                            "minutes": s["minutes"]})
             m["gaps"].append({"from": left["depart"], "to": nxt["arrive"],
                               "secs": nxt["arrive_ts"] - left["depart_ts"]})
             m["notes"].append(nxt["notes"])
             m["parts"] += nxt["parts"]
+            m["minutes"] += nxt["minutes"]
             m["depart"], m["depart_ts"] = nxt["depart"], nxt["depart_ts"]
             absorbed.add(nxt["id"])
             cur += 2
@@ -92,7 +140,7 @@ def build_day(payload, cfg):
             lunch = [{"from": g["from"], "to": g["to"], "minutes": round(g["secs"] / 60)} for g in m["gaps"]]
             s = dict(s, depart=m["depart"], depart_ts=m["depart_ts"], parts=m["parts"],
                      notes="\n\n".join(n for n in m["notes"] if n),
-                     minutes=round((m["depart_ts"] - s["arrive_ts"] - sum(g["secs"] for g in m["gaps"])) / 60))
+                     minutes=m["minutes"])
         if s["status"] != "Confirmed":
             reason = {"Personal": "End Day" if s["id"] == end_id else "Personal", "Lunch": "Lunch",
                       "Traffic": "Traffic (counted as drive time)"}.get(s["status"]) or \
@@ -133,9 +181,10 @@ def build_day(payload, cfg):
     miles = sum(s["drive_from_previous_stop"]["miles_approx"] for s in out_stops if s["drive_from_previous_stop"])
     traffic = sum(s["minutes"] for s in stops if s["status"] == "Traffic")
     drive_min += traffic
-    final = None   # last drive of the day into a Personal stop (e.g. home), counted via End day
-    if drives and drives[-1].get("counts") and status.get(drives[-1]["to_stop_id"]) == "Personal":
-        final = {"minutes": drives[-1]["minutes"], "miles_approx": drives[-1]["miles_approx"]}
+    final = None   # the drive into the Personal stop where the day ended (home), counted when the day ends there
+    fd = drive_into.get(end_id) if end_id else None
+    if fd and fd.get("counts") and status.get(fd["to_stop_id"]) == "Personal":
+        final = {"minutes": fd["minutes"], "miles_approx": fd["miles_approx"]}
         drive_min += final["minutes"]
         miles += final["miles_approx"]
     mil = payload.get("mileage")
@@ -148,6 +197,7 @@ def build_day(payload, cfg):
                         "drive_minutes": drive_min, "traffic_minutes": traffic, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded)},
             "drive_after_last_stop": final,
+            "timesheet": _timesheet(stops, drives),
             "mileage": mil,
             "end_day": end_day and {k: end_day[k] for k in ("time", "kind", "place", "miles_to_home", "method", "counted")},
             "stops": out_stops, "excluded": excluded}
@@ -174,7 +224,7 @@ def build(conn, cfg, dates, ensure, now=None):
         ensure(conn, cfg, date)
         days.append(build_day(service.day_payload(conn, cfg, date), cfg))
     now = now or datetime.now(ZoneInfo(cfg.app_tz))
-    return {"schema_version": SCHEMA_VERSION, "report": "JobHub report",
+    return {"schema_version": SCHEMA_VERSION, "report": "JobHub daily summary",
             "date_from": dates[0], "date_to": dates[-1], "timezone": cfg.app_tz,
             "generated_at": now.isoformat(timespec="seconds"),
             "days": days, "records_to_update": records_to_update(days)}

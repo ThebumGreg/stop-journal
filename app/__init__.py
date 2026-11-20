@@ -142,7 +142,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
 
     def download(body, mimetype, rep, ext):
         a, b = rep["date_from"], rep["date_to"]
-        name = f"jobhub-{a}" if a == b else f"jobhub-{a}_to_{b}"
+        name = f"jobhub-daily-summary-{a}" if a == b else f"jobhub-daily-summary-{a}_to_{b}"
         return Response(body, mimetype=mimetype,
                         headers={"Content-Disposition": f"attachment; filename={name}.{ext}"})
 

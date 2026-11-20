@@ -46,9 +46,10 @@ INSTRUCTIONS = [
     "If the user left a site for lunch and came back to it, that is shown as one stop: Time on site leaves out the lunch "
     "(listed as Lunch (non-billable)), and the lunch trip adds no miles or drive time.",
     "Records to update: one row per confirmed stop. This table is what to act on.",
-    "Day recap: the day framed Home to Home, with any lunch, traffic or unconfirmed entries by time only. They were left "
-    "out on purpose; do not create records for them. A Traffic entry was a slow-down, not a visit: its minutes are "
-    "already included in drive time.",
+    "Day recap (timesheet): the paid and unpaid parts of the day in time order: on-site visits, drives that counted as "
+    "work, traffic (a slow-down, counted as drive time) and lunch (unpaid, in brackets). Hours are decimal. Personal "
+    "stops are not listed. Entries marked Not confirmed were left out on purpose; do not create records for them. This "
+    "table is for time keeping, not for HubSpot records.",
 ]
 
 
@@ -63,35 +64,63 @@ def _end_day_rows(e):
 
 
 def _mileage_table(day, st):
-    """Mileage as label/value rows like the rest of the report, the total last."""
+    """Mileage as a table (#, From, To, Miles) with the total in the last row."""
     m = day.get("mileage")
     if not m:
         return []
-    rows = [(f"{lg['from']} to {lg['to']}", f"{lg['miles']} mi") for lg in m["legs"]]
-    rows.append(("Total mileage", f"{m['total_miles']} mi"))
-    return [Paragraph("Mileage", st["h1"]), _kv(rows, st)]
+    rows = [[_p(str(i), st["base"]), _p(lg["from"], st["base"]), _p(lg["to"], st["base"]),
+             _p(f"{lg['miles']:.1f}", st["right"])] for i, lg in enumerate(m["legs"], 1)]
+    rows.append([_p("", st["base"]), Paragraph("Total mileage", st["label"]), _p("", st["base"]),
+                 Paragraph(f"{m['total_miles']:.1f}", st["right_bold"])])
+    t = _grid(["#", "From", "To", "Miles"], rows, [0.4 * inch, 2.9 * inch, 2.9 * inch, 0.8 * inch], st)
+    t.setStyle(TableStyle([("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
+                           ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f6f6f6"))]))
+    return [Paragraph("Mileage (Home to Home, miles)", st["h1"]), t]
+
+
+def _h(minutes):
+    return f"{minutes / 60:.2f}"
 
 
 def _recap(day, st, multi):
-    """Day recap: the day framed Home to Home. Personal stops are not listed, whatever the real start or end was."""
-    m = day.get("mileage")
+    """Day recap laid out like a timesheet: in, out, activity, hours. Personal stops are never listed;
+    lunch is shown unpaid, and the totals and the mileage close it."""
+    sheet = day.get("timesheet") or []
     stops = day["stops"]
     start = day.get("day_start") or (stops[0]["arrival"] if stops else "")
     end = day.get("day_end") or (stops[-1]["departure"] if stops else "")
-    rows = [("Start", f"Home, {start}" if start else "Home")]
-    for e in sorted(day["excluded"], key=lambda x: x["arrival"]):
-        if e["reason"] in ("Personal", "End Day"):
-            continue
-        rows.append((f"{e['arrival']} to {e['departure']}", e["reason"]))
-    last = m["legs"][-1] if m else None
-    end_txt = "Home" + (f", {end}" if end else "")
-    if last:
-        end_txt += f". {last['miles']} mi from {last['from']}"
-    rows.append(("End", end_txt))
+    rows = []
+    for r in sheet:
+        hrs = _h(r["minutes"]) if r["paid"] else f"({_h(r['minutes'])})"
+        rows.append([_p(r["in"], st["base"]), _p(r["out"], st["base"]), _p(r["description"], st["base"]),
+                     _p(hrs, st["right"])])
+    if not rows:
+        rows.append([_p("", st["base"]), _p("", st["base"]), _p("No paid time recorded.", st["base"]),
+                     _p("", st["right"])])
+    on_site = sum(r["minutes"] for r in sheet if r["type"] == "on_site")
+    drive = sum(r["minutes"] for r in sheet if r["type"] == "drive")
+    unpaid = sum(r["minutes"] for r in sheet if r["type"] == "lunch")
+    tot = [("On site", on_site), ("Drive", drive)]
+    for label, mins in tot:
+        rows.append([_p("", st["base"]), _p("", st["base"]), Paragraph(label, st["label"]),
+                     Paragraph(_h(mins), st["right_bold"])])
+    rows.append([_p("", st["base"]), _p("", st["base"]), Paragraph("Total paid hours", st["label"]),
+                 Paragraph(_h(on_site + drive), st["right_bold"])])
+    if unpaid:
+        rows.append([_p("", st["base"]), _p("", st["base"]), _p("Lunch, unpaid (not included)", st["base"]),
+                     _p(f"({_h(unpaid)})", st["right"])])
+    m = day.get("mileage")
     if m:
-        rows.append(("Total mileage", f"{m['total_miles']} mi"))
-    title = "Day recap" + (f": {day['date']}" if multi else "")
-    return [Paragraph(title, st["h1"]), _kv(rows, st)]
+        rows.append([_p("", st["base"]), _p("", st["base"]), Paragraph("Mileage, Home to Home (miles)", st["label"]),
+                     Paragraph(f"{m['total_miles']:.1f}", st["right_bold"])])
+    n = len(rows)
+    first_tot = n - (len(tot) + 1 + (1 if unpaid else 0) + (1 if m else 0))
+    t = _grid(["In", "Out", "Activity", "Hours"], rows, [0.8 * inch, 0.8 * inch, 4.6 * inch, 0.8 * inch], st)
+    t.setStyle(TableStyle([("LINEABOVE", (0, first_tot + 1), (-1, first_tot + 1), 1, colors.black),
+                           ("BACKGROUND", (0, first_tot + 1), (-1, -1), colors.HexColor("#f6f6f6"))]))
+    title = "Day recap (timesheet)" + (f": {day['date']}" if multi else "")
+    head = _p(f"Clock in {start or '—'}  ·  Clock out {end or '—'}  (day framed Home to Home)", st["base"])
+    return [Paragraph(title, st["h1"]), head, Spacer(1, 3), t]
 
 
 def _styles():
@@ -99,6 +128,8 @@ def _styles():
     return {
         "base": base,
         "small": ParagraphStyle("small", parent=base, fontSize=8, leading=10),
+        "right": ParagraphStyle("right", parent=base, alignment=2),
+        "right_bold": ParagraphStyle("right_bold", parent=base, fontName="JH-Bold", alignment=2),
         "title": ParagraphStyle("title", parent=base, fontName="JH-Bold", fontSize=17, leading=21),
         "h1": ParagraphStyle("h1", parent=base, fontName="JH-Bold", fontSize=13, leading=16, spaceBefore=12,
                              spaceAfter=4, keepWithNext=True),
@@ -214,14 +245,14 @@ def render(report):
         canvas.saveState()
         canvas.setFont("JH", 7.5)
         canvas.setFillColor(colors.grey)
-        canvas.drawString(0.75 * inch, 0.5 * inch, f"JobHub report, schema version {report['schema_version']}")
+        canvas.drawString(0.75 * inch, 0.5 * inch, f"JobHub daily summary, schema version {report['schema_version']}")
         canvas.drawRightString(letter[0] - 0.75 * inch, 0.5 * inch, f"Page {doc.page}")
         canvas.restoreState()
 
     doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.75 * inch, rightMargin=0.75 * inch,
-                            topMargin=0.7 * inch, bottomMargin=0.8 * inch, title="JobHub report",
+                            topMargin=0.7 * inch, bottomMargin=0.8 * inch, title="JobHub daily summary",
                             author="JobHub")
-    story = [Paragraph("JobHub Job Report", st["title"]), Spacer(1, 6)]
+    story = [Paragraph("JobHub Daily Summary", st["title"]), Spacer(1, 6)]
     period = (f"{report['date_from']} to {report['date_to']}" if multi else
               datetime.fromisoformat(report["date_from"]).strftime("%A, %Y-%m-%d"))
     gen = datetime.fromisoformat(report["generated_at"]).strftime("%Y-%m-%d %H:%M")
