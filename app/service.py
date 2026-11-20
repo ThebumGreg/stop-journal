@@ -7,7 +7,8 @@ pair) and keep their notes / edited times while the pair still exists.
 Totals rules (documented here because the UI and PDF rely on them):
   * on-site time counts every stop that is a real stop and not Personal, Lunch or Traffic, plus
     short stops the user has Confirmed;
-  * a drive counts unless one of its two ends is a Personal or Lunch stop;
+  * a drive counts unless one of its two ends is a Personal or Lunch stop, except that lunch between two different
+    work stops is part of the trip, so the drives before and after it count (see drive_counts);
   * a Traffic stop (a slow-down mistaken for a stop) is not on-site time; its minutes count as drive time;
   * "draft" counts Draft stops of kind 'stop' (Draft short stops are clutter and
     are counted separately).
@@ -636,6 +637,21 @@ START_SLACK_S = 120
 END_SLACK_S = 120
 
 
+SAME_SITE_M = 300
+
+
+def same_site(a, b):
+    """True when two stops are the same place (same saved place, or the same name within 300 m)."""
+    if a.get("known_site_id") and a.get("known_site_id") == b.get("known_site_id"):
+        return True
+    na, nb = (a.get("business_name") or "").strip().lower(), (b.get("business_name") or "").strip().lower()
+    if not na or na != nb:
+        return False
+    if a.get("lat") is None or b.get("lat") is None:
+        return True
+    return haversine_m(a["lat"], a["lon"], b["lat"], b["lon"]) <= SAME_SITE_M
+
+
 def end_stop(stops, marks):
     """The stop the day ended at: the last one you had arrived at when End day was set."""
     end = (marks or {}).get("end_ts")
@@ -658,12 +674,23 @@ def drive_counts(stops, drives, marks=None):
     personal = {s["id"] for s in stops if s["status"] in OFF_CLOCK}
     lunch = {s["id"] for s in stops if s["status"] == "Lunch"}
     last = end_stop(stops, marks)
+    idx = {s["id"]: k for k, s in enumerate(stops)}
+
+    def lunch_between_jobs(lid):
+        """Lunch between two different work stops is part of the trip: the drives before and after it count
+        (together they are one drive). Lunch next to home, or a lunch trip back to the same site, does not."""
+        k = idx[lid]
+        if k == 0 or k + 1 >= len(stops):
+            return False
+        x, y = stops[k - 1], stops[k + 1]
+        return _counts_as_work(x) and _counts_as_work(y) and not same_site(x, y)
+
     out = {}
     for i, d in enumerate(drives):
         frm, to = d["from_stop_id"] in personal, d["to_stop_id"] in personal
         ok = not frm and not to
         if d["from_stop_id"] in lunch or d["to_stop_id"] in lunch:
-            out[d["id"]] = False
+            out[d["id"]] = lunch_between_jobs(d["from_stop_id"] if d["from_stop_id"] in lunch else d["to_stop_id"])
             continue
         # Start day tapped within START_SLACK_S of arriving means "started on arrival": no commute
         if frm and not to and i == 0 and marks.get("start_ts") and marks["start_ts"] < d["arrive_ts"] - START_SLACK_S:
@@ -720,20 +747,22 @@ def mileage(conn, cfg, stops, drives):
     hpt = (home["lat"], home["lon"])
     legs = []
 
-    def add(a, b, m, how):
-        legs.append({"from": a, "to": b, "miles": round(m / 1609.344, 1), "method": how})
+    def add(a, b, m, how, to_id=None):
+        legs.append({"from": a, "to": b, "to_id": to_id, "miles": round(m / 1609.344, 1), "method": how})
 
     first, last = work[0], work[-1]
     prev = next((k for k in range(first - 1, -1, -1) if stops[k]["status"] != "Traffic"), None)
     if prev is not None and _is_home_stop(stops[prev], home) and only_traffic(prev, first):
-        add("Home", name(first), chain(prev, first), "gps")
+        add("Home", name(first), chain(prev, first), "gps", stops[first]["id"])
     else:
-        add("Home", name(first), *road(hpt, pt(stops[first]), 0))
+        add("Home", name(first), *road(hpt, pt(stops[first]), 0), to_id=stops[first]["id"])
     for i, j in zip(work, work[1:]):
+        if same_site(stops[i], stops[j]):
+            continue      # back at the same site (e.g. after lunch): no miles between
         if only_traffic(i, j):
-            add(name(i), name(j), chain(i, j), "gps")
+            add(name(i), name(j), chain(i, j), "gps", stops[j]["id"])
         else:
-            add(name(i), name(j), *road(pt(stops[i]), pt(stops[j]), chain(i, j)))
+            add(name(i), name(j), *road(pt(stops[i]), pt(stops[j]), chain(i, j)), to_id=stops[j]["id"])
     nxt = next((k for k in range(last + 1, len(stops)) if stops[k]["status"] != "Traffic"), None)
     if nxt is not None and _is_home_stop(stops[nxt], home) and only_traffic(last, nxt):
         add(name(last), "Home", chain(last, nxt), "gps")

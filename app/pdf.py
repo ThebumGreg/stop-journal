@@ -29,22 +29,25 @@ def _fonts():
 
 INSTRUCTIONS = [
     "This report lists the jobs worked on for the period above. Use it to update HubSpot.",
-    "Header: report title, period, timezone (all times in this report are 24-hour local time in that "
-    "timezone), when it was generated, and the report schema version.",
-    "Day summary: totals for that day. They cover only the confirmed stops listed below. Miles are "
-    "approximate (straight GPS path), not odometer readings.",
-    "Stop blocks: one per confirmed stop, in order. Work performed is the full text the technician "
-    "wrote. Parts used lists parts consumed at the stop. Non-billable materials (supplies such as tape or solvent) are listed separately and are not for billing. A blank HubSpot company ID means it is not "
-    "known yet: match the company by business name and address.",
-    "Drive from previous stop: the drive immediately before arriving at the stop. It is blank for the "
-    "first stop of the day or when the drive began at a personal stop (unless the user started the work "
-    "day before that drive ended, in which case the commute is included). Drive after last stop: the "
-    "drive home, included only when the user ended the work day before arriving.",
-    "Mileage is always measured Home to Home through the work stops in order. Personal stops and lunch are left out, so a detour to one is replaced by the direct road distance. Approximate miles in the summary is this figure. "
-    "End Day: when the work day ended. If it ended at home, the drive home counts as work time. Otherwise work time stopped there; the drive home is not work time but its miles are in the mileage. "
+    "Top section: report date or period, timezone (all times are 24-hour local time in that timezone), when it was "
+    "generated, the report schema version, and the day's totals. Totals cover only the confirmed stops listed below. "
+    "End Day is when the work day ended. If it ended at home, the drive home counts as work time; otherwise work time "
+    "stopped there and the drive home is not work time (its miles are still in the mileage).",
+    "Mileage: always measured Home to Home through the work stops in order, so it is what a customer may be billed. "
+    "Personal stops and lunch are left out, so a detour to one is replaced by the direct road distance. Miles are "
+    "approximate (road distance), not odometer readings. The total is the last row.",
+    "Stop blocks: one per confirmed stop, in order. Work performed is the full text the technician wrote. Parts used "
+    "lists parts consumed at the stop. Non-billable materials (supplies such as tape or solvent) are listed separately "
+    "and are not for billing. A blank HubSpot company ID means it is not known yet: match the company by business name "
+    "and address.",
+    "Drive from previous stop: the mileage leg that ends at this stop (the first stop starts from Home). Minutes are "
+    "shown only when that drive counted as work time. If the user stopped for lunch between two jobs, the drives before "
+    "and after lunch are added together as one drive, and the miles are the direct distance between the two jobs. "
+    "If the user left a site for lunch and came back to it, that is shown as one stop: Time on site leaves out the lunch "
+    "(listed as Lunch (non-billable)), and the lunch trip adds no miles or drive time.",
     "Records to update: one row per confirmed stop. This table is what to act on.",
-    "Excluded: stops that were Personal, Lunch or not confirmed, shown by time only. They were left out on "
-    "purpose; do not create records for them. A Traffic entry was a slow-down, not a visit: its minutes are "
+    "Day recap: the day framed Home to Home, with any lunch, traffic or unconfirmed entries by time only. They were left "
+    "out on purpose; do not create records for them. A Traffic entry was a slow-down, not a visit: its minutes are "
     "already included in drive time.",
 ]
 
@@ -59,15 +62,36 @@ def _end_day_rows(e):
     return row
 
 
-def _mileage_lines(day, st):
+def _mileage_table(day, st):
+    """Mileage as label/value rows like the rest of the report, the total last."""
     m = day.get("mileage")
     if not m:
         return []
-    how = {"routed": "by road", "estimate": "estimated", "gps": "recorded"}
-    out = [_p("Mileage, Home to Home (Personal stops left out): " + f"{m['total_miles']} mi", st["base"])]
-    for lg in m["legs"]:
-        out.append(_p(f"{lg['from']} to {lg['to']}: {lg['miles']} mi ({how.get(lg['method'], lg['method'])})", st["small"]))
-    return out
+    rows = [(f"{lg['from']} to {lg['to']}", f"{lg['miles']} mi") for lg in m["legs"]]
+    rows.append(("Total mileage", f"{m['total_miles']} mi"))
+    return [Paragraph("Mileage", st["h1"]), _kv(rows, st)]
+
+
+def _recap(day, st, multi):
+    """Day recap: the day framed Home to Home. Personal stops are not listed, whatever the real start or end was."""
+    m = day.get("mileage")
+    stops = day["stops"]
+    start = day.get("day_start") or (stops[0]["arrival"] if stops else "")
+    end = day.get("day_end") or (stops[-1]["departure"] if stops else "")
+    rows = [("Start", f"Home, {start}" if start else "Home")]
+    for e in sorted(day["excluded"], key=lambda x: x["arrival"]):
+        if e["reason"] in ("Personal", "End Day"):
+            continue
+        rows.append((f"{e['arrival']} to {e['departure']}", e["reason"]))
+    last = m["legs"][-1] if m else None
+    end_txt = "Home" + (f", {end}" if end else "")
+    if last:
+        end_txt += f". {last['miles']} mi from {last['from']}"
+    rows.append(("End", end_txt))
+    if m:
+        rows.append(("Total mileage", f"{m['total_miles']} mi"))
+    title = "Day recap" + (f": {day['date']}" if multi else "")
+    return [Paragraph(title, st["h1"]), _kv(rows, st)]
 
 
 def _styles():
@@ -151,7 +175,12 @@ def _parts_table(parts, st):
 
 def _stop_block(s, st):
     drive = s["drive_from_previous_stop"]
-    drive_txt = "n/a" if not drive else f"{drive['minutes']} min, {drive['miles_approx']} mi (approximate)"
+    if not drive:
+        drive_txt = "n/a"
+    else:
+        drive_txt = f"{drive['miles_approx']} mi" + (f" from {drive['from']}" if drive.get("from") else "")
+        if drive["minutes"] is not None:
+            drive_txt += f", {drive['minutes']} min"
     if drive and drive["notes"]:
         drive_txt += f". Drive notes: {drive['notes']}"
     latlon = "(no GPS data)" if s["latitude"] is None else f"{s['latitude']:.6f}, {s['longitude']:.6f}"
@@ -159,8 +188,13 @@ def _stop_block(s, st):
             ("Address", s["address"])]
     if s["place_type"]:
         rows.append(("Place type", s["place_type"]))
+    lunch = s.get("lunch_non_billable") or []
+    on_site = _hm(s["time_on_site_minutes"]) + (" (lunch not included)" if lunch else "")
     rows += [("Latitude/Longitude", latlon), ("Arrival", s["arrival"]), ("Departure", s["departure"]),
-             ("Time on site", _hm(s["time_on_site_minutes"])), ("Drive from previous stop", drive_txt),
+             ("Time on site", on_site)]
+    if lunch:
+        rows.append(("Lunch (non-billable)", "; ".join(f"{x['from']} to {x['to']}, {x['minutes']} min" for x in lunch)))
+    rows += [("Drive from previous stop", drive_txt),
              ("HubSpot company ID", s["hubspot_company_id"])]
     for i, piece in enumerate(_fit(s["work_performed"], st["base"], 7 * inch - 1.75 * inch - 12, MAX_ROW_H)):
         rows.append(("Work performed" if i == 0 else "Work performed (continued)", piece))
@@ -191,24 +225,33 @@ def render(report):
     period = (f"{report['date_from']} to {report['date_to']}" if multi else
               datetime.fromisoformat(report["date_from"]).strftime("%A, %Y-%m-%d"))
     gen = datetime.fromisoformat(report["generated_at"]).strftime("%Y-%m-%d %H:%M")
-    story.append(_kv([("Report", "JobHub job report"), ("Period" if multi else "Date", period),
-                      ("Timezone", report["timezone"]), ("Generated at", gen),
-                      ("Report schema version", report["schema_version"])], st))
+    head_rows = [("Period" if multi else "Date", period), ("Timezone", report["timezone"]),
+                 ("Generated at", gen), ("Report schema version", report["schema_version"])]
+
+    def summary_rows(day):
+        sm = day["summary"]
+        return ([("On-site time", _hm(sm["on_site_minutes"])),
+                 ("Drive time", _hm(sm["drive_minutes"])),
+                 ("Approximate miles", f"{sm['miles_approx']} mi (approximate)"),
+                 ("Stops confirmed", str(sm["stops_confirmed"]))]
+                + ([("Drive after last stop", f"{_hm(day['drive_after_last_stop']['minutes'])}, "
+                     f"{day['drive_after_last_stop']['miles_approx']} mi (included in the totals above)")]
+                   if day.get("drive_after_last_stop") else [])
+                + ([("Work day", f"{day.get('day_start') or '—'} to {day.get('day_end') or '—'}")]
+                   if day.get("day_start") or day.get("day_end") else [])
+                + _end_day_rows(day.get("end_day")))
+
+    if not multi:       # one day: the header and the day summary are a single section
+        story.append(_kv(head_rows + summary_rows(report["days"][0]), st))
+    else:
+        story.append(_kv(head_rows, st))
 
     for day in report["days"]:
-        d, sm = day["date"], day["summary"]
-        story.append(Paragraph(f"Day summary: {datetime.fromisoformat(d).strftime('%A, %Y-%m-%d')}", st["h1"]))
-        story.append(_kv([("On-site time", _hm(sm["on_site_minutes"])),
-                          ("Drive time", _hm(sm["drive_minutes"])),
-                          ("Approximate miles", f"{sm['miles_approx']} mi (approximate)"),
-                          ("Stops confirmed", str(sm["stops_confirmed"]))]
-                         + ([("Drive after last stop", f"{_hm(day['drive_after_last_stop']['minutes'])}, "
-                                f"{day['drive_after_last_stop']['miles_approx']} mi (included in the totals above)")]
-                            if day.get("drive_after_last_stop") else [])
-                         + ([("Work day", f"{day.get('day_start') or '—'} to {day.get('day_end') or '—'}")]
-                            if day.get("day_start") or day.get("day_end") else [])
-                         + _end_day_rows(day.get("end_day")), st))
-        story.extend(_mileage_lines(day, st))
+        d = day["date"]
+        if multi:
+            story.append(Paragraph(f"Day summary: {datetime.fromisoformat(d).strftime('%A, %Y-%m-%d')}", st["h1"]))
+            story.append(_kv(summary_rows(day), st))
+        story.extend(_mileage_table(day, st))
         if not day["stops"]:
             story.append(Spacer(1, 4))
             story.append(_p("No confirmed stops.", st["base"]))
@@ -245,16 +288,8 @@ def render(report):
     else:
         story.append(_p("No confirmed stops in this period.", st["base"]))
 
-    story.append(Paragraph("Excluded", st["h1"]))
-    story.append(_p("Left out on purpose (Personal, Lunch, Traffic or not confirmed). Times only.", st["small"]))
-    any_ex = False
     for day in report["days"]:
-        for e in day["excluded"]:
-            any_ex = True
-            prefix = f"{day['date']} " if multi else ""
-            story.append(_p(f"{prefix}{e['arrival']} to {e['departure']}: {e['reason']}", st["base"]))
-    if not any_ex:
-        story.append(_p("None.", st["base"]))
+        story.extend(_recap(day, st, multi))
 
     story.append(KeepTogether([Paragraph("How to read this report", st["h1"])] +
                               [_p(f"{i}. {t}", st["small"]) for i, t in enumerate(INSTRUCTIONS, 1)]))

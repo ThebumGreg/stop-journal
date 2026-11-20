@@ -195,6 +195,17 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Places are saved automatically: Confirming learns the business; a named Personal stop is saved as a place (home if the
   name says so). There is no "Save as place" button on the day page (the Places page still manages them).
 - The day toolbar sits at the top of the day page in a 3-column grid.
+- PDF layout (single day): one top section (date, timezone, generated, schema, totals, work day, End Day), a Mileage table
+  (label/value rows, no notes, total last), stop blocks whose "Drive from previous stop" is the mileage leg ending at that
+  stop (`drive_from_previous_stop.from`, minutes only when the drive counted as work time), Records to update, and a
+  **Day recap** (Start Home, lunch/traffic/unconfirmed by time, End Home with the last leg's miles, total). Personal stops
+  are never listed in the PDF (the JSON `excluded` list still has them).
+- Lunch has two cases. (1) A visit, a Lunch stop, then the same site again (`service.same_site`: same saved place, or same name
+  within 300 m) is ONE stop in the report: arrival of the first visit, departure of the last, work notes/parts combined,
+  `lunch_non_billable` [{from,to,minutes}] and Time on site net of the lunch gap; the lunch trip adds no drive time or
+  miles. (2) Lunch between two different work stops is part of the trip: the drives before and after count, the stop
+  after lunch shows them added together as one drive, and the miles are the direct leg between the two jobs. Lunch next
+  to home or a Personal stop is still not work.
 - Undo (`undo_log`, last 10 per day) for delete, merge, split, re-detect and Confirm all; one-tap confirm for
   Draft stops that sit on a saved place; "usual parts" per business.
 - Alerts (Pushover, generic text only): no data, Recorder down, end-of-day Draft review, low truck stock.

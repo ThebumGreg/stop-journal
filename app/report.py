@@ -64,8 +64,35 @@ def build_day(payload, cfg):
 
     end_day = payload.get("end_day")
     end_id = end_day["stop_id"] if end_day else None
+    leg_into = {lg["to_id"]: lg for lg in ((payload.get("mileage") or {}).get("legs") or []) if lg.get("to_id")}
+    # A visit, a lunch trip, then the same site again is ONE stop: lunch time is shown as non-billable
+    absorbed, merged = set(), {}
+    for i, s in enumerate(stops):
+        if s["status"] != "Confirmed" or s["id"] in absorbed:
+            continue
+        cur = i
+        while (cur + 2 < len(stops) and stops[cur + 1]["status"] == "Lunch" and stops[cur + 2]["status"] == "Confirmed"
+               and service.same_site(s, stops[cur + 2])):
+            left, nxt = stops[cur], stops[cur + 2]
+            m = merged.setdefault(s["id"], {"gaps": [], "notes": [s["notes"]], "parts": list(s["parts"])})
+            m["gaps"].append({"from": left["depart"], "to": nxt["arrive"],
+                              "secs": nxt["arrive_ts"] - left["depart_ts"]})
+            m["notes"].append(nxt["notes"])
+            m["parts"] += nxt["parts"]
+            m["depart"], m["depart_ts"] = nxt["depart"], nxt["depart_ts"]
+            absorbed.add(nxt["id"])
+            cur += 2
     out_stops, excluded = [], []
     for s in stops:
+        if s["id"] in absorbed:
+            continue
+        lunch = []
+        if s["id"] in merged:
+            m = merged[s["id"]]
+            lunch = [{"from": g["from"], "to": g["to"], "minutes": round(g["secs"] / 60)} for g in m["gaps"]]
+            s = dict(s, depart=m["depart"], depart_ts=m["depart_ts"], parts=m["parts"],
+                     notes="\n\n".join(n for n in m["notes"] if n),
+                     minutes=round((m["depart_ts"] - s["arrive_ts"] - sum(g["secs"] for g in m["gaps"])) / 60))
         if s["status"] != "Confirmed":
             reason = {"Personal": "End Day" if s["id"] == end_id else "Personal", "Lunch": "Lunch",
                       "Traffic": "Traffic (counted as drive time)"}.get(s["status"]) or \
@@ -73,9 +100,19 @@ def build_day(payload, cfg):
             excluded.append({"arrival": s["arrive"], "departure": s["depart"], "reason": reason})
             continue
         d = drive_into.get(s["id"])
+        counted = bool(d and d.get("counts", status.get(d["from_stop_id"]) not in ("Personal", "Lunch")))
+        leg = leg_into.get(s["id"])
         drive = None
-        if d and d.get("counts", status.get(d["from_stop_id"]) not in ("Personal", "Lunch")):
-            drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "notes": d["notes"]}
+        if leg:      # the Home-to-Home mileage leg that ends at this stop; minutes only when it counts as work time
+            minutes = d["minutes"] if counted else None
+            if counted and status.get(d["from_stop_id"]) == "Lunch":      # lunch between jobs: one drive before and after it
+                d0 = drive_into.get(d["from_stop_id"])
+                if d0 and d0.get("counts"):
+                    minutes += d0["minutes"]
+            drive = {"minutes": minutes, "miles_approx": leg["miles"],
+                     "from": leg["from"], "notes": d["notes"] if d else ""}
+        elif counted:
+            drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "from": "", "notes": d["notes"]}
         used, consumed = _split_parts(s["parts"])
         out_stops.append({
             "stop_number": len(out_stops) + 1,
@@ -85,13 +122,14 @@ def build_day(payload, cfg):
             "arrival": s["arrive"], "departure": s["depart"],
             "arrival_iso": iso(s["arrive_ts"]), "departure_iso": iso(s["depart_ts"]),
             "time_on_site_minutes": s["minutes"],
+            "lunch_non_billable": lunch,
             "drive_from_previous_stop": drive,
             "hubspot_company_id": s["hubspot_company_id"],
             "work_performed": s["notes"],
             "parts_used": used,
             "consumables_used": consumed,
         })
-    drive_min = sum(s["drive_from_previous_stop"]["minutes"] for s in out_stops if s["drive_from_previous_stop"])
+    drive_min = sum(s["drive_from_previous_stop"]["minutes"] or 0 for s in out_stops if s["drive_from_previous_stop"])
     miles = sum(s["drive_from_previous_stop"]["miles_approx"] for s in out_stops if s["drive_from_previous_stop"])
     traffic = sum(s["minutes"] for s in stops if s["status"] == "Traffic")
     drive_min += traffic

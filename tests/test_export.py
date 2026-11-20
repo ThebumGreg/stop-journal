@@ -100,13 +100,15 @@ def test_pdf_text_extraction_every_field_in_sensible_order(tmp_path):
                    "8.75", "Beta Plumbing", "9 Oak Ave", "Quoted job."):
         assert needle in flat, needle
     # records table, excluded section (times only), instructions
-    assert "12:00 to 12:45: Personal" in flat and "13:30 to 14:00: Not confirmed" in flat
+    assert "Personal" not in text.split("Day recap")[1].split("How to read")[0]      # personal stops are not listed
+    assert "13:30 to 14:00" in flat and "Not confirmed" in flat and "12:00 to 12:45" not in flat
     assert "Secret Diner" not in text and "Phone job" not in text
     assert "How to read this report" in flat and "do not create records for them" in flat
 
     pos = 0
-    for marker in ("JobHub Job Report", "Day summary", "Stop 1", "Stop 2", "Records to update",
-                   "Excluded", "How to read this report"):
+    assert "Day summary" not in text and "Excluded" not in text        # header + summary are one section; recap replaces Excluded
+    for marker in ("JobHub Job Report", "On-site time", "Stop 1", "Stop 2", "Records to update",
+                   "Day recap", "How to read this report"):
         i = text.find(marker, pos)
         assert i >= 0, marker
         pos = i + 1
