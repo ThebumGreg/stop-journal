@@ -266,6 +266,15 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   6. Possible-duplicate check when adding (similar name or part #).
   7. Install kits (phase 4): one tap adds a bundle of parts to a stop.
 
+## Notes: spell and grammar check (built)
+- The notes box sets spellcheck / autocorrect / autocapitalize explicitly (the iPhone keyboard does the spelling).
+- Grammar: **LanguageTool** (open source), self-hosted as its own container so notes stay on the network. `app/grammar.py`;
+  `LANGUAGETOOL_URL` env or Settings → Notes (blank = off, and the button is hidden). `POST /api/grammar {text}` forwards ONLY the
+  text to `{url}/v2/check` (language en-US, 5000 chars, 30 issues) and returns offset/length/message/replacements;
+  `GET /api/grammar/status` says whether it is on. The sheet's "Check grammar" button lists issues with one-tap fixes.
+- Community image `erikvl87/languagetool` (port 8010, about 1 GB RAM) is a commented example in docker-compose.yml; confirm it
+  before relying on it. Not planned unless asked: an AI "polish my notes" button (sends customer notes outside, costs per use).
+
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.
 - Show each milestone working before starting the next.

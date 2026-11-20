@@ -17,3 +17,10 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+
+  # Optional grammar check for the notes sheet. Uncomment, then set LANGUAGETOOL_URL=http://languagetool:8010 in .env.
+  # Needs about 1 GB RAM. Community image: confirm it before relying on it.
+  # languagetool:
+  #   image: erikvl87/languagetool
+  #   container_name: languagetool
+  #   restart: unless-stopped

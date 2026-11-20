@@ -98,6 +98,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `APP_URL` | | address that notification taps open, e.g. `http://192.168.x.x:8000` |
 | `ALERT_NO_DATA`, `ALERT_NO_DATA_MIN`, `WORK_DAYS`, `WORK_START`, `WORK_END`, `ALERT_REPEAT_MIN` | on, 60, Mon-Fri, 07:00, 17:00, 0 | the no-data alert (tapping Start/End day overrides the work hours for that day) |
 | `ALERT_DRAFTS`, `ALERT_LOW_STOCK` | on, on | end-of-day "stops still in Draft" reminder, low truck stock alert (generic text only) |
+| `LANGUAGETOOL_URL` | blank (off) | your own LanguageTool server, e.g. `http://192.168.1.10:8010`; adds a **Check grammar** button to the notes sheet. Only the note text is sent, to that address. Also a Settings value |
 | `ROUTING_URL` | public OSRM server | road distance used only to document miles from where the day ended to Home; coordinates are rounded to ~100 m; blank = off (estimate) |
 | `BACKUP_KEEP` | 14 | daily database snapshots to keep (0 = off) |
 | `PUID`, `PGID` | 1000 | compose only: the user the container runs as |
@@ -117,7 +118,7 @@ The SQLite file in `/data` is the entire state (stops, edits, parts, places, set
 - Do **not** expose the app to the internet without protection. Safe options: LAN only, a VPN
   (WireGuard/Tailscale), or a reverse proxy with authentication and HTTPS. Always set `APP_PASSWORD`.
 - The only outbound calls are place lookups (coordinates and search text go to the provider you
-  choose), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, map tiles, and Pushover notifications (whose text never contains locations).
+  choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, map tiles, and Pushover notifications (whose text never contains locations).
 - Request URLs contain coordinates, so the server keeps its access log off. Nothing is logged to
   stdout that includes locations. No analytics or telemetry.
 - If you ever track technicians, that needs written consent and work-hours-only tracking. This app

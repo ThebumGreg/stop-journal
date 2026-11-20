@@ -172,3 +172,9 @@ select { padding:8px 10px; width:100%; min-height:40px; -webkit-appearance:menul
 body.sheet-open { overflow:hidden; }
 .sheet .err:empty { display:none; }
 .sheet .prow.add.one { grid-template-columns:1fr 64px; }
+
+.gram { margin:-4px 0 10px; }
+.gram-row { border:1px solid var(--line, #ddd); border-radius:8px; padding:8px; margin-top:6px; font-size:14px; }
+.gram-msg { margin-bottom:4px; }
+.gram-row .quick { margin-right:6px; }
+.gram-ok { color:var(--ok); font-size:14px; margin-top:6px; }

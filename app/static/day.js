@@ -344,6 +344,39 @@ function refreshSheet() {
   sh.more.replaceChildren(expensesBlock(s, sh.err), followBlock(s, sh.err));
 }
 
+// Optional grammar check (LanguageTool): the button only appears when the server has one configured.
+let grammarOn = null;
+function grammarBlock(notes) {
+  const box = el('div', 'gram');
+  const btn = el('button', 'quick', 'Check grammar'); btn.type = 'button'; btn.hidden = true;
+  const out = el('div', 'gram-out');
+  const run = async () => {
+    out.replaceChildren(el('div', 'muted', 'Checking…'));
+    let r;
+    try { r = await api('POST', '/api/grammar', {text: notes.value}); }
+    catch (e) { out.replaceChildren(el('div', 'err', e.message)); return; }
+    if (!r.issues.length) { out.replaceChildren(el('div', 'gram-ok', 'No problems found.')); return; }
+    out.replaceChildren(...r.issues.map(i => {
+      const row = el('div', 'gram-row');
+      row.append(el('div', 'gram-msg', '"' + notes.value.substr(i.offset, i.length) + '": ' + i.message));
+      i.replacements.forEach(v => {
+        const b = el('button', 'quick', v || '(remove)'); b.type = 'button';
+        b.onclick = () => {
+          notes.value = notes.value.slice(0, i.offset) + v + notes.value.slice(i.offset + i.length);
+          sheet.vals.notes = notes.value; touched(); run();
+        };
+        row.append(b);
+      });
+      return row;
+    }));
+  };
+  btn.onclick = run;
+  box.append(btn, out);
+  (grammarOn === null ? api('GET', '/api/grammar/status').then(r => (grammarOn = r.enabled), () => false) : Promise.resolve(grammarOn))
+    .then(on => { btn.hidden = !on; });
+  return box;
+}
+
 function openSheet(id) {
   const s = S.stops.find(x => x.id === id);
   if (!s) return;
@@ -361,6 +394,7 @@ function openSheet(id) {
 
   const notes = el('textarea', 'sheet-notes'); notes.value = s.notes;
   notes.placeholder = 'What was wrong, what you did, the result';
+  notes.spellcheck = true; notes.setAttribute('autocorrect', 'on'); notes.setAttribute('autocapitalize', 'sentences');
   notes.oninput = () => { sheet.vals.notes = notes.value; touched(); };
   notes.onblur = () => { if (sheetDirty()) saveSheet(); };
 
@@ -392,7 +426,8 @@ function openSheet(id) {
 
   const done2 = el('button', 'primary wide', 'Done'); done2.type = 'button'; done2.onclick = () => closeSheet();
   const body = el('div', 'sheet-body');
-  body.append(sh.stat, sh.err, labeled('Work performed', notes), catBox, sh.parts, det, done2);
+  const gram = grammarBlock(notes);
+  body.append(sh.stat, sh.err, labeled('Work performed', notes), gram, catBox, sh.parts, det, done2);
   sheetEl.append(top, body);
   refreshSheet();
   setStat('clean');

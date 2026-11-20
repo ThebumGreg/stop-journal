@@ -66,6 +66,11 @@ SPEC = [
              help="Used only to document the miles from where the day ended to Home. Coordinates are rounded to about "
                   "100 m before they are sent. Blank turns it off (a straight-line estimate is used)."),
     ]),
+    ("Notes", [
+        dict(key="languagetool_url", label="Grammar check server (LanguageTool)", kind="url",
+             help="Your own LanguageTool container, for example http://192.168.1.10:8010. Only the note text is "
+                  "sent to it. Blank turns the Check grammar button off."),
+    ]),
     ("Business suggestions", [
         dict(key="places_provider", label="Provider", kind="choice", choices=["osm", "osm_google", "google"],
              help="osm is free. osm_google tries your known sites and OSM first and only "

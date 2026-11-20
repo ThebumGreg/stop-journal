@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from flask import (Flask, Response, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
 
-from . import alerts, backup, db, live, notify, parts, pdf, places, points, sample, service, settings
+from . import alerts, backup, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
@@ -347,6 +347,23 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         kind = request.args.get("kind") if request.args.get("kind") in parts.KINDS else None
         return catalog(lambda conn: {"parts": parts.list_parts(conn, q, everything, kind)})
 
+    @app.post("/api/grammar")
+    def grammar_check():
+        text = (request.get_json(silent=True) or {}).get("text", "")
+
+        def go(conn, cfg):
+            if not (cfg.languagetool_url or "").strip():
+                return jsonify(enabled=False, issues=[])
+            try:
+                return jsonify(enabled=True, issues=grammar.check(cfg, text))
+            except grammar.GrammarError as e:
+                return jsonify(error=str(e)), 502
+        return with_conn(go)
+
+    @app.get("/api/grammar/status")
+    def grammar_status():
+        return with_conn(lambda conn, cfg: jsonify(enabled=bool((cfg.languagetool_url or "").strip())))
+
     @app.get("/api/parts/choices")
     def parts_choices():
         return catalog(parts.choices)
@@ -680,6 +697,12 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return jsonify(ok=False, message=str(e))
         except Exception as e:
             return jsonify(ok=False, message=f"Test failed ({type(e).__name__}).")
+
+    @app.post("/settings/test-grammar")
+    def settings_test_grammar():
+        """Uses the address typed in the form (even if not saved yet) and a fixed test sentence."""
+        ok, message = grammar.test(request.form.get("languagetool_url") or eff().languagetool_url)
+        return jsonify(ok=ok, message=message)
 
     @app.post("/settings/recorder/discover")
     def settings_recorder_discover():
