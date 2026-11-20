@@ -159,9 +159,17 @@ def apply_places(conn, date):
                                site["id"], site["default_status"] or "Draft", s["id"]))
 
 
+def _after_end(conn, cfg, date, arrive):
+    """Once End day is set, nothing that begins after it is added to the day."""
+    end = day_marks(conn, cfg, date)["end_ts"]
+    return bool(end) and arrive > end + END_SLACK_S
+
+
 def materialize(conn, cfg, date, kept, run_cfg):
     items, _ = detect.detect(kept, run_cfg)
     for it in items:
+        if _after_end(conn, cfg, date, it["arrive"]):
+            continue
         _insert_detected(conn, date, it)
     _mark_processed(conn, date, {"min": run_cfg.stop_min_minutes,
                                  "radius": run_cfg.stop_radius_m,
@@ -181,6 +189,8 @@ def sync_new(conn, cfg, date, kept, run_cfg):
         ov = [s for s in _ordered(conn, date)
               if s["arrive_utc"] < it["depart"] and it["arrive"] < s["depart_utc"]]
         if not ov:
+            if _after_end(conn, cfg, date, it["arrive"]):
+                continue
             _insert_detected(conn, date, it)
             added += 1
             continue
@@ -262,7 +272,18 @@ def mark_from_stop(conn, cfg, sid, which):
     if which not in ("start", "end"):
         raise EditError("Choose start or end.")
     ts = s["arrive_utc"] if which == "start" or s["status"] == "Personal" else s["depart_utc"]
-    return set_mark(conn, cfg, s["date"], which, ts=ts)
+    date = s["date"]
+    set_mark(conn, cfg, date, which, ts=ts)       # validates the order before anything else changes
+    # everything outside the work day is Personal: stops before the start, stops after the end
+    ordered = _ordered(conn, date)
+    out = [o for o in ordered if o["id"] != sid and o["status"] != "Personal" and (
+        o["arrive_utc"] < s["arrive_utc"] if which == "start" else o["arrive_utc"] > s["arrive_utc"])]
+    if out:
+        snapshot_day(conn, date, "Start day here" if which == "start" else "End day here")
+        for o in out:
+            conn.execute("UPDATE stops SET status='Personal', edited=1 WHERE id=?", (o["id"],))
+        _finish(conn, cfg, date)
+    return date
 
 
 def end_at_home(conn, cfg, date, time_text=None):
@@ -472,6 +493,8 @@ def add_manual(conn, cfg, date, f):
     a = parse_time(cfg, date, f.get("arrive", ""))
     d = parse_time(cfg, date, f.get("depart", ""))
     _check_window(conn, cfg, date, None, a, d)
+    if _after_end(conn, cfg, date, a):
+        raise EditError("The day has ended. Clear the End time (Day times…) to add a stop after it.")
     conn.execute(
         "INSERT INTO stops(date,arrive_utc,depart_utc,business_name,address,notes,"
         "kind,status,source,edited) VALUES (?,?,?,?,?,?,'stop','Draft','manual',1)",

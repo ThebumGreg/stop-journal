@@ -183,6 +183,11 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   time, its minutes are added to drive time (`traffic_minutes` in the report summary). The Export panel blocks PDF/JSON
   while any stop is still Draft (an "Export anyway" tickbox overrides). Start day within 2 minutes of arriving
   (`START_SLACK_S`) means you started on arrival, so that commute is not counted.
+- Sync new data, Confirm all known and Undo also live on the Export & tools page ("Day actions"). The day toolbar has only
+  Start/End day, End at home, + Add stop and Day times.
+- A stop card has the status buttons and Save / Confirm / More (Split, Start day here, End day here, Merge, Delete) at the top.
+  "Start day here" marks every earlier stop Personal and "End day here" every later stop Personal (undoable).
+- Once End day is set, Sync / re-detect add no stops that begin after it, and + Add stop refuses them (clear End in Day times to allow).
 - Export, Re-detect and Debug data live on the **Export & tools** page (`/tools?date=`, linked from the header on every page), not on the day page. Tapping End day with no Drafts left jumps there.
 - Any stop can be the start or end of the day ("Start day here" = arrival; "End day here" = departure, or arrival for a
   Personal stop). **End at home** ends the day at the saved Home place: it uses a detected Personal Home stop if the day

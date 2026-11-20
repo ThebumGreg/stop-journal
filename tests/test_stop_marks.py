@@ -73,3 +73,54 @@ def test_named_personal_stop_saved_as_place(tmp_path):
     places = c.get("/api/places").json
     rows = places if isinstance(places, list) else places.get("places", places.get("results", []))
     assert any(p["name"] == "Home" and p["kind"] == "home" for p in rows)
+
+
+def three_stops(tmp_path):
+    d = sample.Day(D)
+    t = d.dwell(*HOME, d.at(7), 60)                   # 07:00-08:00 home
+    t = d.drive(HOME, JOB, t, 20)
+    t = d.dwell(*JOB, t, 120)                         # job 08:20-10:20
+    t = d.drive(JOB, HOME, t, 20)
+    d.dwell(*HOME, t, 60)                             # home again
+    c = create_app(replace(CFG, data_dir=str(tmp_path)),
+                   client=sample.ListRecorder(d.points())).test_client()
+    return c, day(c)["stops"]
+
+
+def test_start_here_makes_earlier_stops_personal_and_is_undoable(tmp_path):
+    c, st = three_stops(tmp_path)
+    c.patch(f"/api/stops/{st[0]['id']}", json={"business_name": "Somewhere", "status": "Confirmed"})
+    assert c.post(f"/api/stops/{st[1]['id']}/mark", json={"which": "start"}).status_code == 200
+    now = day(c)["stops"]
+    assert [s["status"] for s in now] == ["Personal", "Draft", "Draft"]
+    assert day(c)["undo"]["label"] == "Start day here"
+    c.post(f"/api/day/{D}/undo")
+    assert [s["status"] for s in day(c)["stops"]] == ["Confirmed", "Draft", "Draft"]
+
+
+def test_end_here_makes_later_stops_personal(tmp_path):
+    c, st = three_stops(tmp_path)
+    assert c.post(f"/api/stops/{st[1]['id']}/mark", json={"which": "end"}).status_code == 200
+    assert [s["status"] for s in day(c)["stops"]] == ["Draft", "Draft", "Personal"]
+
+
+def test_bad_order_changes_nothing(tmp_path):
+    c, st = three_stops(tmp_path)
+    c.post(f"/api/day/{D}/mark", json={"which": "end", "time": "09:00"})
+    r = c.post(f"/api/stops/{st[2]['id']}/mark", json={"which": "start"})     # start after the end
+    assert r.status_code == 400
+    assert [s["status"] for s in day(c)["stops"]] == ["Draft", "Draft", "Draft"]
+
+
+def test_no_new_stops_after_end_day(tmp_path):
+    c, st = three_stops(tmp_path)
+    c.post(f"/api/day/{D}/mark", json={"which": "end", "time": "10:00"})
+    for s in st[2:]:                                  # the evening home stop is removed, as if not yet synced
+        c.delete(f"/api/stops/{s['id']}")
+    assert c.post(f"/api/day/{D}/sync").json["added"] == 0                 # sync ignores it
+    assert len(day(c)["stops"]) == 2
+    r = c.post(f"/api/day/{D}/stops", json={"arrive": "18:00", "depart": "18:30"})
+    assert r.status_code == 400 and "ended" in r.json["error"]
+    assert c.post(f"/api/day/{D}/stops", json={"arrive": "09:00", "depart": "09:05"}).status_code in (200, 400)
+    c.post(f"/api/day/{D}/mark", json={"which": "end", "clear": True})
+    assert c.post(f"/api/day/{D}/sync").json["added"] == 1                 # clearing End lets it back in

@@ -132,3 +132,7 @@ select { padding:8px 10px; width:100%; min-height:40px; -webkit-appearance:menul
 .redo .two input, .redo input[type=date], .redo input[type=time] { width:100%; min-width:0; }
 .two > div { min-width:0; }
 [hidden] { display:none !important; }
+
+.more { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+.more button { font-size:14px; padding:4px 6px; min-height:38px; }
+.edit .acts button { flex:1; }

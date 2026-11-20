@@ -20,6 +20,7 @@ Single user. Your location data stays on your own server.
 - **Export** (own page, header link): a text-based PDF and a JSON twin for one day or a date range.
 - **Alerts** to your phone through Pushover (for example: no location data during work hours).
 - A **live status** box: where the phone is now and how long it has been there.
+- Sync, Confirm all known and Undo are under **Export & tools**. Once the day is ended, no more stops are added to it.
 - Tag a stop **Lunch** (left out, by time only) or **Traffic** (a slow-down: its minutes count as drive time). Export is blocked until no stop is left in Draft.
 - **Start day / End day** buttons (either can be used alone; any stop can also be made the start or end, and **End at home** adds a basic Home stop), **one-tap confirm** for saved places (and Confirm all known),
   "usual parts" per business, and **Undo** for delete, merge, split and re-detect.

@@ -230,6 +230,15 @@ function stopCard(s, i) {
   return card;
 }
 
+async function markHere(s, which, err) {
+  const n = S.stops.filter(x => x.id !== s.id && x.status !== 'Personal' &&
+    (which === 'start' ? x.arrive_ts < s.arrive_ts : x.arrive_ts > s.arrive_ts)).length;
+  if (n && !confirm('Make this the ' + (which === 'start' ? 'start' : 'end') + ' of the day? ' + n + ' stop' +
+      (n > 1 ? 's' : '') + (which === 'start' ? ' before' : ' after') + ' it will be marked Personal (you can undo this on the Export & tools page).')) return;
+  await run(() => api('POST', '/api/stops/' + s.id + '/mark', {which}), err,
+            () => { S.flash = n ? n + ' stop' + (n > 1 ? 's' : '') + ' marked Personal.' : ''; });
+}
+
 function buildEdit(edit, s, i) {
   const key = 's' + s.id;
   const d = Object.assign({business_name: s.business_name, address: s.address, notes: s.notes,
@@ -300,7 +309,10 @@ function buildEdit(edit, s, i) {
   const saveB = el('button', 'primary', 'Save'); saveB.onclick = save;
   const confB = el('button', null, 'Confirm');
   confB.onclick = () => { remember('status', 'Confirmed'); segBtns.forEach(x => x.classList.toggle('on', x.textContent === 'Confirmed')); save(); };
-  acts.append(saveB, confB);
+  const moreB = el('button', null, 'More ▾');
+  acts.append(saveB, confB, moreB);
+  const more = el('div', 'more'); more.hidden = true;
+  moreB.onclick = () => { more.hidden = !more.hidden; moreB.textContent = more.hidden ? 'More ▾' : 'More ▴'; };
 
   // split
   const splitRow = el('div', 'two'); splitRow.hidden = true;
@@ -313,29 +325,29 @@ function buildEdit(edit, s, i) {
     splitIn.value = addMin(s.arrive, Math.round(s.minutes / 2));
     splitRow.hidden = !splitRow.hidden;
   };
-  acts.append(splitB);
+  more.append(splitB);
 
   // make this stop the start and/or end of the work day
   const sb = el('button', null, 'Start day here'); sb.title = 'Work day starts when you arrived at this stop';
-  sb.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/mark', {which: 'start'}), err);
+  sb.onclick = () => markHere(s, 'start', err);
   const eb = el('button', null, 'End day here');
   eb.title = s.status === 'Personal' ? 'Work day ends when you arrived here' : 'Work day ends when you left this stop';
-  eb.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/mark', {which: 'end'}), err);
-  acts.append(sb, eb);
+  eb.onclick = () => markHere(s, 'end', err);
+  more.append(sb, eb);
 
   const prev = S.stops[i - 1], next = S.stops[i + 1];
   const mergeWith = other => run(() => api('POST', '/api/stops/merge', {ids: [s.id, other.id]}), err);
-  if (prev) { const b = el('button', null, 'Merge ↑'); b.title = 'Merge with the previous stop'; b.onclick = () => mergeWith(prev); acts.append(b); }
-  if (next) { const b = el('button', null, 'Merge ↓'); b.title = 'Merge with the next stop'; b.onclick = () => mergeWith(next); acts.append(b); }
+  if (prev) { const b = el('button', null, 'Merge ↑'); b.title = 'Merge with the previous stop'; b.onclick = () => mergeWith(prev); more.append(b); }
+  if (next) { const b = el('button', null, 'Merge ↓'); b.title = 'Merge with the next stop'; b.onclick = () => mergeWith(next); more.append(b); }
   const del = el('button', 'danger', s.kind === 'short' ? 'Dismiss' : 'Delete');
   del.onclick = () => {
     if (!confirm('Delete this stop? Raw GPS points are kept; only this entry is removed.')) return;
     run(() => api('DELETE', '/api/stops/' + s.id), err, () => { delete S.drafts[key]; S.open.delete(s.id); });
   };
-  acts.append(del);
+  more.append(del);
 
-  edit.append(labeled('Business', nameIn), labeled('Address', addrIn), find, times,
-              labeled('Work performed', notes), partsBlock(s, err), seg, acts, splitRow, err);
+  edit.append(seg, acts, more, splitRow, err, labeled('Business', nameIn), labeled('Address', addrIn), find, times,
+              labeled('Work performed', notes), partsBlock(s, err));
   if (s.lat != null) edit.append(el('div', 'hint', 'Tip: tap this stop\'s pin on the map, then drag it to move the location.'));
 }
 
@@ -403,31 +415,6 @@ function toolbar() {
        () => { S.tool = S.tool === 'day' ? null : 'day'; render(false); });
   }
   mk('+ Add stop', () => { S.tool = S.tool === 'add' ? null : 'add'; render(false); });
-  const ready = S.stops.filter(x => x.suggest).length;
-  if (ready) {
-    const b = mk('Confirm ' + ready + ' known', async () => {
-      if (!confirm('Confirm ' + ready + ' stop' + (ready > 1 ? 's' : '') + ' at saved places? You can undo this.')) return;
-      try { applyDay(await api('POST', '/api/day/' + S.date + '/confirm-known')); render(true); }
-      catch (e) { alert(e.message); }
-    });
-    b.className = 'primary';
-  }
-  mk('Sync', async () => {
-    try {
-      const d = await api('POST', '/api/day/' + S.date + '/sync');
-      S.flash = d.added ? d.added + ' new stop' + (d.added > 1 ? 's' : '') + ' found.' : 'No new stops.';
-      applyDay(d); render(true);
-    } catch (e) { alert(e.message); }
-  });
-  if (S.undo) {
-    const u = mk('Undo: ' + S.undo.label.toLowerCase(), async () => {
-      if (!confirm('Put the day back as it was before “' + S.undo.label.toLowerCase() +
-                   '”? Edits made since then are lost.')) return;
-      try { const d = await api('POST', '/api/day/' + S.date + '/undo'); S.sel = null; S.open.clear(); S.openDrives.clear(); S.drafts = {}; applyDay(d); render(true); }
-      catch (e) { alert(e.message); }
-    });
-    u.className = 'undo';
-  }
   if (S.flash) bar.append(el('span', 'hint flash', S.flash));
   return bar;
 }

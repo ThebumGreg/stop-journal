@@ -90,9 +90,50 @@ function redoForm() {
   return f;
 }
 
+function dayActions() {
+  const f = el('div', 'box');
+  const info = el('div', 'hint', 'Loading…'), err = el('div', 'err');
+  const acts = el('div', 'acts');
+  f.append(info, acts, err);
+  async function act(fn, msg) {
+    err.textContent = '';
+    try { const d = await fn(); await load(msg(d)); } catch (e) { err.textContent = e.message; }
+  }
+  async function load(note) {
+    let d;
+    try { d = await api('GET', '/api/day/' + DATE); } catch (e) { info.textContent = ''; err.textContent = e.message; return; }
+    const ready = d.stops.filter(x => x.suggest).length;
+    info.textContent = (note ? note + ' ' : '') + d.stops.length + ' stop' + (d.stops.length === 1 ? '' : 's') + ' on ' + DATE + '.';
+    acts.replaceChildren();
+    const sync = el('button', null, 'Sync new data');
+    sync.onclick = () => act(() => api('POST', '/api/day/' + DATE + '/sync'),
+                             r => r.added ? r.added + ' new stop' + (r.added > 1 ? 's' : '') + ' found.' : 'No new stops.');
+    acts.append(sync);
+    if (ready) {
+      const b = el('button', 'primary', 'Confirm ' + ready + ' known');
+      b.onclick = () => {
+        if (!confirm('Confirm ' + ready + ' stop' + (ready > 1 ? 's' : '') + ' at saved places? You can undo this.')) return;
+        act(() => api('POST', '/api/day/' + DATE + '/confirm-known'), () => 'Confirmed ' + ready + '.');
+      };
+      acts.append(b);
+    }
+    if (d.undo) {
+      const u = el('button', 'danger', 'Undo: ' + d.undo.label.toLowerCase());
+      u.onclick = () => {
+        if (!confirm('Put the day back as it was before “' + d.undo.label.toLowerCase() + '”? Edits made since then are lost.')) return;
+        act(() => api('POST', '/api/day/' + DATE + '/undo'), () => 'Undone.');
+      };
+      acts.append(u);
+    }
+  }
+  load('');
+  return f;
+}
+
 const dateIn = document.getElementById('tdate');
 dateIn.value = DATE;
 dateIn.onchange = () => { location.href = '/tools?date=' + dateIn.value; };
 document.getElementById('backlink').href = '/day/' + DATE;
+document.getElementById('actions').append(dayActions());
 document.getElementById('export').append(exportForm());
 document.getElementById('redo').append(redoForm());
