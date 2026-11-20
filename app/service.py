@@ -930,7 +930,9 @@ def totals(stops, drives, marks=None):
 def day_payload(conn, cfg, date, include_path=False):
     used = parts.for_day(conn, date)
     fups = followups_for_day(conn, date)
+    site_kind = {r["id"]: r["kind"] for r in conn.execute("SELECT id, kind FROM known_sites")}
     stops = [{
+        "site_kind": site_kind.get(r["known_site_id"]) or "",
         "parts": used.get(r["id"], []), "follow_ups": fups.get(r["id"], []),
         "work_category": r["work_category"] or "", "ticket": r["ticket"] or "",
         "visit_result": r["visit_result"] or "",

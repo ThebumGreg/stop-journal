@@ -45,7 +45,8 @@ INSTRUCTIONS = [
     "milestone). Visit result says whether the job is complete, needs a return visit, or is waiting on parts or the "
     "customer. Hours by category adds up on-site time only. A dash means nothing was entered.",
     "Follow-ups: what is still open, who owns it and when it is due. Create a task for each one.",
-    "Drive from previous stop: the mileage leg that ends at this stop (the first stop starts from Home). Minutes are "
+    "Drive from previous stop: the mileage leg that ends at this stop, from Home, Client, Office or Vendor (the kind of "
+    "place the previous stop was; the first stop starts from Home). Minutes are "
     "shown only when that drive counted as work time. If the user stopped for lunch between two jobs, the drives before "
     "and after lunch are added together as one drive, and the miles are the direct distance between the two jobs. "
     "If the user left a site for lunch or a personal break and came back to it, that is shown as one stop: Time on "
@@ -112,7 +113,7 @@ def _recap(day, st, multi):
     unpaid = sum(r["minutes"] for r in sheet if r["type"] == "break")
     totals = [("On site", _dur(on_site))]
     if lunch:
-        totals.append(("Lunch (paid, not billed)", _dur(lunch)))
+        totals.append(("Lunch", _dur(lunch)))
     totals += [("Drive", _dur(drive)), ("Total paid time", _dur(on_site + drive + lunch))]
     if unpaid:
         totals.append(("Personal breaks (unpaid, not included)", f"({_dur(unpaid)})"))
@@ -266,7 +267,8 @@ def _stop_block(s, st):
     if not drive:
         drive_txt = "n/a"
     else:
-        drive_txt = f"{drive['miles_approx']} mi" + (f" from {drive['from']}" if drive.get("from") else "")
+        origin = drive.get("from_type") or drive.get("from")      # the kind of place, not its name
+        drive_txt = f"{drive['miles_approx']} mi" + (f" from {origin}" if origin else "")
         if drive["minutes"] is not None:
             drive_txt += f", {drive['minutes']} min"
     if drive and drive["notes"]:

@@ -130,3 +130,18 @@ def test_home_before_and_after_the_day_is_not_a_break(tmp_path):
     c.patch(f"/api/stops/{st[2]['id']}", json={"status": "Personal"})
     j = c.get(f"/api/export.json?from={D}").json["days"][0]
     assert not [r for r in j["timesheet"] if r["type"] in ("break", "lunch")]
+
+
+def test_pdf_names_the_kind_of_place_not_the_previous_stop_and_recap_lunch_is_plain(tmp_path):
+    import re
+    from tests.test_export import pdf_text
+    c = build(tmp_path, JOB2)
+    j = c.get(f"/api/export.json?from={D}").json["days"][0]["stops"]
+    assert j[0]["drive_from_previous_stop"]["from_type"] == "Home"
+    assert j[1]["drive_from_previous_stop"]["from_type"] == "Client" and j[1]["drive_from_previous_stop"]["from"] == "Acme"
+    text = pdf_text(c.get(f"/api/export.pdf?from={D}"))
+    flat = re.sub(r"\s+", " ", text)
+    assert "mi from Home" in flat and "mi from Client" in flat and "mi from Acme" not in flat
+    recap = flat.split("Day recap (timesheet)")[1].split("How to read")[0]
+    assert "Lunch 40 min" in recap and "paid, not billed" not in recap
+    assert "Lunch (paid, not billed)" in flat.split("Day recap")[0]            # the top section keeps its wording

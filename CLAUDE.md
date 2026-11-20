@@ -214,6 +214,9 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Summary additive fields: `lunch_minutes`, `break_minutes_unpaid`, `paid_minutes` (on-site + lunch + drive). Top PDF
   section has no timezone / generated-at / schema / drive-after-last-stop rows (the timezone is in the notes, the schema
   version in the footer). Order: top, stops, Records to update, Mileage, Day recap (times in "3 h 48 min" form).
+- The stop block's "Drive from previous stop" names the KIND of place the drive started from (Home, Client, Office, Vendor;
+  JSON `from_type`), not its name; the JSON still carries the name in `from`. In the Day recap the lunch rows and total just say "Lunch"
+  (the top section keeps "Lunch (paid, not billed)").
 - Parts CSV import has a "Check file" dry run (`/api/parts/import?dry=1`, runs on an in-memory copy of the database).
 - **Notes & parts sheet** (day page): each Draft/Confirmed stop card has a "Notes & parts" button that slides a sheet up. Work
   performed, Category, Job/ticket/project and Visit result autosave ~2 s after typing stops (and on leaving a field); a status line

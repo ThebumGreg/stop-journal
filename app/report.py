@@ -58,6 +58,7 @@ def _line_total(p):
 
 
 NO_CATEGORY = "No category"
+PLACE_TYPE = {"home": "Home", "office": "Office", "vendor": "Vendor", "client": "Client"}
 
 
 def _timesheet(stops, drives):
@@ -77,7 +78,7 @@ def _timesheet(stops, drives):
         rows.append((ts, {"in": inn, "out": out, "type": kind, "description": text,
                           "minutes": round(secs / 60), "paid": paid}))
 
-    LUNCH, BREAK = "Lunch (paid, not billed)", "Clocked out (personal break)"
+    LUNCH, BREAK = "Lunch", "Clocked out (personal break)"
     for s in stops:
         st = s["status"]
         if st == "Confirmed":
@@ -157,6 +158,7 @@ def build_day(payload, cfg):
             absorbed.add(nxt["id"])
             cur += 2
     out_stops, excluded = [], []
+    prev_type = "Home"          # what kind of place the previous work stop was (the first leg starts at Home)
     for s in stops:
         if s["id"] in absorbed:
             continue
@@ -188,11 +190,14 @@ def build_day(payload, cfg):
                 if d0 and d0.get("counts"):
                     minutes += d0["minutes"]
             drive = {"minutes": minutes, "miles_approx": leg["miles"],
-                     "from": leg["from"], "notes": d["notes"] if d else ""}
+                     "from": leg["from"], "from_type": "Home" if leg["from"] == "Home" else prev_type,
+                     "notes": d["notes"] if d else ""}
         elif counted:
-            drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "from": "", "notes": d["notes"]}
+            drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "from": "", "from_type": "",
+                     "notes": d["notes"]}
         used, consumed, spent = _split_parts(s["parts"])
         cat = s["work_category"]
+        prev_type = PLACE_TYPE.get(s.get("site_kind"), "Client")
         out_stops.append({
             "stop_number": len(out_stops) + 1,
             "business_name": s["business_name"], "address": s["address"],
