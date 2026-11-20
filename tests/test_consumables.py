@@ -122,3 +122,16 @@ def test_old_database_gets_the_new_columns(tmp_path):
     conn = db.connect(str(tmp_path))
     row = conn.execute("SELECT kind, vendor FROM parts").fetchone()
     assert row["kind"] == "part" and row["vendor"] is None
+
+
+def test_csv_check_changes_nothing(tmp_path):
+    c, _ = make(tmp_path)
+    csv = ("name,sku,type,unit_cost,on_hand\r\nPreview valve,PV-1,part,5.50,3\r\n"
+           "Preview tape,PT-1,consumable,1.00,9\r\n,,,,\r\nBad,PB-1,part,abc,1\r\n")
+    r = c.post("/api/parts/import?dry=1", data=csv.encode(), content_type="text/csv").json
+    assert r["dry_run"] and r["created"] == 2 and r["skipped"] == 1 and r["errors"]
+    assert c.get("/api/parts?all=1").json == c.get("/api/parts?all=1").json
+    assert not [p for p in c.get("/api/parts?all=1").json["parts"] if p["sku"] in ("PV-1", "PT-1")]
+    r = c.post("/api/parts/import", data=csv.encode(), content_type="text/csv").json
+    assert r["created"] == 2 and "dry_run" not in r
+    assert len([p for p in c.get("/api/parts?all=1").json["parts"] if p["sku"] in ("PV-1", "PT-1")]) == 2

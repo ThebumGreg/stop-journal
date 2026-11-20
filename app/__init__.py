@@ -386,7 +386,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             text = raw.decode("utf-8-sig")
         except UnicodeDecodeError:
             text = raw.decode("latin-1")  # Excel "CSV" exports are often not UTF-8
-        return catalog(lambda conn: parts.import_csv(conn, text))
+        dry = request.args.get("dry") == "1"
+        return catalog(lambda conn: parts.preview_csv(conn, text) if dry else parts.import_csv(conn, text))
 
     def csv_response(body, name):
         return Response(body, mimetype="text/csv",

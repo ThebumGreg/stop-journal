@@ -55,6 +55,7 @@
   <div class="box">
     <div class="row">
       <input type="file" id="csvfile" accept=".csv,text/csv" style="width:auto;flex:1">
+      <button id="csvcheck" type="button">Check file</button>
       <button id="csvgo" type="button">Import CSV</button>
     </div>
     <div class="hint" style="margin-top:6px">
@@ -62,7 +63,7 @@
       <a href="/api/parts/export.csv">Export current parts</a>.
       Columns: <code>name</code> (required), <code>sku</code>, <code>type</code> (part or consumable), <code>unit</code>,
       <code>unit_cost</code>, <code>billable</code>, <code>category</code>, <code>vendor</code>, <code>on_hand</code>, <code>reorder_at</code>.
-      Matching is by part number, else name. A filled <code>on_hand</code> sets the truck count and turns tracking on.
+      Matching is by part number, else name. <b>Check file</b> shows what an import would do without changing anything. A filled <code>on_hand</code> sets the truck count and turns tracking on.
     </div>
     <div id="csvres"></div>
   </div>

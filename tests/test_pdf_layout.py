@@ -32,8 +32,11 @@ def test_layout(tmp_path):
     text = pdf_text(c.get(f"/api/export.pdf?from={D}"))
     flat = re.sub(r"\s+", " ", text)
     assert "Day summary" not in flat and "Excluded" not in flat
-    top = flat.split("Mileage")[0]
-    assert "Timezone" in top and "On-site time" in top and "Generated at" in top      # one combined section
+    top = flat.split("Stop 1")[0]
+    assert "On-site time" in top and "Date" in top                                      # one combined section
+    assert "Timezone" not in top and "Generated at" not in top and "Report schema version" not in top
+    assert "Drive after last stop" not in top
+    assert flat.index("Records to update") < flat.index("Mileage (Home to Home") < flat.index("Day recap")
     m = c.get(f"/api/export.json?from={D}").json["days"][0]["mileage"]
     mil = flat.split("Mileage (Home to Home, miles)")[1].split("Stop 1")[0]
     assert "From To Miles" in mil and "1 Home Acme" in mil and "2 Acme Home" in mil          # a table: #, From, To, Miles
@@ -45,9 +48,9 @@ def test_layout(tmp_path):
     assert j["miles_approx"] == m["legs"][0]["miles"] and j["from"] == "Home"
     # recap: a timesheet (in, out, activity, hours), no personal stops, totals and mileage at the bottom
     recap = flat.split("Day recap (timesheet)")[1].split("How to read")[0]
-    assert "Clock out 10:45" in recap and "In Out Activity Hours" in recap
-    assert "08:20 10:20 Acme 2.00" in recap and "Total paid hours 2.33" in recap and "Drive 0.33" in recap
-    assert f"Mileage, Home to Home (miles) {m['total_miles']:.1f}" in recap
+    assert "Clock out 10:45" in recap and "In Out Activity Time" in recap
+    assert "08:20 10:20 Acme 2 h 00 min" in recap and "Total paid time 2 h 20 min" in recap and "Drive 20 min" in recap
+    assert f"Mileage, Home to Home {m['total_miles']:.1f} mi" in recap
     assert "Personal" not in recap and "07:00" not in recap
     assert "JobHub Daily Summary" in flat and "JobHub Job Report" not in flat
     t = c.get(f"/api/export.json?from={D}").json["days"][0]["timesheet"]

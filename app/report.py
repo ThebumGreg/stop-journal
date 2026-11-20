@@ -53,9 +53,10 @@ def _split_parts(lines):
 
 
 def _timesheet(stops, drives):
-    """The paid and unpaid parts of the day in time order: on-site visits, counted drives, traffic, lunch.
-    Personal stops are never listed. A lunch with no counted drives around it spans the whole trip (leave the
-    last site to arrive at the next), so a lunch back to the same site shows as one unpaid gap."""
+    """The day in time order, as paid and unpaid rows: on-site visits, counted drives, traffic (drive time), lunch
+    (PAID, not billed to the customer) and personal breaks (unpaid: clocked out). Personal stops that are not between
+    two work stops (home before and after the day) are not listed. A lunch or break with no counted drives around it
+    covers the whole gap (leave the last site, arrive at the next), so a trip back to the same site is one row."""
     def name(s):
         return {"Personal": "Home", "Lunch": "Lunch"}.get(s["status"]) or s["business_name"] or f"Stop at {s['arrive']}"
 
@@ -68,28 +69,39 @@ def _timesheet(stops, drives):
         rows.append((ts, {"in": inn, "out": out, "type": kind, "description": text,
                           "minutes": round(secs / 60), "paid": paid}))
 
+    LUNCH, BREAK = "Lunch (paid, not billed)", "Clocked out (personal break)"
     for s in stops:
         st = s["status"]
-        if st == "Personal":
-            continue
         if st == "Confirmed":
             add(s["arrive_ts"], s["arrive"], s["depart"], "on_site", name(s), s["depart_ts"] - s["arrive_ts"], True)
         elif st == "Traffic":
             add(s["arrive_ts"], s["arrive"], s["depart"], "drive", "Traffic (counted as drive time)",
                 s["depart_ts"] - s["arrive_ts"], True)
-        elif st == "Lunch":
-            dp, dn = by_to.get(s["id"]), by_from.get(s["id"])
-            if (dp and dp["counts"]) or (dn and dn["counts"]):
-                                                              # drives around it are listed, so just the stop
-                add(s["arrive_ts"], s["arrive"], s["depart"], "lunch", "Lunch (unpaid)",
-                    s["depart_ts"] - s["arrive_ts"], False)
-            else:
-                ain, aout = (dp["depart_ts"], dp["depart"]) if dp else (s["arrive_ts"], s["arrive"])
-                bout, bts = (dn["arrive_ts"], dn["arrive"]) if dn else (s["depart_ts"], s["depart"])
-                add(ain, aout, bts, "lunch", "Lunch (unpaid)", bout - ain, False)
-        else:
+        elif st not in ("Personal", "Lunch"):
             add(s["arrive_ts"], s["arrive"], s["depart"], "unconfirmed", "Not confirmed (left out)",
                 s["depart_ts"] - s["arrive_ts"], False)
+    conf = [i for i, s in enumerate(stops) if s["status"] == "Confirmed"]
+    for xi, yi in zip(conf, conf[1:]):
+        x, y = stops[xi], stops[yi]
+        gap = [stops[k] for k in range(xi + 1, yi) if stops[k]["status"] in ("Lunch", "Personal")]
+        if not gap:
+            continue
+        has_p = any(g["status"] == "Personal" for g in gap)
+        has_l = any(g["status"] == "Lunch" for g in gap)
+        if has_p and not has_l:                      # clocked out from leaving one job until arriving at the next
+            add(x["depart_ts"], x["depart"], y["arrive"], "break", BREAK, y["arrive_ts"] - x["depart_ts"], False)
+        elif has_l and not has_p and len(gap) == 1:
+            g = gap[0]
+            dp, dn = by_to.get(g["id"]), by_from.get(g["id"])
+            if (dp and dp["counts"]) or (dn and dn["counts"]):      # lunch between jobs: the drives are listed
+                add(g["arrive_ts"], g["arrive"], g["depart"], "lunch", LUNCH, g["depart_ts"] - g["arrive_ts"], True)
+            else:                                                   # back to the same site: the whole gap
+                add(x["depart_ts"], x["depart"], y["arrive"], "lunch", LUNCH, y["arrive_ts"] - x["depart_ts"], True)
+        else:                                        # lunch and a personal stop together: each by its own times
+            for g in gap:
+                lunch = g["status"] == "Lunch"
+                add(g["arrive_ts"], g["arrive"], g["depart"], "lunch" if lunch else "break",
+                    LUNCH if lunch else BREAK, g["depart_ts"] - g["arrive_ts"], lunch)
     for d in drives:
         if d["counts"]:
             frm, to = by_id[d["from_stop_id"]], by_id[d["to_stop_id"]]
@@ -117,12 +129,12 @@ def build_day(payload, cfg):
         if s["status"] != "Confirmed" or s["id"] in absorbed:
             continue
         cur = i
-        while (cur + 2 < len(stops) and stops[cur + 1]["status"] == "Lunch" and stops[cur + 2]["status"] == "Confirmed"
+        while (cur + 2 < len(stops) and stops[cur + 1]["status"] in ("Lunch", "Personal") and stops[cur + 2]["status"] == "Confirmed"
                and service.same_site(s, stops[cur + 2])):
             left, nxt = stops[cur], stops[cur + 2]
             m = merged.setdefault(s["id"], {"gaps": [], "notes": [s["notes"]], "parts": list(s["parts"]),
                                             "minutes": s["minutes"]})
-            m["gaps"].append({"from": left["depart"], "to": nxt["arrive"],
+            m["gaps"].append({"kind": stops[cur + 1]["status"], "from": left["depart"], "to": nxt["arrive"],
                               "secs": nxt["arrive_ts"] - left["depart_ts"]})
             m["notes"].append(nxt["notes"])
             m["parts"] += nxt["parts"]
@@ -134,10 +146,13 @@ def build_day(payload, cfg):
     for s in stops:
         if s["id"] in absorbed:
             continue
-        lunch = []
+        lunch, breaks = [], []
         if s["id"] in merged:
             m = merged[s["id"]]
-            lunch = [{"from": g["from"], "to": g["to"], "minutes": round(g["secs"] / 60)} for g in m["gaps"]]
+            lunch = [{"from": g["from"], "to": g["to"], "minutes": round(g["secs"] / 60)}
+                     for g in m["gaps"] if g["kind"] == "Lunch"]
+            breaks = [{"from": g["from"], "to": g["to"], "minutes": round(g["secs"] / 60)}
+                      for g in m["gaps"] if g["kind"] == "Personal"]
             s = dict(s, depart=m["depart"], depart_ts=m["depart_ts"], parts=m["parts"],
                      notes="\n\n".join(n for n in m["notes"] if n),
                      minutes=m["minutes"])
@@ -171,6 +186,7 @@ def build_day(payload, cfg):
             "arrival_iso": iso(s["arrive_ts"]), "departure_iso": iso(s["depart_ts"]),
             "time_on_site_minutes": s["minutes"],
             "lunch_non_billable": lunch,
+            "personal_breaks_unpaid": breaks,
             "drive_from_previous_stop": drive,
             "hubspot_company_id": s["hubspot_company_id"],
             "work_performed": s["notes"],
@@ -187,6 +203,9 @@ def build_day(payload, cfg):
         final = {"minutes": fd["minutes"], "miles_approx": fd["miles_approx"]}
         drive_min += final["minutes"]
         miles += final["miles_approx"]
+    sheet = _timesheet(stops, drives)
+    lunch_min = sum(r["minutes"] for r in sheet if r["type"] == "lunch")
+    break_min = sum(r["minutes"] for r in sheet if r["type"] == "break")
     mil = payload.get("mileage")
     if mil:
         miles = mil["total_miles"]     # billable mileage is always Home to Home, personal stops left out
@@ -194,10 +213,12 @@ def build_day(payload, cfg):
     return {"date": payload["date"],
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
-                        "drive_minutes": drive_min, "traffic_minutes": traffic, "miles_approx": round(miles, 1),
+                        "drive_minutes": drive_min, "traffic_minutes": traffic,
+                        "lunch_minutes": lunch_min, "break_minutes_unpaid": break_min,
+                        "paid_minutes": sum(s["time_on_site_minutes"] for s in out_stops) + drive_min + lunch_min, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded)},
             "drive_after_last_stop": final,
-            "timesheet": _timesheet(stops, drives),
+            "timesheet": sheet,
             "mileage": mil,
             "end_day": end_day and {k: end_day[k] for k in ("time", "kind", "place", "miles_to_home", "method", "counted")},
             "stops": out_stops, "excluded": excluded}

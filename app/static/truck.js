@@ -190,19 +190,22 @@ document.getElementById('a_go').onclick = async () => {
   } catch (e) { err.textContent = e.message; }
 };
 
-document.getElementById('csvgo').onclick = async () => {
+async function runCsv(dry) {
   const out = document.getElementById('csvres'); out.replaceChildren();
   const f = document.getElementById('csvfile').files[0];
   if (!f) { out.append(el('div', 'err', 'Choose a CSV file first.')); return; }
   try {
     const fd = new FormData(); fd.append('file', f);
-    const r = await api('POST', '/api/parts/import', fd, fd);
-    out.append(el('div', 'ok', 'Imported: ' + r.created + ' new, ' + r.updated + ' updated, ' + r.skipped + ' skipped.'));
+    const r = await api('POST', '/api/parts/import' + (dry ? '?dry=1' : ''), fd, fd);
+    out.append(el('div', 'ok', (dry ? 'Check only, nothing saved. Would import: ' : 'Imported: ') +
+      r.created + ' new, ' + r.updated + ' updated, ' + r.skipped + ' skipped.'));
     if (r.ignored_columns.length) out.append(el('div', 'hint', 'Ignored columns: ' + r.ignored_columns.join(', ')));
     r.errors.slice(0, 20).forEach(m => out.append(el('div', 'err', m)));
     if (r.errors.length > 20) out.append(el('div', 'hint', '…and ' + (r.errors.length - 20) + ' more.'));
-    await load();
+    if (!dry) await load();
   } catch (e) { out.append(el('div', 'err', e.message)); }
-};
+}
+document.getElementById('csvgo').onclick = () => runCsv(false);
+document.getElementById('csvcheck').onclick = () => runCsv(true);
 
 load().catch(e => { listEl.textContent = 'Could not load parts (' + e.message + ').'; });

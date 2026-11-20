@@ -17,6 +17,7 @@ A non-blank on_hand sets the truck count and switches tracking on.
 import csv
 import io
 import math
+import sqlite3
 import time
 
 from .errors import EditError
@@ -280,6 +281,20 @@ def import_csv(conn, text):
             res["skipped"] += 1
             res["errors"].append(f"Row {n}: {e}")
     conn.commit()
+    return res
+
+
+def preview_csv(conn, text):
+    """Run the import on a throw-away in-memory copy of the database: the same counts and errors,
+    nothing saved."""
+    mem = sqlite3.connect(":memory:")
+    mem.row_factory = sqlite3.Row
+    try:
+        conn.backup(mem)
+        res = import_csv(mem, text)
+    finally:
+        mem.close()
+    res["dry_run"] = True
     return res
 
 

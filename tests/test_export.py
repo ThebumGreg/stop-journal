@@ -85,9 +85,12 @@ def test_pdf_text_extraction_every_field_in_sensible_order(tmp_path):
     latlon = f"{s1['latitude']:.6f}, {s1['longitude']:.6f}"
 
     # header
-    for needle in ("JobHub Daily Summary", "Wednesday, 2026-11-18", "America/Los_Angeles", "Generated at",
-                   "Report schema version", "1"):
+    for needle in ("JobHub Daily Summary", "Wednesday, 2026-11-18", "schema version 1"):
         assert needle in flat
+    top = flat.split("Stop 1")[0]
+    assert "Generated at" not in top and "Timezone" not in top and "Report schema version" not in top
+    assert "Drive after last stop" not in top
+    assert "America/Los_Angeles" in flat.split("How to read this report")[1]       # the timezone is stated in the notes
     # summary
     for needle in ("On-site time", "120 min (2 h 00 min)", "Drive time", "Approximate miles", "Stops confirmed"):
         assert needle in flat

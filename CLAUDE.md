@@ -203,12 +203,18 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   are never listed in the PDF (the JSON `excluded` list still has them). The document is titled "JobHub Daily Summary"
   (files `jobhub-daily-summary-<date>`). The report's final counted drive is the drive INTO the End Day stop, even when
   later stops follow it.
-- Lunch has two cases. (1) A visit, a Lunch stop, then the same site again (`service.same_site`: same saved place, or same name
-  within 300 m) is ONE stop in the report: arrival of the first visit, departure of the last, work notes/parts combined,
-  `lunch_non_billable` [{from,to,minutes}] and Time on site net of the lunch gap; the lunch trip adds no drive time or
-  miles. (2) Lunch between two different work stops is part of the trip: the drives before and after count, the stop
-  after lunch shows them added together as one drive, and the miles are the direct leg between the two jobs. Lunch next
-  to home or a Personal stop is still not work.
+- Lunch is PAID to the tech but not billable to the customer. Two cases. (1) A visit, a Lunch (or Personal) stop, then the
+  same site again (`service.same_site`: same saved place, or same name within 300 m) is ONE stop in the report: first
+  arrival, last departure, work notes/parts combined, `lunch_non_billable` / `personal_breaks_unpaid` [{from,to,minutes}] and
+  Time on site net of the gap; the trip adds no drive time or miles. (2) Lunch between two different work stops is part of
+  the trip: the drives before and after count, the stop after lunch shows them added together as one drive, and the miles
+  are the direct leg. Lunch next to home is not listed or paid.
+- A Personal stop between two work stops is a clock-out: the whole gap (leave one job, arrive at the next) is an unpaid
+  "Clocked out (personal break)" row; mileage skips it (direct leg). Home before and after the day is not a break.
+- Summary additive fields: `lunch_minutes`, `break_minutes_unpaid`, `paid_minutes` (on-site + lunch + drive). Top PDF
+  section has no timezone / generated-at / schema / drive-after-last-stop rows (the timezone is in the notes, the schema
+  version in the footer). Order: top, stops, Records to update, Mileage, Day recap (times in "3 h 48 min" form).
+- Parts CSV import has a "Check file" dry run (`/api/parts/import?dry=1`, runs on an in-memory copy of the database).
 - Undo (`undo_log`, last 10 per day) for delete, merge, split, re-detect and Confirm all; one-tap confirm for
   Draft stops that sit on a saved place; "usual parts" per business.
 - Alerts (Pushover, generic text only): no data, Recorder down, end-of-day Draft review, low truck stock.

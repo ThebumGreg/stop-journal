@@ -47,7 +47,7 @@ def test_back_to_same_site_is_one_stop_with_lunch_note(tmp_path):
     from tests.test_export import pdf_text
     import re
     flat = re.sub(r"\s+", " ", pdf_text(c.get(f"/api/export.pdf?from={D}")))
-    assert "Lunch (non-billable) 10:00 to 11:00, 60 min" in flat and "(lunch not included)" in flat
+    assert "Lunch (non-billable) 10:00 to 11:00, 60 min" in flat and "(lunch and breaks not included)" in flat
 
 
 def test_lunch_between_jobs_is_one_drive(tmp_path):
@@ -78,3 +78,55 @@ def test_lunch_next_to_home_still_not_counted(tmp_path):
     c.patch(f"/api/stops/{st[1]['id']}", json={"status": "Lunch"})
     c.patch(f"/api/stops/{st[2]['id']}", json={"business_name": "Acme", "status": "Confirmed"})
     assert not any(x["counts"] for x in c.get(f"/api/day/{D}").json["drives"])
+
+
+def test_lunch_is_paid_in_the_timesheet(tmp_path):
+    c = build(tmp_path, JOB2)
+    j = c.get(f"/api/export.json?from={D}").json["days"][0]
+    sheet = j["timesheet"]
+    lunch = [r for r in sheet if r["type"] == "lunch"]
+    assert len(lunch) == 1 and lunch[0]["paid"] and lunch[0]["minutes"] == 40
+    sm = j["summary"]
+    assert sm["lunch_minutes"] == 40
+    assert sm["paid_minutes"] == sm["on_site_minutes"] + sm["drive_minutes"] + 40
+    assert sum(r["minutes"] for r in sheet if r["paid"]) == sm["paid_minutes"]
+    from tests.test_export import pdf_text
+    import re
+    flat = re.sub(r"\s+", " ", pdf_text(c.get(f"/api/export.pdf?from={D}")))
+    assert "Lunch (paid, not billed)" in flat and "Lunch (paid) 40 min" in flat and "(40 min)" not in flat
+
+
+def test_same_site_lunch_gap_is_paid_but_not_billable(tmp_path):
+    c = build(tmp_path, JOB)
+    j = c.get(f"/api/export.json?from={D}").json["days"][0]
+    assert j["summary"]["on_site_minutes"] == 180 and j["summary"]["lunch_minutes"] == 60
+    assert j["summary"]["paid_minutes"] == 240                       # 3 h on site + the 1 h lunch gap
+
+
+def test_personal_break_is_a_clock_out(tmp_path):
+    c = build(tmp_path, JOB)
+    st = c.get(f"/api/day/{D}").json["stops"]
+    c.patch(f"/api/stops/{st[1]['id']}", json={"status": "Personal"})          # same break, now personal
+    d = c.get(f"/api/day/{D}").json
+    assert not any(x["counts"] for x in d["drives"])
+    j = c.get(f"/api/export.json?from={D}").json["days"][0]
+    assert len(j["stops"]) == 1 and j["stops"][0]["personal_breaks_unpaid"][0]["minutes"] == 60
+    assert j["stops"][0]["lunch_non_billable"] == []
+    brk = [r for r in j["timesheet"] if r["type"] == "break"]
+    assert len(brk) == 1 and not brk[0]["paid"] and brk[0]["minutes"] == 60
+    assert j["summary"]["paid_minutes"] == 180 and j["summary"]["break_minutes_unpaid"] == 60
+    from tests.test_export import pdf_text
+    import re
+    flat = re.sub(r"\s+", " ", pdf_text(c.get(f"/api/export.pdf?from={D}")))
+    assert "Clocked out (personal break) (1 h 00 min)" in flat and "Personal break (unpaid) 10:00 to 11:00, 60 min" in flat
+
+
+def test_home_before_and_after_the_day_is_not_a_break(tmp_path):
+    c, st = None, None
+    from tests.test_stop_marks import three_stops
+    c, st = three_stops(tmp_path)
+    c.patch(f"/api/stops/{st[0]['id']}", json={"status": "Personal"})
+    c.patch(f"/api/stops/{st[1]['id']}", json={"business_name": "Acme", "status": "Confirmed"})
+    c.patch(f"/api/stops/{st[2]['id']}", json={"status": "Personal"})
+    j = c.get(f"/api/export.json?from={D}").json["days"][0]
+    assert not [r for r in j["timesheet"] if r["type"] in ("break", "lunch")]
