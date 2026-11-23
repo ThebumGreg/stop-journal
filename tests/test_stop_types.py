@@ -161,3 +161,17 @@ def test_short_stop_at_a_gas_station_is_flagged_once(tmp_path):
     assert service.check_fuel_stops(conn, D, boom) == 0             # lookup down: nothing marked, tried again later
     assert conn.execute("SELECT COUNT(*) FROM stops WHERE fuel_check IS NOT NULL").fetchone()[0] == 0
     conn.close()
+
+
+def test_short_break_is_paid_drive_time(tmp_path):
+    c = make(tmp_path)
+    ids = [s["id"] for s in stops(c)]
+    c.patch(f"/api/stops/{ids[0]}", json={"status": "Confirmed", "business_name": "Acme", "notes": "Fixed it"})
+    r = c.patch(f"/api/stops/{ids[1]}", json={"stop_type": "break"}).json
+    b = next(x for x in r["stops"] if x["id"] == ids[1])
+    assert (b["stop_type"], b["status"], b["needs"]) == ("break", "Traffic", [])
+    day = c.get(f"/api/export.json?from={D}").json["days"][0]
+    assert day["summary"]["traffic_minutes"] == b["minutes"]                  # paid, as drive time
+    assert any(r["description"].startswith("Short break (paid") for r in day["timesheet"])
+    assert any(e["reason"].startswith("Short break") for e in day["excluded"])
+    assert "Short break (paid" in pdf_text(c.get(f"/api/export.pdf?from={D}"))

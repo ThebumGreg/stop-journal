@@ -320,7 +320,9 @@ stop departed 12:21, and listed billable parts with no cost.
   freezing the app).
 
 ## Stop types, fuel, photos, export filters (built 2026-11-22)
-- **Stop type first** (`stops.stop_type`: job | vendor | office | gas | lunch | personal | traffic; `service.STOP_TYPES`). The
+- **Stop type first** (`stops.stop_type`: job | vendor | office | gas | break | lunch | personal | traffic; `service.STOP_TYPES`).
+  **Break** (Short break: restroom, coffee) runs on the Traffic rules like Gas: paid, counted as drive time, not on-site time;
+  the report says "Short break (paid, counted as drive time)". Lunch stays paid but not billed (see Lunch rules). The
   time rules still run on `status`: gas/lunch/personal/traffic set it (`TYPE_STATUS`; **Gas = Traffic**: pump time is drive
   time, mileage follows the real drive), job/vendor/office stay Draft until confirmed. `service.stop_type()` derives a type for
   rows without one (status, then saved-place kind; Confirmed = job; '' = not chosen). Setting `status` the old way keeps
@@ -374,7 +376,7 @@ stop departed 12:21, and listed billable parts with no cost.
 - **Gas station detection** (`service.check_fuel_stops`, `stops.fuel_check` NULL/0/1): on day load and when auto-sync adds data,
   up to 4 short (≤ 30 min), untyped, unnamed Draft stops not on a saved place get one OSM lookup each (60 m; `amenity=fuel` wins
   over a shop tag in `osm._category`). A hit sets `gas_hint`; the card asks "⛽ At a gas station. What was it?" with Fill-up
-  (Gas), Snack / restroom (Personal, named so) and Job here. Never sets the type itself; a failed lookup is retried later. Skipped
+  (Gas), ☕ Short break and Job here. Never sets the type itself; a failed lookup is retried later. Skipped
   when tests pass a client without a provider.
 - Not built: cleanup of orphaned photos (the user keeps them for now).
 

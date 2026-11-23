@@ -92,7 +92,8 @@ def _timesheet(stops, drives):
             add(s["arrive_ts"], s["arrive"], s["depart"], "on_site", name(s), s["depart_ts"] - s["arrive_ts"], True)
         elif st == "Traffic":
             text = (f"Fuel stop{' (' + s['business_name'] + ')' if s['business_name'] else ''}, counted as drive time"
-                    if s.get("stop_type") == "gas" else "Traffic (counted as drive time)")
+                    if s.get("stop_type") == "gas" else "Short break (paid, counted as drive time)"
+                    if s.get("stop_type") == "break" else "Traffic (counted as drive time)")
             add(s["arrive_ts"], s["arrive"], s["depart"], "drive", text, s["depart_ts"] - s["arrive_ts"], True)
         elif st not in ("Personal", "Lunch"):
             add(s["arrive_ts"], s["arrive"], s["depart"], "unconfirmed", "Not confirmed (left out)",
@@ -186,6 +187,7 @@ def build_day(payload, cfg):
         if s["status"] != "Confirmed":
             reason = {"Personal": "End Day" if s["id"] == end_id else "Personal", "Lunch": "Lunch",
                       "Traffic": "Fuel stop (counted as drive time)" if s.get("stop_type") == "gas"
+                      else "Short break (paid, counted as drive time)" if s.get("stop_type") == "break"
                       else "Traffic (counted as drive time)"}.get(s["status"]) or \
                 "Not confirmed" + (" (short stop)" if s["kind"] == "short" else "")
             excluded.append({"arrival": s["arrive"], "departure": s["depart"], "reason": reason})
@@ -440,7 +442,7 @@ def check(report):
     out = {"days": [], "confirmed": 0, "not_confirmed": 0, "personal": 0}
     for d in report["days"]:
         nc = sum(1 for e in d["excluded"] if e["reason"].startswith("Not confirmed"))
-        pe = sum(1 for e in d["excluded"] if e["reason"] in ("Personal", "Lunch", "End Day") or e["reason"].startswith(("Traffic", "Fuel")))
+        pe = sum(1 for e in d["excluded"] if e["reason"] in ("Personal", "Lunch", "End Day") or e["reason"].startswith(("Traffic", "Fuel", "Short break")))
         out["days"].append({"date": d["date"], "confirmed": d["summary"]["stops_confirmed"],
                             "not_confirmed": nc, "personal": pe})
         out["confirmed"] += d["summary"]["stops_confirmed"]

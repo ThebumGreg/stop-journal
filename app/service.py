@@ -30,9 +30,10 @@ OFF_CLOCK = ("Personal", "Lunch")   # not work: the stop and the drives to and f
 # What a stop is for (`stops.stop_type`), picked first on the stop card. The time rules still run on the status:
 # a type listed in TYPE_STATUS sets that status (Gas is on the road like Traffic: its minutes are drive time,
 # not on-site time); the others are Draft until confirmed. Stops saved before types existed derive one.
-STOP_TYPES = {"job": "Job", "vendor": "Vendor", "office": "Office", "gas": "Gas",
+STOP_TYPES = {"job": "Job", "vendor": "Vendor", "office": "Office", "gas": "Gas", "break": "Short break",
               "lunch": "Lunch", "personal": "Personal", "traffic": "Traffic"}
-TYPE_STATUS = {"gas": "Traffic", "lunch": "Lunch", "personal": "Personal", "traffic": "Traffic"}
+# gas and a short break (restroom, coffee) run on the Traffic time rules: paid, counted as drive time, not on-site time
+TYPE_STATUS = {"gas": "Traffic", "break": "Traffic", "lunch": "Lunch", "personal": "Personal", "traffic": "Traffic"}
 STATUS_TYPE = {"Lunch": "lunch", "Personal": "personal", "Traffic": "traffic"}
 FUEL_CATEGORIES = ("amenity=fuel", "place=fuel", "google=gas_station")
 

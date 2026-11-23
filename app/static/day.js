@@ -303,7 +303,7 @@ const RESULTS = [['complete', 'Complete'], ['return', 'Return visit'], ['waiting
 const FIELDS = ['business_name', 'address', 'category', 'known_site_id', 'arrive', 'depart',
                 'notes', 'work_category', 'ticket', 'visit_result'];
 const TYPES = [['job', 'Job'], ['vendor', 'Vendor'], ['office', 'Office'], ['gas', 'Gas'],
-               ['lunch', 'Lunch'], ['personal', 'Personal'], ['traffic', 'Traffic']];
+               ['break', 'Break'], ['lunch', 'Lunch'], ['personal', 'Personal'], ['traffic', 'Traffic']];
 const TYPE_LABEL = Object.fromEntries(TYPES);
 const CONFIRMABLE = ['job', 'vendor', 'office'];
 const SHEET_TYPES = CONFIRMABLE.concat(['gas']);     // lunch, personal and traffic need no sheet
@@ -958,7 +958,7 @@ function labeled(label, input) {
 function cardTitle(s) {
   if (s.business_name) return s.business_name;
   if (s.stop_type === 'gas') return 'Gas';
-  if (['lunch', 'personal', 'traffic'].includes(s.stop_type)) return TYPE_LABEL[s.stop_type];
+  if (['break', 'lunch', 'personal', 'traffic'].includes(s.stop_type)) return s.stop_type === 'break' ? 'Short break' : TYPE_LABEL[s.stop_type];
   return s.source === 'manual' ? 'Manual stop' : 'New stop';
 }
 function chipText(s) {
@@ -991,9 +991,9 @@ function stopCard(s, i) {
     body.append(el('div', 'ask', '⛽ At a gas station. What was it?'));
     const g = el('button', 'primary', '⛽ Fill-up'); g.type = 'button';
     g.onclick = stop(() => setType(s, 'gas'));
-    const p = el('button', null, '🥤 Snack / restroom'); p.type = 'button';
-    p.title = 'Marks it Personal';
-    p.onclick = stop(() => run(() => api('PATCH', '/api/stops/' + s.id, {stop_type: 'personal', business_name: 'Snack / restroom'}), null));
+    const p = el('button', null, '☕ Short break'); p.type = 'button';
+    p.title = 'Restroom, snack: paid, counted as drive time';
+    p.onclick = stop(() => setType(s, 'break'));
     const j = el('button', null, 'Job here'); j.type = 'button';
     j.onclick = stop(() => setType(s, 'job'));
     btns.append(g, p, j);
