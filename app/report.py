@@ -46,6 +46,18 @@ def _part(p):
             "qbo_item": p.get("qbo_item") or ""}
 
 
+TICKET_ACTIONS = {"continue": "continue", "new": "create", "unsure": "find"}
+
+
+def _ticket_action(s):
+    """What the agent should do about the HubSpot ticket: use (an ID is given), continue (find the open ticket for this
+    company), create (new job: make a ticket), find (one open ticket: use it; none: create one and flag it)."""
+    if (s.get("ticket") or "").strip():
+        return "use"
+    choice = s.get("ticket_action") or s.get("ticket_action_default") or ""
+    return TICKET_ACTIONS.get(choice, "find")
+
+
 def attachment_name(file):
     """The file name a report picture gets as an email attachment (its zip path with / turned into _). The JSON's
     photos[].attachment and the mailer both use this, so they cannot drift apart."""
@@ -249,6 +261,7 @@ def build_day(payload, cfg):
             "billing": service.WORK_CATEGORIES.get(cat, ""),
             "job_reference": s["ticket"],
             "hubspot_ticket": (s["ticket"] or "").strip().lstrip("#").strip(),
+            "ticket_action": _ticket_action(s),
             "qbo_estimate": s.get("qbo_estimate") or "",
             "visit_result": service.VISIT_RESULTS.get(s["visit_result"], ""),
             "work_performed": s["notes"],
@@ -342,6 +355,7 @@ def records_to_update(days, technician=None):
                          "arrival": s["arrival"], "departure": s["departure"],
                          "category": s["category"], "job_reference": s["job_reference"],
                          "hubspot_ticket": s["hubspot_ticket"], "qbo_estimate": s["qbo_estimate"],
+                         "ticket_action": s["ticket_action"],
                          "work_performed": s["work_performed"],
                          "parts_used": [_line_text(p) for p in s["parts_used"]],
                          "hubspot_company_id": s["hubspot_company_id"],
@@ -395,11 +409,10 @@ def warnings(report):
                 out.append(f"{who}: no category chosen.")
             if not s["work_performed"].strip():
                 out.append(f"{who}: no work performed written.")
+            if s["hubspot_ticket"] and not s["hubspot_ticket"].isdigit():
+                out.append(f"{who}: HubSpot ticket “{s['hubspot_ticket']}” does not look like a HubSpot ticket ID or link "
+                           "(paste the ticket's link, or leave it blank and the agent finds or creates the ticket).")
             if s["category"] in REFERENCE_CATEGORIES:
-                if not s["hubspot_ticket"]:
-                    out.append(f"{who}: no HubSpot ticket #.")
-                elif not s["hubspot_ticket"].isdigit():
-                    out.append(f"{who}: HubSpot ticket # “{s['hubspot_ticket']}” should be the ticket number (digits only).")
                 if s["category"] in ESTIMATE_CATEGORIES and not s["qbo_estimate"]:
                     out.append(f"{who}: no QuickBooks estimate # (a {s['category']} job).")
             if s["billing"] != "non_billable" and not s["visit_result"]:

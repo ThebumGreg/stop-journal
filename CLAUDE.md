@@ -654,3 +654,9 @@ D. Later / parked
   shows "On-site time" and "Billable on-site time". Each `days[].photos[]` has `attachment` (the exact email attachment name,
   `report.attachment_name`, also used by the mailer). `records_to_update[]` adds billing, visit_result, time_on_site_minutes,
   technician_email, consumables_used and expenses (short strings), photo_attachments. Parts carry `qbo_item` (from the catalog).
+- **C1 ticket (user decisions)**: the HubSpot ticket is optional and never warned about when blank. `service.hubspot_ticket_id`
+  turns a pasted HubSpot ticket link (.../ticket/<id>, .../record/0-5/<id>) into the ID (also for a calendar `Ticket:` line,
+  `calendar_feed._ticket`); '#' is stripped. `stops.ticket_action` (continue | new | unsure) from the sheet's "This visit is"
+  buttons; payload `ticket_action_default` = continue when the last finished visit to the same place ended return/waiting.
+  Report `ticket_action` on stops and records_to_update: use (ticket given) | continue | create | find (default). Warning only
+  when a typed ticket is not digits. PDF "HubSpot ticket" row explains a blank one.

@@ -108,4 +108,4 @@ def test_clean_title():
 
 def test_labelled_lines():
     got = calendar_feed.labelled("Ticket: 1\nContact: Bob 555-0100\nWork: Fix it\nWork: second\nnot a label\nCategory: Quoted project")
-    assert got == {"contact": "Bob 555-0100", "work": "Fix it", "category": "Quoted project"}
+    assert got == {"ticket": "1", "contact": "Bob 555-0100", "work": "Fix it", "category": "Quoted project"}

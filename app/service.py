@@ -661,7 +661,13 @@ def patch_stop(conn, cfg, sid, f):
         if len(q) > 40:
             raise EditError("The QuickBooks estimate number is too long (40 characters at most).")
         upd["qbo_estimate"] = q or None
+    if "ticket_action" in f:
+        ta = str(f["ticket_action"] or "").strip().lower()
+        if ta and ta not in TICKET_CHOICES:
+            raise EditError("This visit is: continue, new or unsure.")
+        upd["ticket_action"] = ta or None
     if "ticket" in f:
+        f = dict(f, ticket=hubspot_ticket_id(str(f["ticket"] or "")))
         t = str(f["ticket"] or "").strip()
         if len(t) > 80:
             raise EditError("The job or ticket reference is too long (80 characters at most).")
@@ -791,6 +797,29 @@ def last_notes(conn, sid, name, site_id):
     return {"date": r["date"], "text": r["notes"]} if r else None
 
 
+TICKET_CHOICES = ("continue", "new", "unsure")
+
+
+def hubspot_ticket_id(text):
+    """A HubSpot ticket link or ID -> the ID (digits), or the text as typed when it is neither (e.g. an old "1042").
+    Links: .../ticket/<id>, .../record/0-5/<id> (0-5 is HubSpot's ticket object), or any link ending in a long number."""
+    import re
+    t = (text or "").strip()
+    if "hubspot.com" in t.lower() or t.lower().startswith("http"):
+        m = re.search(r"/(?:tickets?|0-5)/(\d{3,20})", t) or re.search(r"(\d{5,20})(?:[/?#]|$)", t)
+        return m.group(1) if m else t
+    return t.lstrip("#").strip()
+
+
+def previous_result(conn, sid, name, site_id, date):
+    """The visit result of the last finished visit before this one to the same place (saved place, else same name)."""
+    r = conn.execute(
+        "SELECT visit_result FROM stops WHERE id!=? AND status='Confirmed' AND date<=? "
+        "AND ((? IS NOT NULL AND known_site_id=?) OR (?!='' AND lower(business_name)=lower(?))) "
+        "ORDER BY date DESC, arrive_utc DESC LIMIT 1", (sid, date, site_id, site_id, name or "", name or "")).fetchone()
+    return (r["visit_result"] or "") if r else ""
+
+
 def last_category(conn, sid, name, site_id):
     """The work category last used for this business (saved place, else same name), or ''."""
     r = conn.execute(
@@ -878,11 +907,11 @@ def merge_stops(conn, cfg, id_a, id_b):
     kind = "stop" if "stop" in (a["kind"], b["kind"]) else "short"
     conn.execute(
         "UPDATE stops SET arrive_utc=?, depart_utc=?, lat=?, lon=?, business_name=?, "
-        "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, work_category=?, ticket=?, qbo_estimate=?, "
+        "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, work_category=?, ticket=?, qbo_estimate=?, ticket_action=?, "
         "visit_result=?, stop_type=?, edited=1, times_edited=1 WHERE id=?",
         (a["arrive_utc"], b["depart_utc"], lat, lon, first["business_name"],
          first["address"], first["category"], first["known_site_id"], notes, status,
-         kind, a["work_category"] or b["work_category"], a["ticket"] or b["ticket"], a["qbo_estimate"] or b["qbo_estimate"],
+         kind, a["work_category"] or b["work_category"], a["ticket"] or b["ticket"], a["qbo_estimate"] or b["qbo_estimate"], a["ticket_action"] or b["ticket_action"],
          b["visit_result"] or a["visit_result"],
          a["stop_type"] if a["stop_type"] == b["stop_type"] and _type_fits(a["stop_type"], status) else None, a["id"]))
     conn.execute("UPDATE stop_parts SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
@@ -1250,6 +1279,11 @@ def day_payload(conn, cfg, date, include_path=False):
         "vendor_hint": site_kind.get(r["known_site_id"]) in (None, "client") and _looks_like_vendor(r, vendor_names),
         "parts": used.get(r["id"], []), "follow_ups": fups.get(r["id"], []),
         "work_category": r["work_category"] or "", "ticket": r["ticket"] or "", "qbo_estimate": r["qbo_estimate"] or "",
+        "ticket_action": r["ticket_action"] or "",
+        # a visit after one that ended "return visit" / "waiting" is most likely the same job
+        "ticket_action_default": "" if r["ticket_action"] or r["ticket"] or r["status"] in OFF_CLOCK + ("Traffic",) else (
+            "continue" if previous_result(conn, r["id"], r["business_name"], r["known_site_id"], r["date"])
+            in ("return", "waiting") else ""),
         "visit_result": r["visit_result"] or "",
         "category_hint": "" if r["work_category"] else last_category(
             conn, r["id"], r["business_name"], r["known_site_id"]),

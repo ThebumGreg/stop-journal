@@ -91,7 +91,7 @@ def clean_title(title, keyword):
 
 
 LABELS = {"contact": "contact", "phone": "contact", "work": "work", "scope": "work",
-          "category": "category", "billing": "category", "estimate": "estimate", "quote": "estimate"}
+          "category": "category", "billing": "category", "estimate": "estimate", "quote": "estimate", "ticket": "ticket"}
 
 
 def labelled(notes):
@@ -105,6 +105,12 @@ def labelled(notes):
         if key and key not in out:
             out[key] = m.group(2).strip()[:200]
     return out
+
+
+def _ticket(text):
+    """A `Ticket:` line: a HubSpot ticket link or ID -> the ID (same rule as the stop sheet)."""
+    from .service import hubspot_ticket_id
+    return hubspot_ticket_id(text)[:40]
 
 
 def events_for_day(cfg, date, session=None):
@@ -138,13 +144,13 @@ def events_for_day(cfg, date, session=None):
             continue
         if title.startswith("JobHub · ") or str(ev.get("UID", "")).split("@")[-1].startswith("jobhub"):
             continue                                        # our own stop invites (calendar_out), not appointments
-        m = TICKET.search(title + " " + notes)
         lines = labelled(notes)
+        m = None if lines.get("ticket") else TICKET.search(title + " " + notes)
         out.append({"contact": lines.get("contact", ""), "work": lines.get("work", ""), "category": lines.get("category", ""),
                     "estimate": lines.get("estimate", "").lstrip("#").strip()[:40],"uid": str(ev.get("UID", "")) + "@" + str(int(s.timestamp())),
                     "start_ts": int(s.timestamp()), "end_ts": int(e.timestamp()),
                     "title": title, "name": clean_title(title, cfg.calendar_keyword),
-                    "location": location.replace("\n", ", "), "ticket": (m.group(1) or m.group(2)) if m else ""})
+                    "location": location.replace("\n", ", "), "ticket": _ticket(lines.get("ticket", "")) if lines.get("ticket") else (m.group(1) or m.group(2)) if m else ""})
     return sorted(out, key=lambda x: x["start_ts"])
 
 

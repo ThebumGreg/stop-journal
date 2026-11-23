@@ -310,6 +310,7 @@ MIGRATIONS = [
     ("stops", "qbo_estimate", "TEXT"),
     ("parts", "vendor_item", "TEXT"),
     ("parts", "qbo_item", "TEXT"),
+    ("stops", "ticket_action", "TEXT"),
 ]
 
 

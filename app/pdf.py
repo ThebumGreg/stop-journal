@@ -293,6 +293,11 @@ def _category_table(day, st):
 LABEL_W = 2.2 * inch
 
 
+_TICKET_TEXT = {"continue": "Not given: continuing an open job (find its ticket)",
+                "create": "Not given: a new job (create a ticket)",
+                "find": "Not given (use the one open ticket, else create one)"}
+
+
 def _stop_block(s, st):
     drive = s["drive_from_previous_stop"]
     if not drive:
@@ -323,7 +328,7 @@ def _stop_block(s, st):
     rows += [("Drive from previous stop", drive_txt),
              ("HubSpot company ID", s["hubspot_company_id"]),
              ("Category", s["category"] + (f" ({_BILLING[s['billing']]})" if s["category"] and s["billing"] else "")),
-             ("HubSpot ticket #", s.get("hubspot_ticket", s["job_reference"])),
+             ("HubSpot ticket", s.get("hubspot_ticket", s["job_reference"]) or _TICKET_TEXT.get(s.get("ticket_action"), "")),
              ("QuickBooks estimate #", s.get("qbo_estimate", "")), ("Visit result", s["visit_result"])]
     for i, piece in enumerate(_fit(s["work_performed"], st["base"], 7 * inch - LABEL_W - 12, MAX_ROW_H)):
         rows.append(("Work performed" if i == 0 else "Work performed (continued)", piece))

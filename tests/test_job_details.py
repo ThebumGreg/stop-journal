@@ -26,13 +26,13 @@ def test_category_ticket_and_result_save_and_validate(tmp_path):
     r = c.patch(f"/api/stops/{sid}", json={"work_category": "Time & Material", "ticket": " #1042 ",
                                            "visit_result": "return"})
     s = next(x for x in r.json["stops"] if x["id"] == sid)
-    assert (s["work_category"], s["ticket"], s["visit_result"]) == ("Time & Material", "#1042", "return")
+    assert (s["work_category"], s["ticket"], s["visit_result"]) == ("Time & Material", "1042", "return")
     assert c.patch(f"/api/stops/{sid}", json={"work_category": "Golf"}).status_code == 400
     assert c.patch(f"/api/stops/{sid}", json={"visit_result": "maybe"}).status_code == 400
     assert c.patch(f"/api/stops/{sid}", json={"ticket": "x" * 81}).status_code == 400
     r = c.patch(f"/api/stops/{sid}", json={"work_category": "", "visit_result": ""})
     s = next(x for x in r.json["stops"] if x["id"] == sid)
-    assert s["work_category"] == "" and s["visit_result"] == "" and s["ticket"] == "#1042"
+    assert s["work_category"] == "" and s["visit_result"] == "" and s["ticket"] == "1042"
 
 
 def test_category_is_remembered_per_business(tmp_path):
@@ -142,7 +142,7 @@ def test_json_report_carries_the_new_fields(tmp_path):
     day_ = rep["days"][0]
     s1, s2 = day_["stops"]
     assert (s1["category"], s1["billing"], s1["job_reference"], s1["visit_result"]) == (
-        "Time & Material", "hourly", "#1042", "Complete")
+        "Time & Material", "hourly", "1042", "Complete")
     assert s2["billing"] == "project" and s2["visit_result"] == ""
     assert [p["name"] for p in s1["expenses"]] == ["Parking"] and s1["expenses"][0]["line_cost"] == 12.5
     assert s1["parts_used"][0]["part_number"] == "BV-050" and all(p["name"] != "Parking" for p in s1["parts_used"])
@@ -152,7 +152,7 @@ def test_json_report_carries_the_new_fields(tmp_path):
     assert [f["what"] for f in rep["follow_ups"]] == ["Order the second valve", "Send the quote"]
     assert rep["follow_ups"][0]["business_name"] == "Acme Hardware" and rep["follow_ups"][0]["due"] == "2026-11-25"
     rec = rep["records_to_update"][0]
-    assert rec["category"] == "Time & Material" and rec["job_reference"] == "#1042"
+    assert rec["category"] == "Time & Material" and rec["job_reference"] == "1042"
     assert rep["schema_version"] == "1"
 
 
@@ -183,7 +183,7 @@ def test_pdf_shows_the_new_sections(tmp_path):
     text = pdf_text(c.get(f"/api/export.pdf?from={D}"))
     flat = re.sub(r"\s+", " ", text)
     for needle in ("Hours by category (on-site time)", "Billed hourly", "Tracked against the project",
-                   "Category Time & Material (billed hourly)", "HubSpot ticket # 1042", "Visit result Complete",
+                   "Category Time & Material (billed hourly)", "HubSpot ticket 1042", "Visit result Complete",
                    "Expenses", "Parking", "12.50", "Order the second valve", "Send the quote", "2026-11-25"):
         assert needle in flat, needle
     assert "Expenses 12.50" in flat                                  # the top section total
@@ -202,6 +202,6 @@ def test_same_site_merge_combines_the_new_fields(tmp_path):
     c.patch(f"/api/stops/{b}", json={"visit_result": "return"})
     stops = c.get(f"/api/export.json?from={D}").json["days"][0]["stops"]
     assert len(stops) == 1
-    assert stops[0]["category"] == "Time & Material" and stops[0]["job_reference"] == "#7"
+    assert stops[0]["category"] == "Time & Material" and stops[0]["job_reference"] == "7"
     assert stops[0]["visit_result"] == "Return visit needed"
     assert [f["what"] for f in stops[0]["follow_ups"]] == ["First", "Second"]

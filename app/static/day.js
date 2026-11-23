@@ -315,7 +315,7 @@ const CATS = ['Time & Material', 'Quoted project', 'White-label migration', 'Int
               'Administrative', 'Customer outreach', 'Training'];
 const RESULTS = [['complete', 'Complete'], ['return', 'Return visit'], ['waiting', 'Waiting (parts or customer)']];
 const FIELDS = ['business_name', 'address', 'category', 'known_site_id', 'arrive', 'depart',
-                'notes', 'work_category', 'ticket', 'qbo_estimate', 'visit_result'];
+                'notes', 'work_category', 'ticket', 'qbo_estimate', 'ticket_action', 'visit_result'];
 const TYPES = [['job', 'Job'], ['vendor', 'Vendor'], ['office', 'Office'], ['gas', 'Gas'],
                ['break', 'Break'], ['lunch', 'Lunch'], ['personal', 'Personal'], ['traffic', 'Traffic']];
 const TYPE_LABEL = Object.fromEntries(TYPES);
@@ -862,14 +862,34 @@ function openSheet(id) {
     sh.cat = cat;
     sh.catHint = el('div');
     const catBox = labeled('Category', cat); catBox.append(sh.catHint);
-    const ticket = field('ticket', el('input')); ticket.value = s.ticket; sh.ticket = ticket; ticket.placeholder = 'e.g. 1042';
-    ticket.inputMode = 'numeric';
+    const ticket = field('ticket', el('input')); ticket.value = s.ticket; sh.ticket = ticket;
+    ticket.placeholder = 'Optional: paste the ticket link or ID'; ticket.autocapitalize = 'off';
+    // new work or the same job? Lets the agent pick or create the HubSpot ticket when none is filled in
+    const tact = el('div', 'seg tact');
+    const tactHint = el('div', 'hint');
+    const tChoices = [['continue', 'Continuing a job'], ['new', 'A new job'], ['unsure', 'Not sure']];
+    const showTact = () => {
+      const cur = v.ticket_action !== undefined ? v.ticket_action : s.ticket_action;
+      tact.querySelectorAll('button').forEach(b => b.classList.toggle('on', b._v === cur));
+      tactHint.textContent = ticket.value.trim() ? 'The ticket above is used.' :
+        !cur && s.ticket_action_default === 'continue' ? 'The last visit here needed a return visit, so this is treated as continuing that job unless you pick otherwise.' :
+        'No ticket? Fine: the office’s agent finds the open ticket or creates one.';
+    };
+    tChoices.forEach(([val, t]) => {
+      const b = el('button', null, t); b.type = 'button'; b._v = val;
+      b.onclick = () => { const cur = v.ticket_action !== undefined ? v.ticket_action : s.ticket_action;
+                          v.ticket_action = cur === val ? '' : val; showTact(); saveSheet(); };
+      tact.append(b);
+    });
+    ticket.addEventListener('input', showTact);
+    showTact();
     const est = field('qbo_estimate', el('input')); est.value = s.qbo_estimate || ''; sh.est = est; est.placeholder = 'e.g. 2210';
     const det = el('details', 'sheet-more');
     det.append(el('summary', null, type === 'vendor' ? 'Ticket and follow-ups' : 'Ticket, estimate, expenses and follow-ups'));
     det.open = !!(s.ticket || s.qbo_estimate || (s.follow_ups || []).length || (type !== 'vendor' && (s.parts || []).some(p => p.expense)));
     const grid = el('div', 'sheet-grid');
-    grid.append(labeled('HubSpot ticket #', ticket));
+    const tbox = labeled('HubSpot ticket', ticket); tbox.append(el('label', null, 'This visit is'), tact, tactHint);
+    grid.append(tbox);
     if (type !== 'vendor') grid.append(labeled('QuickBooks estimate #', est));
     if (type !== 'vendor') grid.append(sh.exp);
     grid.append(sh.fu);
