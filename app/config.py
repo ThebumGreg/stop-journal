@@ -59,6 +59,8 @@ class Config:
     smtp_password: str = ""      # secret (a Gmail App password)
     mail_from: str = ""          # blank = smtp_user
     mail_to: str = ""            # where reports go; blank = email off
+    calendar_invites: str = "off"   # today's stops as invites to mail_to (Settings → Email)
+    calendar_invite_min: int = 10
 
     @classmethod
     def from_env(cls):
@@ -114,4 +116,6 @@ class Config:
             smtp_password=e("SMTP_PASSWORD", "").strip(),
             mail_from=e("MAIL_FROM", "").strip(),
             mail_to=e("MAIL_TO", "").strip(),
+            calendar_invites=e("CALENDAR_INVITES", "off").strip() or "off",
+            calendar_invite_min=_int("CALENDAR_INVITE_MIN", 10),
         )

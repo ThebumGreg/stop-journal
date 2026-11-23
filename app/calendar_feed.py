@@ -136,6 +136,8 @@ def events_for_day(cfg, date, session=None):
             continue
         if str(ev.get("STATUS", "")).upper() == "CANCELLED" or title.lower().startswith("canceled:"):
             continue
+        if title.startswith("JobHub · ") or str(ev.get("UID", "")).split("@")[-1].startswith("jobhub"):
+            continue                                        # our own stop invites (calendar_out), not appointments
         m = TICKET.search(title + " " + notes)
         lines = labelled(notes)
         out.append({"contact": lines.get("contact", ""), "work": lines.get("work", ""), "category": lines.get("category", ""),"uid": str(ev.get("UID", "")) + "@" + str(int(s.timestamp())),

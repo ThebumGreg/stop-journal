@@ -1207,6 +1207,23 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return jsonify(ok=False, message=str(e))
         return jsonify(ok=True, message=f"Sent a test email to {t.mail_to}. Check that inbox (and its junk folder).")
 
+    @app.post("/settings/test-invite")
+    def settings_test_invite():
+        """A 15-minute test event starting in 5 minutes, sent as an invite to "Send reports to" (saved settings)."""
+        from . import calendar_out
+        cfg = eff()
+        if not mailer.enabled(cfg):
+            return jsonify(ok=False, message="Save the Email settings first (address, Gmail address, App password).")
+        now = int(time.time())
+        ev = {"title": calendar_out.TITLE_PREFIX + "Test event", "start": now + 300, "end": now + 1200,
+              "location": "", "desc": "A test from JobHub (Settings → Email). You can delete it."}
+        try:
+            calendar_out._send(cfg, f"test-{now}@{calendar_out.UID_DOMAIN}", 0, ev, "REQUEST")
+        except mailer.MailError as e:
+            return jsonify(ok=False, message=str(e))
+        return jsonify(ok=True, message=f"Sent a test invite to {cfg.mail_to}. It should appear on that calendar in a "
+                                        "minute or two (accept it if Outlook asks).")
+
     @app.post("/settings/test-grammar")
     def settings_test_grammar():
         """Uses the address typed in the form (even if not saved yet) and a fixed test sentence."""

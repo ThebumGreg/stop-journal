@@ -194,6 +194,11 @@ def run_once(base, client, now=None, send=notify.send):
             conds += left_stop_conditions(conn, cfg, client, now, marks, in_window)
         for cond in conds:
             apply(conn, cfg, cond, now, send)
+        from . import calendar_out
+        try:
+            calendar_out.tick(conn, cfg, client, now, marks, in_window)
+        except Exception as e:
+            log.warning("calendar invites failed: %s", type(e).__name__)
     finally:
         conn.close()
 

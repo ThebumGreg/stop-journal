@@ -233,6 +233,21 @@ CREATE TABLE IF NOT EXISTS email_log (
   version INTEGER, ok INTEGER, error TEXT, attached TEXT
 );
 
+CREATE TABLE IF NOT EXISTS cal_sync (
+  stop_id INTEGER PRIMARY KEY,
+  date TEXT NOT NULL,
+  uid TEXT NOT NULL,
+  seq INTEGER NOT NULL DEFAULT 0,
+  hash TEXT,
+  cancelled INTEGER DEFAULT 0,
+  event_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cal_sync_log (
+  id INTEGER PRIMARY KEY,
+  day TEXT NOT NULL, ts INTEGER NOT NULL, stop_id INTEGER, method TEXT
+);
+
 CREATE TABLE IF NOT EXISTS trips (
   id INTEGER PRIMARY KEY,
   site_id INTEGER NOT NULL,

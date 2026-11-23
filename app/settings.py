@@ -113,6 +113,12 @@ SPEC = [
         dict(key="smtp_host", label="Mail server", kind="text", help="smtp.gmail.com for Gmail."),
         dict(key="smtp_port", label="Mail server port", kind="int", lo=1, hi=65535,
              help="587 (STARTTLS) for Gmail; 465 uses SSL."),
+        dict(key="calendar_invites", label="Put my stops on my work calendar", kind="choice", choices=["off", "on"],
+             help="Each stop today is emailed as a calendar invite to the address above, so it shows on your Outlook "
+                  "calendar (and to coworkers who can see it): type, customer name, address, ticket, times, finished. "
+                  "Never notes or prices. Changes update the same event; a deleted stop is cancelled."),
+        dict(key="calendar_invite_min", label="Update the calendar every (min)", kind="int", lo=5, hi=60,
+             help="How often stop changes are sent. A stop you are still at is updated about every 15 minutes."),
     ]),
     ("Quick phrases", [
         dict(key="note_phrases", label="Phrases under Work performed", kind="lines",

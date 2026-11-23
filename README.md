@@ -141,6 +141,12 @@ named JobHub. In Settings → Email fill in "Send reports to", the Gmail address
 **Send test email**. Env equivalents: `MAIL_TO`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `SMTP_HOST`
 (smtp.gmail.com), `SMTP_PORT` (587).
 
+### Stops on your Outlook calendar
+
+Settings → Email → "Put my stops on my work calendar": every stop today is sent as a calendar invite to "Send reports to"
+(type, customer name, address, ticket, times, finished; never notes or prices), updated every 10 minutes when it changes and
+cancelled if the stop is deleted. Use "Send test calendar invite" first. Coworkers see the events if they can see your calendar.
+
 ## Backup and restore
 
 The SQLite file in `/data` holds the state (stops, edits, parts, places, settings). Photos and receipts are files next to

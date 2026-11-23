@@ -117,6 +117,8 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 ## Privacy and security
 - Location data stays on the user's server. The only outbound calls are place lookups,
   which send coordinates (and search text) to the chosen provider, and tile requests.
+- Calendar invites (user-approved 2026-11-23, Settings → Email, off by default) email today's stops as Outlook invites to the
+  user's work address every 5-10 min: type, customer name, address, ticket, times, finished. Never notes, parts or prices.
 - Email report (user-approved 2026-11-23) sends the full report (names, addresses, notes, coordinates unless left out)
   to the user's own work address, ONLY when the user taps Email report. Never send it automatically.
 - Pushover notifications (alerts, e.g. "no location data") are the one other outbound call. Their
@@ -550,3 +552,29 @@ stop departed 12:21, and listed billable parts with no cost.
   personal) and its status. Never over a name you typed or an edited/confirmed stop; used once. Home shows "Heading to …" with
   the map buttons and Cancel, then "✓ <place>: stop filled in" linking to the stop. The next appointment card also has both map
   buttons.
+
+## Calendar invites (Phase 1 of the plan below, built 2026-11-23)
+- `app/calendar_out.py`: Settings → Email "Put my stops on my work calendar" (`CALENDAR_INVITES` off|on) and "Update every (min)"
+  (`CALENDAR_INVITE_MIN`, 5-60, default 10). The background thread (`alerts.run_once` → `calendar_out.tick`) pulls new points
+  during the work day and calls `sync(conn, cfg, today)`: one iCalendar REQUEST email per stop (Gmail → MAIL_TO, text/calendar
+  alternative + invite.ics), re-sent with SEQUENCE+1 only when the event changes (hash in `cal_sync`), CANCEL when the stop is
+  gone. A stop you are at ends at the next quarter hour (about one update per 15 min). Titles `JobHub · <name> (<type>)`, `✓`
+  when finished, `· Return visit needed`; Personal / Lunch are bare blocks. UIDs `stop-<id>-<ts>@jobhub`; `calendar_feed`
+  skips our events. `cal_sync_log`, max 150 per day. Settings: "Send test calendar invite" (`/settings/test-invite`).
+
+## Action plan: estimates, calendar, late notices (agreed 2026-11-23)
+The work AI agent is the bridge between HubSpot / QuickBooks and JobHub, by email; no direct connection for now.
+QuickBooks makes the estimate (its number); a HubSpot service ticket holds the job and the estimate data. Match on the
+HubSpot ticket number (the calendar event's `Ticket:` line, then the stop's ticket); keep the QuickBooks estimate number as info.
+1. (built) Calendar invites: every stop on the Outlook calendar, updated every 5-10 min (above).
+2. Estimates in: JobHub reads the Gmail inbox (IMAP, same App password; only subject `JobHub Estimate <ticket>` from allowed
+   senders) for a JSON attachment: ticket, QuickBooks estimate number, customer, quoted hours, quoted parts (name, part #, qty,
+   price). Stored per ticket. Provide a sample estimate email for the agent first.
+3. Stop sheet: Estimate box (quoted hours and parts, "on site 4 h 40 of 6 h quoted") and an **Add quoted parts** button
+   (never automatic). Jobs can take several visits: actual = all stops with the same ticket.
+4. Report (additive, schema "1"): per job quoted vs actual hours and parts, differences; the agent writes them to the ticket.
+5. Late alerts: from the Home page ETA (built), a Pushover alert when you will be late for an on-site appointment, with a
+   "Tell the customer" action that emails the agent a structured `JobHub Late Notice` (ticket, appointment, new ETA); the agent
+   notifies the customer. Never sent without a tap.
+6. Later: read the HubSpot ticket directly with a read-only private-app token instead of estimate emails; Microsoft Graph
+   instead of invites (needs IT approval).
