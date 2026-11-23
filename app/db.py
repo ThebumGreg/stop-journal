@@ -142,6 +142,19 @@ CREATE TABLE IF NOT EXISTS purchases (
 );
 CREATE INDEX IF NOT EXISTS idx_purchases_part ON purchases(part_id);
 
+-- install kits: a named set of parts added to a stop in one tap
+CREATE TABLE IF NOT EXISTS kits (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  notes TEXT
+);
+CREATE TABLE IF NOT EXISTS kit_items (
+  id INTEGER PRIMARY KEY,
+  kit_id INTEGER NOT NULL,
+  part_id INTEGER NOT NULL,
+  qty REAL NOT NULL
+);
+
 -- vendor details (one row per vendor name; the name links parts.vendor and vendor places)
 CREATE TABLE IF NOT EXISTS vendors (
   id INTEGER PRIMARY KEY,

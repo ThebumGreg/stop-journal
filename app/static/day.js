@@ -145,6 +145,7 @@ expList.id = 'explist';
 document.body.append(expList);
 async function loadParts() {
   try {
+    api('GET', '/api/kits').then(d => { S.kits = d.kits; }, () => {});
     S.parts = (await api('GET', '/api/parts')).parts;
     partList.replaceChildren(); expList.replaceChildren();
     S.parts.forEach(p => {
@@ -195,6 +196,19 @@ function partsBlock(s, err) {
   name.addEventListener('input', () => { fresh.hidden = true; });
   add.append(name, qty, go);
   box.append(add, fresh);
+  if ((S.kits || []).length) {          // a kit puts all its parts on the stop in one tap
+    const kr = el('div', 'prow add');
+    const ks = el('select');
+    const o0 = el('option', null, 'Add a kit…'); o0.value = ''; ks.append(o0);
+    S.kits.forEach(k => { const o = el('option', null, k.name + ' (' + k.items.length + ' items)' + (k.short.length ? ' · short' : '')); o.value = k.id; ks.append(o); });
+    const kb = el('button', null, 'Add kit'); kb.type = 'button';
+    kb.onclick = () => {
+      if (!ks.value) { err.textContent = 'Choose a kit.'; return; }
+      run(() => api('POST', '/api/stops/' + s.id + '/kits/' + ks.value, {}), err, () => { loadParts(); });
+    };
+    kr.append(ks, kb);
+    box.append(kr);
+  }
   return box;
 }
 

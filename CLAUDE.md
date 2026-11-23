@@ -277,7 +277,11 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   6. (built) Possible-duplicate check (`parts.similar`, `GET /api/parts/similar?name&sku&exclude`: same part # ignoring case/spaces/
      dashes, or names that are nearly the same, same words in any order, or contained): the new-part sheet warns with links, and
      the stop sheet's new-part prompt offers "Use <existing part>".
-  7. Install kits (phase 4): one tap adds a bundle of parts to a stop.
+  7. (built) Install kits (`app/kits.py`; tables `kits` (name unique, notes) and `kit_items` (part, qty)). Truck → Kits (#kits,
+     #kit-<id>, #kit-new): list with the parts total at unit costs and "short" when the truck has less than one kit needs; edit
+     name, notes and lines (part by name or #, qty). Expenses cannot be in a kit. `POST /api/stops/<id>/kits/<kit> {times}` adds
+     each active line through `parts.add_to_stop` (catalog price, stock moves, an existing line gets the quantity added). The
+     stop sheet's Parts block has "Add a kit…" when kits exist.
   8. (built: Google Vision) Read receipts: suggest fuel total/gallons and store totals; later an AI reader as option 3.
 
 ## Notes: spell and grammar check (built)
@@ -438,14 +442,14 @@ stop departed 12:21, and listed billable parts with no cost.
 - Truck has tabs in the URL hash: **Parts** (#parts: search, filter chips, Show removed, list; **+ New part** opens a sheet with
   grouped fields), a page per part (#part-<id>: stock with +/−/packs/set, Used on (stops, linked), Edit details, Stock changes from
   `inventory_log`; `GET /api/parts/<id>/history`), **Stock** (#stock: Count the truck, Shopping list), **Vendors**, **Fuel** (#fuel),
-  **Import / export** (#data: parts CSV import with Check file, export, template, column list). A Kits tab gets added when built.
+  **Kits**, **Import / export** (#data: parts CSV import with Check file, export, template, column list).
 - **Vendors tab** (#vendors, #vendor/<name>; `app/vendors.py`): a vendor is a NAME (case-insensitive) joining vendor places (its
   branches) and `parts.vendor`; table `vendors` holds only account, phone, contact, website, notes. List: locations, parts, low
   (low first), last visit. Page: tap-to-call, account/contact/notes, Low at the truck with ✓ Bought, parts (links), locations
   (directions), visits across branches, shopping-list purchases, receipts total (expenses at its stops), Edit. `PUT /api/vendors
   {name, rename, ...}`: rename updates parts and vendor places; renaming onto an existing vendor merges (their details kept,
   gaps filled). Part pages link to their vendor.
-- Parts plan build order from here: install kits.
+- Parts plan: all 7 items and receipt reading are built.
 
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.

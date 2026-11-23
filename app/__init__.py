@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import photos, receipts, summary, vendors
+from . import kits, photos, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
@@ -543,6 +543,34 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             end_ts = ts(end) + 86400 if end else None
             return jsonify(parts.purchases(conn, ts(a.get("from")), end_ts, a.get("vendor") or None,
                                            int(a["part"]) if a.get("part", "").isdigit() else None))
+        return with_conn(go)
+
+    @app.get("/api/kits")
+    def kits_list():
+        return catalog(lambda conn: {"kits": kits.list_kits(conn)})
+
+    @app.post("/api/kits")
+    def kits_create():
+        return catalog(lambda conn: kits.save_kit(conn, request.get_json(silent=True) or {}))
+
+    @app.put("/api/kits/<int:kid>")
+    def kits_update(kid):
+        return catalog(lambda conn: kits.save_kit(conn, request.get_json(silent=True) or {}, kid))
+
+    @app.delete("/api/kits/<int:kid>")
+    def kits_delete(kid):
+        return catalog(lambda conn: kits.delete_kit(conn, kid) or {"ok": True})
+
+    @app.post("/api/stops/<int:sid>/kits/<int:kid>")
+    def stop_kit_add(sid, kid):
+        b = request.get_json(silent=True) or {}
+
+        def go(conn, cfg):
+            date = service._stop(conn, sid)["date"]
+            kits.add_to_stop(conn, sid, kid, b.get("times", 1))
+            conn.execute("UPDATE stops SET edited=1 WHERE id=?", (sid,))
+            conn.commit()
+            return payload(conn, cfg, date)
         return with_conn(go)
 
     @app.post("/api/parts/bought")

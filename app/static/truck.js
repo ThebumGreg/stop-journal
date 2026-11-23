@@ -87,11 +87,12 @@ function route() {
   const h = location.hash.slice(1) || 'parts';
   const m = /^part-(\d+)$/.exec(h);
   const vm = /^vendor\/(.+)$/.exec(h);
-  const tab = m ? 'parts' : vm ? 'vendors' : h;
+  const km = /^kit-(\d+|new)$/.exec(h);
+  const tab = m ? 'parts' : vm ? 'vendors' : km ? 'kits' : h;
   document.querySelectorAll('#subnav a').forEach(a => a.classList.toggle('on', a.dataset.v === tab));
   view.replaceChildren(el('div', 'hint', 'Loading…'));
-  const show = m ? partPage(+m[1]) : vm ? vendorPage(decodeURIComponent(vm[1]))
-    : ({parts: partsView, stock: stockView, vendors: vendorsView, fuel: () => fuelView('month'), data: dataView}[tab] || partsView)();
+  const show = m ? partPage(+m[1]) : vm ? vendorPage(decodeURIComponent(vm[1])) : km ? kitPage(km[1])
+    : ({parts: partsView, stock: stockView, vendors: vendorsView, kits: kitsView, fuel: () => fuelView('month'), data: dataView}[tab] || partsView)();
   Promise.resolve(show).catch(e => { view.replaceChildren(el('div', 'err', e.message)); });
 }
 window.addEventListener('hashchange', route);
@@ -599,6 +600,83 @@ async function vendorPage(name) {
   };
   ed.append(save);
   view.replaceChildren(back, head, err, info, low, ps, locs, vis, buys, ed);
+}
+
+// ---- Kits: a named set of parts added to a stop in one tap -----------------------------------
+async function kitsView() {
+  const ks = (await api('GET', '/api/kits')).kits;
+  const add = el('a', 'btn primary', '+ New kit'); add.href = '#kit-new';
+  const list = el('div');
+  if (!ks.length) list.append(el('div', 'hint', 'No kits yet. A kit is a set of parts you often use together (a water heater install, a ' +
+    'faucet swap). On a stop, “Add a kit” puts every part on it in one tap.'));
+  ks.forEach(k => {
+    const a = el('a', 'part'); a.href = '#kit-' + k.id;
+    const body = el('div', 'body');
+    body.append(el('div', 'n', k.name), el('div', 'm', [k.items.length + ' item' + (k.items.length === 1 ? '' : 's'),
+      k.price != null ? money(k.price) + ' in parts' : '', k.notes].filter(Boolean).join(' · ')));
+    a.append(body, k.short.length ? el('div', 'qty low', 'short') : el('div', 'hint', ''));
+    list.append(a);
+  });
+  view.replaceChildren(el('div', 'row'), list);
+  view.firstChild.append(add);
+}
+
+async function kitPage(id) {
+  await loadParts();
+  const k = id === 'new' ? {name: '', notes: '', items: [], short: []} : (await api('GET', '/api/kits')).kits.find(x => x.id === +id);
+  if (!k) { view.replaceChildren(el('div', 'err', 'That kit no longer exists.')); return; }
+  const back = el('a', 'back', '‹ All kits'); back.href = '#kits';
+  const err = el('div', 'err');
+  const name = el('input'); name.value = k.name; name.placeholder = 'e.g. Water heater install';
+  const notes = el('input'); notes.value = k.notes; notes.placeholder = 'optional';
+  let dl = document.getElementById('partnames');
+  if (!dl) { dl = el('datalist'); dl.id = 'partnames'; document.body.append(dl); }
+  dl.replaceChildren(...PARTS.filter(p => p.kind !== 'expense').map(p => { const o = el('option'); o.value = p.name; if (p.sku) o.label = p.sku; return o; }));
+  const rows = el('div');
+  const lines = [];
+  const addLine = it => {
+    const r = el('div', 'crow'); r.style.gridTemplateColumns = '1fr 80px auto';
+    const n = el('input'); n.setAttribute('list', 'partnames'); n.value = it ? it.name : ''; n.placeholder = 'Part name or #';
+    const q = el('input'); q.inputMode = 'decimal'; q.value = it ? it.qty : '1';
+    const x = el('button', 'danger', '✕'); x.type = 'button';
+    const line = {n, q, r};
+    x.onclick = () => { r.remove(); lines.splice(lines.indexOf(line), 1); };
+    r.append(n, q, x); rows.append(r); lines.push(line);
+    if (it && it.short) r.append(el('div', 'hint low', 'only ' + it.on_hand + ' ' + it.unit + ' on the truck'));
+  };
+  k.items.forEach(addLine);
+  if (!k.items.length) { addLine(); addLine(); }
+  const more = el('button', null, '+ Another part'); more.type = 'button'; more.onclick = () => addLine();
+  const save = el('button', 'primary', id === 'new' ? 'Create kit' : 'Save kit'); save.type = 'button';
+  save.onclick = async () => {
+    err.textContent = '';
+    const items = [];
+    for (const l of lines) {
+      const v = l.n.value.trim();
+      if (!v) continue;
+      const p = PARTS.find(x => x.name.toLowerCase() === v.toLowerCase() || (x.sku && x.sku.toLowerCase() === v.toLowerCase()));
+      if (!p) { err.textContent = '“' + v + '” is not in your parts list. Add it under Parts first.'; return; }
+      items.push({part_id: p.id, qty: l.q.value});
+    }
+    try {
+      const r = await api(id === 'new' ? 'POST' : 'PUT', '/api/kits' + (id === 'new' ? '' : '/' + id), {name: name.value, notes: notes.value, items});
+      location.hash = 'kit-' + r.id;
+      route();
+    } catch (e) { err.textContent = e.message; }
+  };
+  const acts = el('div', 'row'); acts.append(save);
+  if (id !== 'new') {
+    const del = el('button', 'danger', 'Delete kit'); del.type = 'button';
+    del.onclick = async () => {
+      if (!confirm('Delete the kit “' + k.name + '”? Stops that used it keep their parts.')) return;
+      try { await api('DELETE', '/api/kits/' + id); location.hash = 'kits'; } catch (e) { err.textContent = e.message; }
+    };
+    acts.append(del);
+  }
+  const card = el('section', 'card');
+  card.append(lab('Kit name', name), lab('Notes', notes), el('label', null, 'Parts (quantity per kit)'), rows, more);
+  if (k.price != null) card.append(el('div', 'hint', 'Parts in this kit come to ' + money(k.price) + ' at your unit costs.'));
+  view.replaceChildren(back, el('h1', 'page-title', id === 'new' ? 'New kit' : k.name), err, card, acts);
 }
 
 // ---- Fuel: fill-ups logged on Gas stops (day page) ------------------------------------------

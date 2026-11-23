@@ -20,8 +20,9 @@ Single user. Your location data stays on your own server.
 - **Gas** stops log gallons, total and odometer (the time at the pump counts as drive time); the Truck page's **Fuel**
   panel shows spend, gallons, average price, MPG and fuel cost per mile.
 - Saved **Places** (home, office, vendors) pre-fill and pre-mark matching stops.
-- **Truck** has tabs: Parts (each part has its own page with stock, where it was used and every stock change), Stock (count,
-  shopping list), Fuel and Import / export.
+- **Truck** has tabs: Parts (each part has its own page with stock, shelf and bin, where it was used, what you paid and every
+  stock change), Stock (count shelf by shelf, shopping list with Bought and Share, purchases), Vendors (one per vendor across
+  branches), Kits (a set of parts added to a stop in one tap), Fuel and Import / export.
 - **Truck parts and consumables**: a catalog with stock levels, fixed unit list and pack sizes (buy a bag of 25, use them one by one), vendor and category dropdowns, CSV import/export, reorder levels, non-billable
   consumables, a weekly **Count the truck** screen and a vendor-grouped **Shopping list**.
 - **Reports** (own page, header link): a text-based PDF and a JSON twin for one day or a date range. **Include** ticks leave
