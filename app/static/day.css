@@ -243,3 +243,5 @@ body.sheet-open { overflow:hidden; }
             padding:8px 10px; min-height:44px; background:var(--bg); }
 .live-hit:last-child { border-bottom:0; }
 .live-hit .n { display:block; font-weight:600; } .live-hit .m { display:block; font-size:13px; color:var(--muted); }
+.calplan { border:1px solid var(--line); border-left:3px solid var(--acc); border-radius:8px; padding:8px 10px; margin-bottom:8px; display:grid; gap:4px; font-size:14px; }
+.calplan .n { font-weight:600; }

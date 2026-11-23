@@ -1528,9 +1528,12 @@ def calendar_for_day(cfg, date, stops, now):
         if best:
             taken.add(best["id"])
             e["state"] = "here" if best.get("here_now") else "done"
-            if (best["business_name"] or "").strip().lower() != ev["name"].strip().lower():
-                best["calendar"] = {"name": ev["name"], "location": ev["location"], "ticket": ev["ticket"],
-                                    "start": e["start"], "end": e["end"]}
+            cat = next((c for c in WORK_CATEGORIES if c.lower() == (ev.get("category") or "").strip().lower()), "")
+            best["calendar"] = {"name": ev["name"], "location": ev["location"], "ticket": ev["ticket"],
+                                "start": e["start"], "end": e["end"], "contact": ev.get("contact", ""),
+                                "work": ev.get("work", ""), "category": cat,
+                                # "Use calendar" is offered while the stop's name differs from the appointment's
+                                "offer": (best["business_name"] or "").strip().lower() != ev["name"].strip().lower()}
         else:
             e["state"] = "upcoming" if ev["end_ts"] > now else "missed"
         e["minutes_to_start"] = round((ev["start_ts"] - now) / 60)

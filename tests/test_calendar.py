@@ -61,7 +61,7 @@ def test_onsite_events_match_stops_and_offer_the_name(tmp_path, feed):
     s0 = stops[0]
     feed["ics"] = ics(
         ev("a1", hhmm(s0["arrive_ts"] + 600), hhmm(s0["depart_ts"]), "Onsite - Acme Plumbing", "12 Main St\\nTestville",
-           "Ticket #10422 please call first"),
+           "Ticket #10422 please call first\\nContact: Jane Smith 555-0100\\nWork: Replace the shutoff\\ncategory: time & material"),
         ev("a2", "20261118T060000", "20261118T063000", "Team call"),                        # not on site
         ev("a3", "20261118T230000", "20261118T233000", "Late visit", "", "", "CATEGORIES:On-site\n"),  # category, no stop
         ev("a4", "20261118T200000", "20261118T203000", "Canceled: on site Beta", ""),
@@ -79,9 +79,11 @@ def test_onsite_events_match_stops_and_offer_the_name(tmp_path, feed):
     s = next(x for x in d["stops"] if x["id"] == s0["id"])
     assert s["calendar"]["name"] == "Acme Plumbing"
     assert d["calendar"][2]["stop_id"] is None
-    # once the stop has the name, nothing more to offer
+    assert s["calendar"]["offer"] and s["calendar"]["contact"] == "Jane Smith 555-0100"
+    assert s["calendar"]["work"] == "Replace the shutoff" and s["calendar"]["category"] == "Time & Material"
+    # once the stop has the name, the details stay but "Use calendar" is no longer offered
     r = c.patch(f"/api/stops/{s0['id']}", json={"business_name": "Acme Plumbing"}).json
-    assert "calendar" not in next(x for x in r["stops"] if x["id"] == s0["id"])
+    assert next(x for x in r["stops"] if x["id"] == s0["id"])["calendar"]["offer"] is False
 
 
 def test_calendar_errors_and_settings(tmp_path, feed):
@@ -102,3 +104,8 @@ def test_clean_title():
     assert calendar_feed.clean_title("Onsite - Acme Plumbing", "onsite") == "Acme Plumbing"
     assert calendar_feed.clean_title("Acme Plumbing (on-site)", "onsite") == "Acme Plumbing"
     assert calendar_feed.clean_title("ONSITE", "onsite") == "ONSITE"
+
+
+def test_labelled_lines():
+    got = calendar_feed.labelled("Ticket: 1\nContact: Bob 555-0100\nWork: Fix it\nWork: second\nnot a label\nCategory: Quoted project")
+    assert got == {"contact": "Bob 555-0100", "work": "Fix it", "category": "Quoted project"}

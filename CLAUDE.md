@@ -409,6 +409,11 @@ stop departed 12:21, and listed billable parts with no cost.
   missed; a matched stop whose name differs gets `calendar` {name, location, ticket}, shown as "📅 Use <name>" on the card and
   "Use calendar" in the sheet (fills name, address, ticket if empty; an untyped stop becomes a Job). Calendar errors only show a
   message (`calendar_error`), never break the day. Settings has "Test calendar". Address format: to be confirmed by the user.
+- Calendar notes: labelled lines `Ticket:`, `Contact:` (or Phone), `Work:` (or Scope), `Category:` (or Billing; must match one of
+  WORK_CATEGORIES, any case) are read (`calendar_feed.labelled`, first of each, 200 chars); the notes are never stored whole. A
+  matched stop always carries `calendar` {name, location, ticket, contact, work, category, start, end, offer}; the sheet shows an
+  Appointment box (planned work, contact with 📞 Call), and "Use calendar" (offer = names differ) also fills an empty category.
+  Recommended event format: title "Onsite – <customer>", Location = full street address, those labelled lines at the top of notes.
 - **Receipt reading** (`app/receipts.py`, Settings → Receipts; `RECEIPT_READER` off | google_vision, `RECEIPT_KEY` blank = the
   Google Places key, `RECEIPT_MONTHLY_CAP` 300, counted in `api_usage` provider "receipts"). On a receipt upload the reader runs once
   and stores `photos.read_json` {ok, total, gallons, price_per_gallon, checks | error, dismissed}; plain photos are never sent.

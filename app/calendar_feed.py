@@ -2,8 +2,9 @@
 
 Read-only. The link is a secret (anyone with it can read the calendar), so it is stored write-only like the other
 keys. Only events that say they are on site are used: the keyword (default "onsite"; "on-site" and "on site"
-match too) in the title, location, notes or categories. All-day events are skipped. Event notes are only searched
-for the keyword and the ticket number, never stored or shown.
+match too) in the title, location, notes or categories. All-day events are skipped. From the event notes only the
+keyword and these labelled lines are read (the notes are never stored whole):
+  Ticket: 1042   Contact: Jane Smith 555-0100   Work: Replace switch   Category: Time & Material
 
 The feed is cached in memory for CACHE_S, so the day page and the alert thread do not hit Outlook every time.
 """
@@ -89,6 +90,23 @@ def clean_title(title, keyword):
     return re.sub(r"\s{2,}", " ", t) or title.strip()
 
 
+LABELS = {"contact": "contact", "phone": "contact", "work": "work", "scope": "work",
+          "category": "category", "billing": "category"}
+
+
+def labelled(notes):
+    """'Contact: Jane 555-0100' style lines from event notes -> {contact, work, category} (first of each, 200 chars)."""
+    out = {}
+    for line in (notes or "").splitlines():
+        m = re.match(r"\s*([A-Za-z ]{3,12})\s*:\s*(.+)", line)
+        if not m:
+            continue
+        key = LABELS.get(m.group(1).strip().lower())
+        if key and key not in out:
+            out[key] = m.group(2).strip()[:200]
+    return out
+
+
 def events_for_day(cfg, date, session=None):
     """On-site events overlapping a local date, sorted by start: [{uid, start_ts, end_ts, title, name, location, ticket}]."""
     import recurring_ical_events
@@ -119,7 +137,8 @@ def events_for_day(cfg, date, session=None):
         if str(ev.get("STATUS", "")).upper() == "CANCELLED" or title.lower().startswith("canceled:"):
             continue
         m = TICKET.search(title + " " + notes)
-        out.append({"uid": str(ev.get("UID", "")) + "@" + str(int(s.timestamp())),
+        lines = labelled(notes)
+        out.append({"contact": lines.get("contact", ""), "work": lines.get("work", ""), "category": lines.get("category", ""),"uid": str(ev.get("UID", "")) + "@" + str(int(s.timestamp())),
                     "start_ts": int(s.timestamp()), "end_ts": int(e.timestamp()),
                     "title": title, "name": clean_title(title, cfg.calendar_keyword),
                     "location": location.replace("\n", ", "), "ticket": (m.group(1) or m.group(2)) if m else ""})

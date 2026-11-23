@@ -744,6 +744,7 @@ function openSheet(id) {
     nameIn.value = c.name; v.business_name = c.name; v.known_site_id = null;
     if (c.location) { addrIn.value = c.location; v.address = c.location; }
     if (c.ticket && !v.ticket) { v.ticket = c.ticket; if (sh.ticket) sh.ticket.value = c.ticket; }
+    if (c.category && !v.work_category) { v.work_category = c.category; if (sh.cat) sh.cat.value = c.category; }
     saveSheet();
   };
   sec1.append(el('h3', null, '1 · What and where'), sh.types, sh.cal,
@@ -880,10 +881,21 @@ function refreshSheet() {
   sh.cal.replaceChildren();
   if (s.calendar && s.stop_type !== 'gas') {
     const c = s.calendar;
-    const b = el('button', 'quick', '📅 Use calendar: ' + c.name + (c.location ? ' – ' + c.location : '')); b.type = 'button';
-    b.title = 'Appointment ' + c.start + '–' + c.end;
-    b.onclick = () => sh.useCal(c);
-    sh.cal.append(b);
+    const plan = el('div', 'calplan');
+    plan.append(el('div', 'n', '📅 Appointment ' + c.start + '–' + c.end + ' · ' + c.name));
+    if (c.work) plan.append(el('div', null, 'Planned work: ' + c.work));
+    if (c.contact) {
+      const line = el('div', null, 'Contact: ' + c.contact + ' ');
+      const ph = (c.contact.match(/\+?[\d(][\d\s().-]{6,}\d/) || [])[0];
+      if (ph) { const a = el('a', null, '📞 Call'); a.href = 'tel:' + ph.replace(/[^\d+]/g, ''); line.append(a); }
+      plan.append(line);
+    }
+    if (c.offer) {
+      const b = el('button', 'quick', '📅 Use calendar: ' + c.name + (c.location ? ' – ' + c.location : '')); b.type = 'button';
+      b.onclick = () => sh.useCal(c);
+      plan.append(b);
+    }
+    sh.cal.append(plan);
   }
   sh.here.replaceChildren();
   if (s.here_now) {
@@ -999,13 +1011,14 @@ function stopCard(s, i) {
     go.onclick = stop(() => { setSel(s.id, true); openSheet(s.id); });
     btns.append(go);
   }
-  if (s.calendar) {
+  if (s.calendar && s.calendar.offer) {
     const cb = el('button', 'quick', '📅 Use ' + s.calendar.name); cb.type = 'button';
     cb.title = 'From your calendar (' + s.calendar.start + '–' + s.calendar.end + '): fills in the name and address';
     cb.onclick = stop(() => {
       const c = s.calendar, body = {business_name: c.name};
       if (c.location) body.address = c.location;
       if (c.ticket && !s.ticket) body.ticket = c.ticket;
+      if (c.category && !s.work_category) body.work_category = c.category;
       if (!s.stop_type) body.stop_type = 'job';
       run(() => api('PATCH', '/api/stops/' + s.id, body), null, () => { if (!s.stop_type) setTimeout(() => openSheet(s.id), 0); });
     });
