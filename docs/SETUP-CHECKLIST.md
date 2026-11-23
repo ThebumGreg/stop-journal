@@ -6,6 +6,10 @@ Work down the list. Items marked **Tell Claude** are results to report back.
 - [ ] `git pull`, then `docker compose build` and `docker compose up -d` (a rebuild is needed: a new package was added).
 - [ ] On the iPhone, close the Home Screen app fully and open it again (loads the new pages).
 
+## 1b. Check the update worked
+- [ ] Settings → General → Log → **View recent log** shows "JobHub started: …".
+- [ ] Reports → Download PDF → **View here** shows every page.
+
 ## 2. Settings → General
 - [ ] **Technician**: your name and work email.
 - [ ] **Follow-up owners**: `Me` plus one line per person, e.g. `Office = office@yourco.com`.
@@ -34,6 +38,12 @@ Work down the list. Items marked **Tell Claude** are results to report back.
 - [ ] **Or Claude**: get an Anthropic API key (console.anthropic.com) and set a monthly spend limit there.
       Settings → AI: paste the key. Try ✨ Polish notes. Optionally Settings → Receipts → `claude`.
 
+## 5b. Parts clean-up
+- [ ] Move the stock counts from the parts you made on stops to the real parts (1-port faceplate 5, keystone jack white 39,
+      blank faceplate), replace them on their stops, then **Remove from catalog**.
+- [ ] Truck → Vendors: rename **DLV** to **Discount Low Voltage**.
+- [ ] Truck → Parts → **Below cost**: review the 6 parts with management.
+
 ## 6. Data for HubSpot and QuickBooks
 - [ ] Places → **HubSpot company IDs (CSV)**: download, fill in `hubspot_company_id`, **Check file**, then **Import**.
 - [ ] Truck → Import / export: import the QuickBooks "Products and services" export. **Check file** first.
@@ -47,7 +57,9 @@ Work down the list. Items marked **Tell Claude** are results to report back.
   - [ ] Part rows: − / + and **Bill**.
   - [ ] Quick phrases, and **Start from last visit** at a repeat customer.
   - [ ] Follow-up **owner dropdown**.
-  - [ ] **HubSpot ticket #** and **QuickBooks estimate #** fields.
+  - [ ] **HubSpot ticket**: paste a ticket link (it keeps the ID), or leave it blank and pick **This visit is: Continuing /
+        New job / Not sure**.
+  - [ ] **QuickBooks estimate #** on a quoted job.
   - [ ] **Finish stop**, then the **Next** button.
 - [ ] Reports page:
   - [ ] Download PDF → **View here**: all pages, and Close works.
@@ -60,6 +72,7 @@ Work down the list. Items marked **Tell Claude** are results to report back.
       without writing anything.
 - [ ] Then email it one real day and have it do the same dry run before it writes anything to HubSpot.
 - [ ] Tell it to accept reports only from your JobHub Gmail address.
+- [ ] Optional: Settings → Email → **Report signing key**; give the agent the same phrase and have it check the `Signature:` line.
 
 ## 9. Later
 - [ ] **https** for JobHub (so Share works in the Home Screen app). **Tell Claude** how you reach JobHub: home Wi-Fi only,
