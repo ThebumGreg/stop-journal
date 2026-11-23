@@ -427,6 +427,15 @@ stop departed 12:21, and listed billable parts with no cost.
   (Google Routes would cost money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
   Drive); not built.
 
+## Poor signal (2026-11-23)
+- The stop sheet writes every change of its typed fields (FIELDS) to localStorage `jobhub-draft-<stop id>` at once (`keepDraft`),
+  and clears it when the server has everything. A save that fails for lack of network (`fetch` TypeError or `navigator.onLine`
+  false) shows "No signal: kept on this phone…", and closing the sheet then needs no confirmation. `flushDrafts` PATCHes kept
+  drafts (not the open sheet's) on `online`, every 30 s, when the page comes back on screen and after a day loads; a draft the
+  server refuses (not a network error) is dropped with a message. Opening a stop with a kept draft restores it into the sheet
+  (`restoreDraft`) and saves it. Only the PATCH of typed fields is queued (safe to send twice); parts, photos, Finish and other
+  actions still need signal and say so.
+
 ## Live part search (2026-11-23)
 - The stop sheet's Add part / Add expense boxes and the kit editor no longer use `<datalist>` (unreliable on iPhone). `liveSearch`
   (day.js, truck.js) lists up to 8 matches under the box as you type: every word must appear in name, part #, shelf or bin; each

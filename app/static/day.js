@@ -320,13 +320,64 @@ const stopNum = s => S.stops.indexOf(s) + 1;
 function setStat(kind, msg) {
   if (!sh.stat) return;
   const t = {unsaved: 'Unsaved changes', saving: 'Saving…', saved: 'Saved ' + new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}),
-             clean: 'Saved', error: msg || 'Could not save'}[kind];
+             clean: 'Saved', error: msg || 'Could not save',
+             offline: 'No signal: kept on this phone. It saves by itself when the signal is back.',
+             restored: msg || 'Restored what you typed on this phone; saving it now.'}[kind];
   sh.stat.textContent = t; sh.stat.className = 'sheet-stat ' + kind;
 }
 function touched() {
   setStat('unsaved'); clearTimeout(sheet.timer);
+  keepDraft();
   sheet.timer = setTimeout(saveSheet, 2000);
 }
+
+// ---- poor signal: what you type is kept on the phone until the server has it --------------------
+// Every change in the sheet is written to the phone's storage at once (survives a dropped signal, the app being
+// closed, a reload). Saves that fail for lack of signal are retried when the signal is back, every 30 s, and when
+// the app comes back on screen. Only the sheet's typed fields are kept this way (they are safe to send twice).
+const DRAFT_PREFIX = 'jobhub-draft-';
+function keepDraft() {
+  const s = curStop();
+  if (!s) return;
+  const vals = {};
+  FIELDS.forEach(k => { if (sheet.vals[k] !== s[k]) vals[k] = sheet.vals[k]; });
+  try {
+    if (Object.keys(vals).length) localStorage.setItem(DRAFT_PREFIX + s.id, JSON.stringify({date: S.date, vals, ts: Date.now()}));
+    else localStorage.removeItem(DRAFT_PREFIX + s.id);
+  } catch (e) { /* storage full or private mode: the normal save still runs */ }
+}
+function readDraft(id) {
+  try { return JSON.parse(localStorage.getItem(DRAFT_PREFIX + id) || 'null'); } catch (e) { return null; }
+}
+const isOffline = e => !navigator.onLine || (e && e.name === 'TypeError');   // fetch fails with a TypeError when there is no network
+let flushing = false;
+async function flushDrafts() {
+  if (flushing || !navigator.onLine) return;
+  flushing = true;
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(DRAFT_PREFIX)) continue;
+      const id = +key.slice(DRAFT_PREFIX.length);
+      if (id === sheet.id) continue;                       // the open sheet saves itself
+      const d = readDraft(id);
+      if (!d || !d.vals) { localStorage.removeItem(key); continue; }
+      try {
+        const day = await api('PATCH', '/api/stops/' + id, d.vals);
+        localStorage.removeItem(key);
+        if (day && day.date === S.date) { applyDay(day); S.flash = 'Saved what you typed without signal.'; render(false); }
+      } catch (e) {
+        if (isOffline(e)) break;                           // still no signal: try again later
+        localStorage.removeItem(key);                      // the server refused it (stop deleted, bad time…): do not loop
+        S.flash = 'A change kept on this phone could not be saved: ' + e.message;
+        render(false);
+      }
+    }
+  } finally { flushing = false; }
+}
+window.addEventListener('online', () => { flushDrafts(); if (sheet.id && sheet.offline) saveSheet(); });
+setInterval(() => { flushDrafts(); if (sheet.id && sheet.offline && navigator.onLine) saveSheet(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) flushDrafts(); });
 
 // Saves what changed; returns true when everything is saved.
 async function saveSheet() {
@@ -338,16 +389,20 @@ async function saveSheet() {
   FIELDS.forEach(k => { if (sheet.vals[k] !== s[k]) body[k] = sheet.vals[k]; });
   if (!Object.keys(body).length) { if (!sheet.failed) setStat(sh.everSaved ? 'saved' : 'clean'); return true; }
   sheet.saving = true; setStat('saving');
+  keepDraft();
   try {
     applyDay(await api('PATCH', '/api/stops/' + s.id, body));
-    sheet.failed = false; sh.everSaved = true; sh.err.textContent = '';
+    sheet.failed = false; sheet.offline = false; sh.everSaved = true; sh.err.textContent = '';
     render(false);
   } catch (e) {
-    sheet.failed = true; setStat('error', 'Could not save: ' + e.message);
+    sheet.failed = true;
+    sheet.offline = isOffline(e);
+    if (sheet.offline) setStat('offline'); else setStat('error', 'Could not save: ' + e.message);
   }
   sheet.saving = false;
   if (!sheet.failed) {
     if (sheet.again || sheetDirty()) { sheet.again = false; return saveSheet(); }
+    keepDraft();                                           // all saved: clears the copy on the phone
     setStat('saved');
   }
   return !sheet.failed && !sheetDirty();
@@ -357,7 +412,8 @@ async function saveSheet() {
 async function closeSheet(force) {
   if (!force && sheet.id) {
     const ok = await saveSheet();
-    if (!ok && !confirm('Your changes could not be saved yet. Close anyway?')) return;
+    // without signal the typing is kept on the phone and sent later, so closing is safe
+    if (!ok && !sheet.offline && !confirm('Your changes could not be saved yet. Close anyway?')) return;
   }
   clearTimeout(sheet.timer);
   const id = sheet.id;
@@ -636,6 +692,7 @@ function openSheet(id) {
   sheet.id = id; sheet.failed = false; sheet.again = false; sheet.due = '';
   sheet.vals = {};
   FIELDS.forEach(k => { sheet.vals[k] = s[k]; });
+  sheet.offline = false;
   sh = {everSaved: false};
   sheetEl.replaceChildren();
   const type = s.stop_type;
@@ -647,7 +704,9 @@ function openSheet(id) {
   top.append(sh.title, close);
   sh.stat = el('div', 'sheet-stat');
   sh.err = el('div', 'err');
+  sh.inputs = {};
   const field = (k, inp) => {     // typed field: autosave after a pause, and on leaving it
+    sh.inputs[k] = inp;
     inp.addEventListener('input', () => { v[k] = inp.value; touched(); });
     inp.addEventListener('blur', () => { if (sheetDirty()) saveSheet(); });
     return inp;
@@ -755,6 +814,24 @@ function openSheet(id) {
   sheetEl.scrollTop = 0;
   // the stop already has a name: start at the work
   if (s.business_name) requestAnimationFrame(() => { sheetEl.scrollTop = Math.max(0, sec2.offsetTop - 56); });
+  restoreDraft(s);
+}
+
+// Typing kept on the phone (no signal, app closed) comes back into the sheet and is saved.
+function restoreDraft(s) {
+  const d = readDraft(s.id);
+  if (!d || !d.vals) return;
+  const changed = Object.keys(d.vals).filter(k => FIELDS.includes(k) && d.vals[k] !== s[k]);
+  if (!changed.length) { localStorage.removeItem(DRAFT_PREFIX + s.id); return; }
+  changed.forEach(k => {
+    sheet.vals[k] = d.vals[k];
+    const inp = (sh.inputs || {})[k] || {arrive: sh.arr, depart: sh.dep, work_category: sh.cat}[k];
+    if (inp) inp.value = d.vals[k] == null ? '' : d.vals[k];
+  });
+  refreshSheet();
+  setStat('restored');
+  clearTimeout(sheet.timer);
+  sheet.timer = setTimeout(saveSheet, 500);
 }
 
 function paintResult() {
@@ -1363,6 +1440,7 @@ async function load() {
     applyDay(await api('GET', '/api/day/' + S.date));
   } catch (e) { m.textContent = 'Could not load this day (' + e.message + ').'; return; }
   render(true);
+  flushDrafts();                         // anything typed without signal earlier goes up now
   if (wantStop) {
     const id = wantStop; wantStop = null;
     if (S.stops.some(x => x.id === id)) openSheet(id);
