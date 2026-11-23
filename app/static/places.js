@@ -183,6 +183,10 @@ function row(p, inGroup) {
   const radius = el('input'); radius.inputMode = 'numeric'; radius.value = Math.round(p.radius_m);
   const grid = el('div', 'grid');
   grid.append(lab('Name', name), lab('Type', kind), lab('Pre-mark stops here as', status), lab('Radius (m)', radius));
+  const hs = el('input'); hs.value = p.hubspot_company_id || ''; hs.inputMode = 'numeric'; hs.placeholder = 'e.g. 18234567890';
+  const hsWrap = lab('HubSpot company ID', hs);
+  hsWrap.append(el('div', 'hint', 'The digits in the company’s HubSpot URL. Reports carry it so the right company is updated.'));
+  hsWrap.hidden = kind.value !== 'client';
   // link to another place (a customer's old and new address, or two names for one customer)
   const linkSel = el('select');
   const none = el('option', null, 'Not linked'); none.value = ''; linkSel.append(none);
@@ -204,13 +208,13 @@ function row(p, inGroup) {
     err.textContent = '';
     try {
       const body = {name: name.value, address: addr.value, kind: kind.value, default_status: status.value,
-                    radius_m: radius.value, old_address: oldBox.checked};
+                    radius_m: radius.value, old_address: oldBox.checked, hubspot_company_id: hs.value};
       if (linkSel.value !== (mates.length ? String(mates[0].id) : '')) body.link_to = linkSel.value || null;
       await api('PATCH', '/api/places/' + p.id, body);
       await load();
     } catch (e) { err.textContent = e.message; }
   };
-  kind.onchange = () => { status.value = kind.value === 'home' ? 'Personal' : 'Draft'; };
+  kind.onchange = () => { status.value = kind.value === 'home' ? 'Personal' : 'Draft'; hsWrap.hidden = kind.value !== 'client'; };
   const del = el('button', 'danger', 'Delete');
   del.onclick = async () => {
     if (!confirm('Delete “' + p.name + '”? Past stops keep their names.')) return;
@@ -218,7 +222,7 @@ function row(p, inGroup) {
   };
   const acts = el('div', 'row'); acts.append(save, del);
   const form = el('details', 'editplace');
-  form.append(el('summary', null, 'Edit place'), grid, lab('Address', addr), linkBox, acts, err);
+  form.append(el('summary', null, 'Edit place'), grid, lab('Address', addr), hsWrap, linkBox, acts, err);
   edit.append(hist, form);
   wrap.append(head, edit);
   if (!edit.hidden) loadHistory(hist, p);
@@ -270,3 +274,28 @@ document.getElementById('searchform').onsubmit = async ev => {
 
 document.getElementById('filter').onchange = load;
 load().catch(e => { listEl.textContent = 'Could not load places (' + e.message + ').'; });
+
+// HubSpot company IDs in bulk: places CSV export / import (Check file first)
+(function () {
+  const msg = document.getElementById('hsmsg'), file = document.getElementById('hsfile');
+  if (!msg) return;
+  async function send(dry) {
+    if (!file.files[0]) { msg.className = 'err'; msg.textContent = 'Choose the CSV file first.'; return; }
+    const fd = new FormData(); fd.append('file', file.files[0]);
+    msg.className = 'hint'; msg.textContent = dry ? 'Checking…' : 'Importing…';
+    try {
+      const r = await fetch('/api/places/import' + (dry ? '?dry=1' : ''), {method: 'POST', body: fd});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Request failed');
+      const bits = [(dry ? 'Would update ' : 'Updated ') + d.updated + ' place' + (d.updated === 1 ? '' : 's'),
+                    d.unchanged + ' unchanged'];
+      if (!dry && d.stops_filled) bits.push(d.stops_filled + ' past stop' + (d.stops_filled === 1 ? '' : 's') + ' filled in');
+      msg.className = d.errors.length ? 'err' : 'ok';
+      msg.textContent = bits.join(' · ') + '.' + (d.errors.length ? ' Fix these first (nothing was saved): ' + d.errors.join('; ') : '') +
+        (d.not_found.length ? ' Not found: ' + d.not_found.join('; ') + '.' : '');
+      if (!dry && !d.errors.length) load();
+    } catch (e) { msg.className = 'err'; msg.textContent = e.message; }
+  }
+  document.getElementById('hscheck').onclick = () => send(true);
+  document.getElementById('hsimport').onclick = () => send(false);
+})();

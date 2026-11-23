@@ -615,3 +615,9 @@ D. Later / parked
   `follow_ups[]`; `follow_up_id` on every follow-up; day `report_key` = the date. Payload stop `uid`.
 - **Technician**: Settings → General → Technician (`TECH_NAME`, `TECH_EMAIL`). Report top-level `technician` {name, email};
   PDF top section "Technician" row when set; email body `Technician:` line after `Dates:`; export warns (never blocks) when either is blank.
+- **HubSpot company IDs**: `known_sites.hubspot_company_id` (digits only, `known.hubspot_id`) is edited in Places → Edit place
+  (client places) or in bulk: Places → "HubSpot company IDs (CSV)": `GET /api/places/export.csv` (place_id, name, kind, address,
+  hubspot_company_id) and `POST /api/places/import[?dry=1]` (matches place_id, else name + address; only that column; blank cell =
+  unchanged; never creates places; a bad ID blocks the file). `known.fill_stop_hubspot` copies a place's ID to its CONFIRMED stops
+  that have none (run by `service._finish`, place PATCH and import); a stop's ID is never rewritten, except that changing a stop's
+  saved place clears it so the new place's ID is copied.

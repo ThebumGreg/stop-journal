@@ -194,6 +194,7 @@ def rebuild_drives(conn, cfg, date):
 
 
 def _finish(conn, cfg, date):
+    known.fill_stop_hubspot(conn)      # confirmed stops on a place with a HubSpot company ID get it (never rewritten)
     _resequence(conn, date)
     rebuild_drives(conn, cfg, date)
     conn.commit()
@@ -718,6 +719,8 @@ def patch_stop(conn, cfg, sid, f):
             if hint:         # same business as before: start from the category used last time
                 upd["work_category"] = hint
     upd["edited"] = 1
+    if "known_site_id" in upd and upd["known_site_id"] != s["known_site_id"]:
+        upd["hubspot_company_id"] = None      # a different place: its company ID is copied in by _finish
     sets = ", ".join(f"{k}=?" for k in upd)  # keys are whitelisted above
     conn.execute(f"UPDATE stops SET {sets} WHERE id=?", (*upd.values(), sid))
     _finish(conn, cfg, date)

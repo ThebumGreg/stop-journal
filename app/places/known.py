@@ -95,7 +95,8 @@ def site_dict(r):
             "category": r["category"] or "", "kind": r["kind"] or "client",
             "default_status": r["default_status"] or "Draft",
             "times_confirmed": r["times_confirmed"] or 0, "last_confirmed": r["last_confirmed"],
-            "link_id": r["link_id"], "old_address": bool(r["old_address"])}
+            "link_id": r["link_id"], "old_address": bool(r["old_address"]),
+            "hubspot_company_id": r["hubspot_company_id"] or ""}
 
 
 def list_sites(conn, kind="", q=""):
@@ -148,9 +149,105 @@ def _fields(f, partial):
     if "radius_m" in f and f["radius_m"] not in (None, ""):
         r = _coord(f["radius_m"], 20, 2000, "Radius")
         out["radius_m"] = r
+    if "hubspot_company_id" in f:
+        out["hubspot_company_id"] = hubspot_id(f["hubspot_company_id"])
     if not partial or "lat" in f or "lon" in f:
         out["lat"] = _coord(f.get("lat"), -90, 90, "Latitude")
         out["lon"] = _coord(f.get("lon"), -180, 180, "Longitude")
+    return out
+
+
+def hubspot_id(v):
+    """A HubSpot company ID: digits only (HubSpot record IDs are numbers). Blank clears it."""
+    v = str(v if v is not None else "").strip()
+    if v and (not v.isdigit() or len(v) > 20):
+        raise EditError("A HubSpot company ID is a number (from the company's page in HubSpot, the digits in its URL).")
+    return v or None
+
+
+def fill_stop_hubspot(conn, site_ids=None):
+    """Copy a place's HubSpot company ID to its CONFIRMED stops that have none yet. A stop that already has one is
+    never rewritten (the ID it was reported with stays), so later edits on the place do not change history."""
+    q = ("UPDATE stops SET hubspot_company_id=(SELECT k.hubspot_company_id FROM known_sites k WHERE k.id=stops.known_site_id) "
+         "WHERE status='Confirmed' AND known_site_id IS NOT NULL AND COALESCE(hubspot_company_id,'')='' "
+         "AND (SELECT COALESCE(k.hubspot_company_id,'') FROM known_sites k WHERE k.id=stops.known_site_id)!=''")
+    if site_ids is not None:
+        ids = list(site_ids)
+        if not ids:
+            return 0
+        q += f" AND known_site_id IN ({','.join('?' * len(ids))})"
+        return conn.execute(q, ids).rowcount
+    return conn.execute(q).rowcount
+
+
+# ---- places CSV (mainly to fill in HubSpot company IDs in bulk) ------------------------------------------
+CSV_COLUMNS = ["place_id", "name", "kind", "address", "hubspot_company_id"]
+
+
+def export_csv(conn):
+    import csv
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(CSV_COLUMNS)
+    for r in conn.execute("SELECT * FROM known_sites ORDER BY kind, lower(name), id"):
+        w.writerow([r["id"], r["name"], r["kind"] or "client", r["address"] or "", r["hubspot_company_id"] or ""])
+    return buf.getvalue()
+
+
+def import_csv(conn, text, dry=False):
+    """Update HubSpot company IDs from a CSV (the export, edited). Rows match by place_id, else by name + address
+    (case-insensitive). Only hubspot_company_id is changed; an empty cell leaves the place as it is; places are never
+    created or deleted here. Confirmed stops on an updated place that have no ID yet get it too.
+    Returns {updated, unchanged, not_found: [rows], errors: [..], stops_filled, dry}."""
+    import csv
+    import io
+    rows = list(csv.DictReader(io.StringIO(text)))
+    if not rows:
+        raise EditError("The file has no rows.")
+    norm = {(h or "").strip().lower().replace(" ", "_"): h for h in rows[0].keys()}
+    col = lambda *names: next((norm[n] for n in names if n in norm), None)
+    c_id, c_name, c_addr = col("place_id", "id"), col("name"), col("address")
+    c_hs = col("hubspot_company_id", "hubspot_id", "company_id", "record_id")
+    if not c_hs:
+        raise EditError("The file needs a hubspot_company_id column.")
+    out = {"updated": 0, "unchanged": 0, "not_found": [], "errors": [], "stops_filled": 0, "dry": dry}
+    changed = []
+    for n, row in enumerate(rows, start=2):
+        site = None
+        pid = (row.get(c_id) or "").strip() if c_id else ""
+        if pid.isdigit():
+            site = conn.execute("SELECT * FROM known_sites WHERE id=?", (int(pid),)).fetchone()
+        if site is None and c_name:
+            name, addr = (row.get(c_name) or "").strip(), (row.get(c_addr) or "").strip() if c_addr else ""
+            hits = conn.execute("SELECT * FROM known_sites WHERE lower(name)=lower(?) AND lower(COALESCE(address,''))=lower(?)",
+                                (name, addr)).fetchall()
+            site = hits[0] if len(hits) == 1 else None
+        raw = (row.get(c_hs) or "").strip()
+        if site is None:
+            if raw:
+                out["not_found"].append(f"Row {n}: {(row.get(c_name) or '').strip() if c_name else pid or '?'}")
+            continue
+        if not raw:
+            out["unchanged"] += 1
+            continue
+        try:
+            v = hubspot_id(raw)
+        except EditError as e:
+            out["errors"].append(f"Row {n} ({site['name']}): {e}")
+            continue
+        if v == (site["hubspot_company_id"] or None):
+            out["unchanged"] += 1
+            continue
+        changed.append((site["id"], v))
+    out["updated"] = len(changed)
+    if dry or out["errors"]:
+        conn.rollback()
+        return out
+    for sid, v in changed:
+        conn.execute("UPDATE known_sites SET hubspot_company_id=? WHERE id=?", (v, sid))
+    out["stops_filled"] = fill_stop_hubspot(conn, [sid for sid, _ in changed])
+    conn.commit()
     return out
 
 

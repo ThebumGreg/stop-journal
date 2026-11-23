@@ -29,7 +29,7 @@ TEXT_SEARCH_FALLOFF_M = 50000  # free-text hits: nearer-to-stop still ranks firs
 
 FILE_TOKEN_S = 600       # a download link made for Safari works for 10 minutes
 FILE_PATHS = ("/api/export.", "/api/debug/", "/api/parts/template.csv", "/api/parts/export.csv", "/api/tools/export.csv",
-              "/api/tools/template.csv",
+              "/api/tools/template.csv", "/api/places/export.csv",
               "/settings/backup")
 
 def create_app(cfg=None, client=None, provider=None, start_background=None):
@@ -1077,8 +1077,30 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
 
         def go(conn):
             known.update_site(conn, sid, b)
+            if "hubspot_company_id" in b:
+                known.fill_stop_hubspot(conn, [sid])
+                conn.commit()
             return known.site_dict(known.get_site(conn, sid))
         return catalog(go)
+
+    @app.get("/api/places/export.csv")
+    def places_export():
+        def go(conn, cfg):
+            return Response(known.export_csv(conn), mimetype="text/csv",
+                            headers={"Content-Disposition": "attachment; filename=jobhub-places.csv"})
+        return with_conn(go)
+
+    @app.post("/api/places/import")
+    def places_import():
+        """Fill in HubSpot company IDs in bulk from the places CSV (Check file = ?dry=1)."""
+        f = request.files.get("file")
+        if not f:
+            return jsonify(error="Choose a CSV file."), 400
+        try:
+            text = f.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return jsonify(error="The file is not UTF-8 text (save it as CSV UTF-8)."), 400
+        return catalog(lambda conn: known.import_csv(conn, text, dry=request.args.get("dry") == "1"))
 
     @app.delete("/api/places/<int:sid>")
     def places_delete(sid):

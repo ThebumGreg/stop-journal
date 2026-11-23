@@ -65,6 +65,18 @@
     </select>
   </div>
   <div id="list"></div>
+
+  <details id="hsbox" style="margin-top:16px">
+    <summary>HubSpot company IDs (CSV)</summary>
+    <p class="hint">Download the places, fill in the <code>hubspot_company_id</code> column (the digits in the company's
+      HubSpot URL), and import it. Only that column is read; an empty cell leaves the place as it is. Confirmed stops at
+      those places that have no ID yet get it too.</p>
+    <div class="row"><a class="btn" href="/api/places/export.csv" data-file="places CSV">Download places CSV</a></div>
+    <div class="row" style="margin-top:8px"><input type="file" id="hsfile" accept=".csv,text/csv"></div>
+    <div class="row" style="margin-top:8px"><button type="button" id="hscheck">Check file</button>
+      <button type="button" class="primary" id="hsimport">Import</button></div>
+    <div id="hsmsg" class="hint"></div>
+  </details>
 </main>
 <script src="{{ url_for('static', filename='places.js') }}"></script>
 </body>
