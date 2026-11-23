@@ -10,6 +10,7 @@ overwrite.
 """
 import csv
 import io
+import json
 import os
 import time
 from datetime import date
@@ -89,8 +90,13 @@ def _fields(f, partial):
 
 def tool_dict(conn, r):
     today = date.today().isoformat()
-    files = [{"id": x["id"], "kind": x["kind"]} for x in
-             conn.execute("SELECT id, kind FROM tool_files WHERE tool_id=? ORDER BY id", (r["id"],))]
+    files = []
+    for x in conn.execute("SELECT id, kind, read_json FROM tool_files WHERE tool_id=? ORDER BY id", (r["id"],)):
+        try:
+            read = json.loads(x["read_json"]) if x["read_json"] else None
+        except ValueError:
+            read = None
+        files.append({"id": x["id"], "kind": x["kind"], "read": read})
     return {"id": r["id"], "name": r["name"], "make": r["make"] or "", "model": r["model"] or "",
             "serial": r["serial"] or "", "category": r["category"] or "", "purchased": r["purchased"] or "",
             "price": r["price"], "vendor": r["vendor"] or "", "warranty_until": r["warranty_until"] or "",
@@ -150,7 +156,8 @@ def delete(conn, data_dir, tid):
 
 
 # ---- receipts and photos ----------------------------------------------------------------
-def add_file(conn, data_dir, tid, raw, kind="receipt"):
+def add_file(conn, data_dir, tid, raw, kind="receipt", reader=None):
+    """Attach a picture. With `reader` (receipts on, kind receipt) the receipt is read once and the suggestion kept."""
     get(conn, tid)
     if kind not in KINDS:
         raise EditError("Choose Receipt or Photo.")
@@ -165,9 +172,27 @@ def add_file(conn, data_dir, tid, raw, kind="receipt"):
     except OSError:
         conn.rollback()
         raise EditError("Could not save the picture on the server (is the data folder writable?).")
-    conn.execute("UPDATE tool_files SET path=? WHERE id=?", (rel, cur.lastrowid))
+    fid = cur.lastrowid
+    conn.execute("UPDATE tool_files SET path=? WHERE id=?", (rel, fid))
     conn.commit()
+    if reader and kind == "receipt":
+        set_read(conn, fid, reader(data))
     return tool_dict(conn, get(conn, tid))
+
+
+def set_read(conn, fid, d):
+    conn.execute("UPDATE tool_files SET read_json=? WHERE id=?", (json.dumps(d), fid))
+    conn.commit()
+
+
+def dismiss_read(conn, fid):
+    r = conn.execute("SELECT tool_id, read_json FROM tool_files WHERE id=?", (fid,)).fetchone()
+    if not r:
+        raise EditError("That picture is gone.")
+    d = json.loads(r["read_json"] or "{}")
+    d["dismissed"] = True
+    set_read(conn, fid, d)
+    return tool_dict(conn, get(conn, r["tool_id"]))
 
 
 def get_file(conn, data_dir, fid):

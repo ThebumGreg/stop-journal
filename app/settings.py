@@ -81,10 +81,11 @@ SPEC = [
                   "match too). Default onsite."),
     ]),
     ("Receipts", [
-        dict(key="receipt_reader", label="Read receipts with", kind="choice", choices=["off", "google_vision"],
-             help="google_vision: each receipt photo is sent to Google Cloud Vision to read the total (and gallons and "
-                  "price on a fuel receipt). You always confirm before anything is filled in. The photo has no GPS. "
-                  "Free for the first 1000 a month."),
+        dict(key="receipt_reader", label="Read receipts with", kind="choice", choices=["off", "google_vision", "claude"],
+             help="google_vision: Google Cloud Vision reads the total (and gallons and price on a fuel receipt); free for "
+                  "the first 1000 a month. claude: Claude (the key in Settings → AI) also reads the store, date, tax and "
+                  "each line item, and handles faded receipts better; about 2-3 cents each. Either way the photo has no "
+                  "GPS and you always confirm before anything is filled in."),
         dict(key="receipt_key", label="Google key for receipts (optional)", kind="secret",
              help="Blank = use the Google Places key. Its Google Cloud project needs “Cloud Vision API” enabled."),
         dict(key="receipt_monthly_cap", label="Most receipts to read per month", kind="int", lo=0, hi=5000,

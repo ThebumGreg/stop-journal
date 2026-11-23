@@ -589,8 +589,27 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     @app.post("/api/tools/<int:tid>/files")
     def tools_file_add(tid):
         f = request.files.get("file")
-        return with_conn(lambda conn, cfg: jsonify(equipment.add_file(conn, cfg.data_dir, tid, f.read() if f else b"",
-                                                                      request.form.get("kind", "receipt"))))
+
+        def go(conn, cfg):
+            reader = (lambda data: receipts.extract(conn, cfg, data)) if cfg.receipt_reader in receipts.READERS else None
+            return jsonify(equipment.add_file(conn, cfg.data_dir, tid, f.read() if f else b"",
+                                              request.form.get("kind", "receipt"), reader))
+        return with_conn(go)
+
+    @app.post("/api/tool-files/<int:fid>/read")
+    def tools_file_read(fid):
+        def go(conn, cfg):
+            data = equipment.get_file(conn, cfg.data_dir, fid)
+            if data is None:
+                raise service.EditError("The picture file is missing.")
+            equipment.set_read(conn, fid, receipts.extract(conn, cfg, data))
+            tid = conn.execute("SELECT tool_id FROM tool_files WHERE id=?", (fid,)).fetchone()["tool_id"]
+            return jsonify(equipment.tool_dict(conn, equipment.get(conn, tid)))
+        return with_conn(go)
+
+    @app.post("/api/tool-files/<int:fid>/dismiss-read")
+    def tools_file_dismiss(fid):
+        return catalog(lambda conn: equipment.dismiss_read(conn, fid))
 
     @app.get("/api/tool-files/<int:fid>.jpg")
     def tools_file_get(fid):

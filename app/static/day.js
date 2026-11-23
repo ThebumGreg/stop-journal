@@ -1234,18 +1234,54 @@ function receiptHints(s, err) {
         const body = {};
         if (r.total != null) body.total = r.total;
         if (r.gallons != null) body.gallons = r.gallons;
-        run(() => api('PUT', '/api/stops/' + s.id + '/fuel', body), err);
+        run(async () => {
+          const d = await api('PUT', '/api/stops/' + s.id + '/fuel', body);
+          return r.store && !s.business_name ? api('PATCH', '/api/stops/' + s.id, {business_name: r.store}) : d;   // the station's name too
+        }, err);
       };
-      hint.append(el('div', 'n', '🧾 Receipt says: ' + bits.join(' · ')),
+      hint.append(el('div', 'n', '🧾 Receipt says: ' + bits.join(' · ') + (r.store ? ' (' + r.store + ')' : '')),
                   el('div', 'm', r.checks ? '✓ Gallons × price matches the total.' : 'Check these against the receipt before using them.'),
                   btnRow(use, ignore));
     } else {
-      if (r.total == null) return;
-      if ((s.parts || []).some(x => x.expense && Math.abs((x.unit_cost || 0) - r.total) < 0.005)) return;  // already added
-      const use = el('button', 'primary', 'Add ' + $(r.total) + ' as an expense'); use.type = 'button';
-      use.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/parts',
-                                        {name: 'Store purchase', type: 'expense', qty: 1, unit_cost: r.total}), err, () => { loadParts(); });
-      hint.append(el('div', 'n', '🧾 Receipt total: ' + $(r.total)), btnRow(use, ignore));
+      if (r.total == null && !(r.items || []).length) return;
+      const where = [r.store, r.date].filter(Boolean).join(' · ');
+      hint.append(el('div', 'n', '🧾 Receipt' + (where ? ' – ' + where : '') + (r.total != null ? ': ' + $(r.total) : '') +
+                                 (r.tax ? ' (tax ' + $(r.tax) + ')' : '')));
+      const added = (s.parts || []).some(x => x.expense && r.total != null && Math.abs((x.unit_cost || 0) - r.total) < 0.005);
+      const acts_ = [];
+      if (r.total != null && !added) {
+        const use = el('button', 'primary', 'Add ' + $(r.total) + ' as an expense'); use.type = 'button';
+        use.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/parts',
+                                          {name: r.store ? 'Purchase – ' + r.store : 'Store purchase', type: 'expense', qty: 1, unit_cost: r.total}),
+                                err, () => { loadParts(); });
+        acts_.push(use);
+      }
+      // line items: add any of them to this stop as parts (a part you already have keeps your price; a new one starts
+      // at the receipt price, which you can change on the Truck page)
+      const have = new Set((s.parts || []).filter(x => !x.expense).map(x => x.name.toLowerCase()));
+      const items = (r.items || []).filter(it => !have.has(it.description.toLowerCase()));
+      if (items.length) {
+        const det = el('details');
+        det.append(el('summary', null, 'Items on the receipt (' + items.length + ')'));
+        items.forEach(it => {
+          const row = el('div', 'prow add one');
+          row.append(el('div', 'pn', (it.qty && it.qty !== 1 ? it.qty + ' × ' : '') + it.description +
+                                     (it.unit_price != null ? ' · ' + $(it.unit_price) : '')));
+          const b = el('button', null, '+ Add'); b.type = 'button';
+          b.title = 'Add to this stop\'s parts';
+          b.onclick = () => {
+            const m = S.parts.find(p => p.name.toLowerCase() === it.description.toLowerCase() || (it.sku && p.sku && p.sku.toLowerCase() === it.sku.toLowerCase()));
+            const body = m ? {part_id: m.id, qty: it.qty || 1}
+                           : {name: it.description, sku: it.sku || null, qty: it.qty || 1, unit_cost: it.unit_price, type: 'part'};
+            run(() => api('POST', '/api/stops/' + s.id + '/parts', body), err, () => { loadParts(); });
+          };
+          row.append(b);
+          det.append(row);
+        });
+        hint.append(det);
+      }
+      acts_.push(ignore);
+      hint.append(btnRow(...acts_));
     }
     box.append(hint);
   });

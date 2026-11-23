@@ -856,7 +856,38 @@ async function toolPage(id) {
       return l;
     };
     const row = el('div', 'row'); row.append(up('receipt'), up('photo'));
-    files.append(th, row, el('div', 'hint', 'Pictures are shrunk and their location data removed. They are in the full backup.'));
+    // what the receipt reader found on the newest receipt: offer it, never fill it in by itself
+    const rf = x.files.filter(f => f.kind === 'receipt' && f.read && !f.read.dismissed).pop();
+    const sug = el('div');
+    if (rf && !rf.read.ok) {
+      const again = el('button', null, 'Try again'); again.type = 'button';
+      again.onclick = async () => { again.textContent = 'Reading…'; try { await api('POST', '/api/tool-files/' + rf.id + '/read'); route(); } catch (e) { err.textContent = e.message; } };
+      sug.append(el('div', 'hint', 'Could not read the receipt: ' + rf.read.error), again);
+    } else if (rf) {
+      const r = rf.read;
+      const price = r.items && r.items.length === 1 && r.items[0].amount != null ? r.items[0].amount : r.total;
+      const bits = [price != null ? money(price) : '', r.date, r.store].filter(Boolean);
+      const same = (price == null || price === x.price) && (!r.date || r.date === x.purchased) && (!r.store || r.store === x.vendor);
+      if (bits.length && !same) {
+        const box = el('div', 'box');
+        box.append(el('div', null, '🧾 Receipt says: ' + bits.join(' · ')));
+        if (r.items && r.items.length > 1) box.append(el('div', 'hint', r.items.length + ' items on it; the price used is the receipt total. Change it if the tool was only part of it.'));
+        const use = el('button', 'primary', 'Use these'); use.type = 'button';
+        use.onclick = async () => {
+          const b = {};
+          if (price != null) b.price = price;
+          if (r.date) b.purchased = r.date;
+          if (r.store) b.vendor = r.store;
+          try { await api('PATCH', '/api/tools/' + id, b); route(); } catch (e) { err.textContent = e.message; }
+        };
+        const ign = el('button', null, 'Ignore'); ign.type = 'button';
+        ign.onclick = async () => { try { await api('POST', '/api/tool-files/' + rf.id + '/dismiss-read'); route(); } catch (e) { err.textContent = e.message; } };
+        const rr = el('div', 'row'); rr.append(use, ign);
+        box.append(rr);
+        sug.append(box);
+      }
+    }
+    files.append(th, sug, row, el('div', 'hint', 'Pictures are shrunk and their location data removed. They are in the full backup.'));
     parts_.push(files);
   }
   parts_.push(acts);

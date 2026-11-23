@@ -103,3 +103,71 @@ def polish(conn, cfg, text, client=None):
     if resp.stop_reason == "max_tokens":
         raise EditError("The AI's answer was cut off. Try a shorter piece.")
     return out
+
+
+# ---- receipt reader (Settings → Receipts → claude) -----------------------------------------------
+RECEIPT_SYSTEM = """You read photos of purchase receipts for a field service technician (fuel, hardware and supply stores, \
+tool purchases). Extract exactly what is printed. Use null for anything not on the receipt or not readable; never \
+guess a number. Amounts are in the receipt's currency without symbols. Dates as YYYY-MM-DD. For fuel receipts give \
+gallons and price per gallon as printed. Items: one entry per purchased line (not subtotal, tax, payment or change \
+lines), at most 30."""
+
+_num = {"type": ["number", "null"]}
+RECEIPT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "store": {"type": ["string", "null"]},
+        "date": {"type": ["string", "null"]},
+        "total": _num, "tax": _num, "gallons": _num, "price_per_gallon": _num,
+        "is_fuel": {"type": "boolean"},
+        "items": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"description": {"type": "string"}, "sku": {"type": ["string", "null"]},
+                           "qty": _num, "unit_price": _num, "amount": _num},
+            "required": ["description", "sku", "qty", "unit_price", "amount"],
+            "additionalProperties": False}},
+    },
+    "required": ["store", "date", "total", "tax", "gallons", "price_per_gallon", "is_fuel", "items"],
+    "additionalProperties": False,
+}
+
+
+def read_receipt(cfg, jpeg, client=None):
+    """A receipt photo -> {store, date, total, tax, gallons, price_per_gallon, is_fuel, items}. Raises AIError."""
+    import base64
+    import json
+    import anthropic
+    if not cfg.anthropic_key:
+        raise AIError("No Anthropic API key: add one in Settings → AI.")
+    client = client or _client(cfg)
+    try:
+        resp = client.beta.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            output_config={"effort": "low", "format": {"type": "json_schema", "schema": RECEIPT_SCHEMA}},
+            system=RECEIPT_SYSTEM,
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                             "data": base64.standard_b64encode(jpeg).decode()}},
+                {"type": "text", "text": "Read this receipt."}]}],
+        )
+    except anthropic.AuthenticationError:
+        raise AIError("The Anthropic API key was refused. Check it in Settings → AI.")
+    except anthropic.RateLimitError:
+        raise AIError("Too many requests right now (or the account's spend limit was reached). Try again in a minute.")
+    except anthropic.APIStatusError as e:
+        raise AIError(f"The AI service answered {e.status_code}.")
+    except anthropic.APIConnectionError:
+        raise AIError("Could not reach the AI service.")
+    if resp.stop_reason == "refusal":
+        raise AIError("The AI declined to read this picture.")
+    if resp.stop_reason == "max_tokens":
+        raise AIError("The receipt is too long to read in one go.")
+    text = next((b.text for b in resp.content if b.type == "text"), "")
+    try:
+        d = json.loads(text)
+    except ValueError:
+        raise AIError("The AI's answer could not be read. Try again.")
+    return d

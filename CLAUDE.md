@@ -451,7 +451,14 @@ stop departed 12:21, and listed billable parts with no cost.
   messages. ONLY the Work performed text is sent (wrapped in <notes>), with a system prompt that fixes language and never changes
   facts, numbers, part or model names. `POST /api/notes/polish {text}` → {text}; `GET /api/ai/status`. The sheet's
   "✨ Polish notes" (hidden without a key) shows a Suggested box with Use it / Keep mine; nothing is replaced without a tap.
-- Not built: the AI receipt reader (option 3); the user chose notes only for now.
+- **AI receipt reader** (Settings → Receipts → `claude`, uses the Settings → AI key; counted against RECEIPT_MONTHLY_CAP):
+  `ai.read_receipt` sends the photo with a JSON schema (`output_config.format`, `RECEIPT_SCHEMA`: store, date, total, tax,
+  gallons, price_per_gallon, is_fuel, items[{description, sku, qty, unit_price, amount}] ≤ 30), effort low, server-side fallback
+  on. `receipts.claude` cleans it (fuel numbers only when is_fuel and in range, checks, date must be YYYY-MM-DD) and returns
+  `fields`; `receipts.extract` is shared by stop receipts (`photos.read_json`) and tool receipts (`tool_files.read_json`,
+  `/api/tool-files/<id>/read`, `/dismiss-read`). Stop sheet: store/date/tax shown; gas Use these also names the station;
+  "Items on the receipt" with + Add per line (an existing part keeps its catalog price; a new part starts at the receipt
+  price). Tool page: "Receipt says: $179 · 2026-03-14 · Home Depot" → Use these (price, bought on, vendor) / Ignore.
 
 ## Poor signal (2026-11-23)
 - The stop sheet writes every change of its typed fields (FIELDS) to localStorage `jobhub-draft-<stop id>` at once (`keepDraft`),

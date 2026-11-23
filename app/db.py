@@ -273,6 +273,7 @@ MIGRATIONS = [
     ("parts", "shelf", "TEXT"),
     ("parts", "last_cost", "REAL"),
     ("stops", "fuel_check", "INTEGER"),
+    ("tool_files", "read_json", "TEXT"),
 ]
 
 

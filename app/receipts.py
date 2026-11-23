@@ -57,7 +57,44 @@ def google_vision(cfg, jpeg, session=None):
     return {"text": (res.get("fullTextAnnotation") or {}).get("text", "")}
 
 
-READERS = {"google_vision": google_vision}      # an AI reader goes here later: returns {"text": ..., "fields": {...}}
+def claude(cfg, jpeg, session=None):
+    """Claude reads the receipt itself (no text step): store, date, totals, fuel numbers and line items."""
+    from . import ai
+    try:
+        d = ai.read_receipt(cfg, jpeg)
+    except ai.AIError as e:
+        raise ReceiptError(str(e))
+    num = lambda v: round(float(v), 4) if isinstance(v, (int, float)) and v >= 0 else None
+    total, gallons, ppg = num(d.get("total")), num(d.get("gallons")), num(d.get("price_per_gallon"))
+    if not d.get("is_fuel"):
+        gallons = ppg = None
+    if gallons is not None and not 0.5 <= gallons <= 60:
+        gallons = ppg = None
+    if ppg is not None and not 1.0 <= ppg <= 15:
+        ppg = None
+    if gallons is None and ppg and total:
+        gallons = round(total / ppg, 3)
+    if ppg is None and gallons and total:
+        ppg = round(total / gallons, 3)
+    items = []
+    for it in (d.get("items") or [])[:30]:
+        desc = str(it.get("description") or "").strip()[:120]
+        if not desc:
+            continue
+        qty, unit, amount = num(it.get("qty")), num(it.get("unit_price")), num(it.get("amount"))
+        if unit is None and amount is not None:
+            unit = round(amount / qty, 4) if qty else amount
+        items.append({"description": desc, "sku": str(it.get("sku") or "").strip()[:40], "qty": qty or 1,
+                      "unit_price": unit, "amount": amount})
+    date = str(d.get("date") or "").strip()
+    return {"fields": {
+        "total": total, "gallons": gallons, "price_per_gallon": ppg,
+        "checks": bool(total and gallons and ppg and abs(gallons * ppg - total) <= max(0.02 * total, 0.05)),
+        "store": str(d.get("store") or "").strip()[:80], "date": date if re.match(r"^\d{4}-\d{2}-\d{2}$", date) else "",
+        "tax": num(d.get("tax")), "items": items}}
+
+
+READERS = {"google_vision": google_vision, "claude": claude}
 
 
 # ---- finding the numbers ----------------------------------------------------------
@@ -137,6 +174,14 @@ def _count(conn, cap):
 def read(conn, cfg, photo_id, jpeg, session=None):
     """Read one receipt and store the result on the photo (photos.read_json). Returns the stored dict.
     Errors are stored too, so the sheet can say why nothing was suggested."""
+    out = extract(conn, cfg, jpeg, session)
+    conn.execute("UPDATE photos SET read_json=? WHERE id=?", (json.dumps(out), photo_id))
+    conn.commit()
+    return out
+
+
+def extract(conn, cfg, jpeg, session=None):
+    """Run the chosen reader on a receipt (counted against the monthly cap): {ok, reader, total, …} or {ok: False, error}."""
     reader = READERS.get(cfg.receipt_reader)
     if not reader:
         raise EditError("Receipt reading is off (Settings → Receipts).")
@@ -150,6 +195,4 @@ def read(conn, cfg, photo_id, jpeg, session=None):
                    "Try a flat, well-lit photo that fills the screen."}
     except ReceiptError as e:
         out = {"ok": False, "reader": cfg.receipt_reader, "error": str(e)}
-    conn.execute("UPDATE photos SET read_json=? WHERE id=?", (json.dumps(out), photo_id))
-    conn.commit()
     return out

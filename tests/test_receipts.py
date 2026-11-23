@@ -84,3 +84,76 @@ def test_reader_off_errors_and_cap(tmp_path, vision):
     assert not p["read"]["ok"] and "Cloud Vision API" in p["read"]["error"]
     p2 = next(s for s in upload(c2, sid, jpeg_with_gps(80, 60)).json["stops"] if s["id"] == sid)["photos"][1]
     assert "limit reached" in p2["read"]["error"] and len(vision.calls) == 1
+
+
+# ---- Claude reader -------------------------------------------------------------------
+import io
+import json as _json
+from types import SimpleNamespace as NS
+
+
+class FakeClaude:
+    def __init__(self, data):
+        self.data, self.calls = data, []
+        self.beta = NS(messages=self)
+
+    def create(self, **kw):
+        self.calls.append(kw)
+        return NS(stop_reason="end_turn", content=[NS(type="text", text=_json.dumps(self.data))])
+
+
+STORE_DATA = {"store": "Home Depot", "date": "2026-11-18", "total": 86.4, "tax": 6.6, "gallons": None,
+              "price_per_gallon": None, "is_fuel": False,
+              "items": [{"description": "1/2 in. ball valve", "sku": "BV-050", "qty": 2, "unit_price": 8.75, "amount": 17.5},
+                        {"description": "PTFE tape", "sku": None, "qty": None, "unit_price": None, "amount": 2.1}]}
+
+
+def test_claude_reads_store_receipt_with_items(tmp_path, monkeypatch):
+    from app import ai
+    fake = FakeClaude(STORE_DATA)
+    monkeypatch.setattr(ai, "_client", lambda cfg: fake)
+    c = make(tmp_path, receipt_reader="claude", anthropic_key="sk-test")
+    sid = c.get(f"/api/day/{D}").json["stops"][0]["id"]
+    r = upload(c, sid, jpeg_with_gps(80, 60))
+    read = next(s for s in r.json["stops"] if s["id"] == sid)["photos"][0]["read"]
+    assert read["ok"] and read["reader"] == "claude" and read["store"] == "Home Depot" and read["date"] == "2026-11-18"
+    assert read["total"] == 86.4 and read["tax"] == 6.6 and read["gallons"] is None
+    assert read["items"][0] == {"description": "1/2 in. ball valve", "sku": "BV-050", "qty": 2, "unit_price": 8.75, "amount": 17.5}
+    assert read["items"][1]["unit_price"] == 2.1 and read["items"][1]["qty"] == 1
+    kw = fake.calls[0]
+    assert kw["model"] == "claude-opus-5-5" and kw["output_config"]["format"]["type"] == "json_schema"
+    img = kw["messages"][0]["content"][0]
+    assert img["type"] == "image" and img["source"]["media_type"] == "image/jpeg"
+
+
+def test_claude_fuel_receipt_and_tool_receipt(tmp_path, monkeypatch):
+    from app import ai
+    fake = FakeClaude({"store": "Chevron", "date": "2026-11-18", "total": 51.25, "tax": None, "gallons": 12.504,
+                       "price_per_gallon": 4.099, "is_fuel": True, "items": []})
+    monkeypatch.setattr(ai, "_client", lambda cfg: fake)
+    c = make(tmp_path, receipt_reader="claude", anthropic_key="sk-test")
+    sid = c.get(f"/api/day/{D}").json["stops"][0]["id"]
+    c.patch(f"/api/stops/{sid}", json={"stop_type": "gas"})
+    read = next(s for s in upload(c, sid, jpeg_with_gps(80, 60)).json["stops"] if s["id"] == sid)["photos"][0]["read"]
+    assert read["checks"] and read["store"] == "Chevron"
+    # a tool's receipt: read once, the suggestion is kept on the file
+    fake.data = {"store": "Home Depot", "date": "2026-03-14", "total": 179.0, "tax": None, "gallons": None,
+                 "price_per_gallon": None, "is_fuel": False, "items": [{"description": "DeWalt drill", "sku": None, "qty": 1,
+                                                                       "unit_price": 179.0, "amount": 179.0}]}
+    t = c.post("/api/tools", json={"name": "Cordless drill"}).json
+    r = c.post(f"/api/tools/{t['id']}/files", data={"kind": "receipt", "file": (io.BytesIO(jpeg_with_gps(80, 60)), "r.jpg")},
+               content_type="multipart/form-data").json
+    f = r["files"][0]
+    assert f["read"]["ok"] and f["read"]["total"] == 179.0 and f["read"]["date"] == "2026-03-14"
+    d = c.post(f"/api/tool-files/{f['id']}/dismiss-read").json
+    assert d["files"][0]["read"]["dismissed"]
+    c.post(f"/api/tools/{t['id']}/files", data={"kind": "photo", "file": (io.BytesIO(jpeg_with_gps(80, 60)), "p.jpg")},
+           content_type="multipart/form-data")
+    assert len(fake.calls) == 2                                    # photos are never sent
+
+
+def test_claude_reader_needs_a_key(tmp_path):
+    c = make(tmp_path, receipt_reader="claude")
+    sid = c.get(f"/api/day/{D}").json["stops"][0]["id"]
+    read = next(s for s in upload(c, sid, jpeg_with_gps(80, 60)).json["stops"] if s["id"] == sid)["photos"][0]["read"]
+    assert not read["ok"] and "Settings → AI" in read["error"]

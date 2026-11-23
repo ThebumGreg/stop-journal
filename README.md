@@ -35,8 +35,9 @@ Single user. Your location data stays on your own server.
   what is still unfinished today. The day view is under **Day**.
 - **AI notes** (optional, Anthropic API key in Settings → AI): ✨ Polish notes fixes spelling and grammar in Work performed
   and shows the result for you to accept; only that text is sent.
-- **Receipt reading** (optional, Google Cloud Vision): a receipt photo suggests the fuel total and gallons, or a store total as
-  an expense; you tap to use it.
+- **Receipt reading** (optional: Google Cloud Vision, or Claude for store, date, tax and line items): a receipt photo suggests
+  the fuel total and gallons, a store total as an expense, items to add as parts, or a tool's price, date and store; you tap to
+  use it.
 - **Places history**: tap a client, vendor, office or gas station to see every visit (date, time, work, parts, fill-ups) and
   tap a visit to open it.
 - **Outlook calendar** (optional): paste the published ICS link in Settings → Calendar; appointments with "onsite" in them show
