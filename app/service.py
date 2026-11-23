@@ -693,6 +693,15 @@ def follow_gps(conn, cfg, sid):
     return date
 
 
+def last_notes(conn, sid, name, site_id):
+    """The Work performed from the last finished visit to the same place (saved place, else same name): {date, text}."""
+    r = conn.execute(
+        "SELECT date, notes FROM stops WHERE id!=? AND status='Confirmed' AND COALESCE(trim(notes),'')!='' "
+        "AND ((? IS NOT NULL AND known_site_id=?) OR (?!='' AND lower(business_name)=lower(?))) "
+        "ORDER BY date DESC, arrive_utc DESC LIMIT 1", (sid, site_id, site_id, name or "", name or "")).fetchone()
+    return {"date": r["date"], "text": r["notes"]} if r else None
+
+
 def last_category(conn, sid, name, site_id):
     """The work category last used for this business (saved place, else same name), or ''."""
     r = conn.execute(
@@ -1167,6 +1176,8 @@ def day_payload(conn, cfg, date, include_path=False):
         "hubspot_company_id": r["hubspot_company_id"] or "",
         "edited": bool(r["edited"]), "suggest": suggestion(conn, r),
         "depart_pinned": bool(r["depart_set"] or r["times_edited"]),
+        "last_notes": None if (r["notes"] or "").strip() or r["status"] in OFF_CLOCK + ("Traffic",)
+        else last_notes(conn, r["id"], r["business_name"], r["known_site_id"]),
         "can_follow_gps": r["source"] == "detected" and not r["times_edited"] and bool(r["depart_set"]),
         "usual": parts.usual_for(conn, r) if r["status"] not in OFF_CLOCK + ("Traffic",) else [],
     } for r in _ordered(conn, date)]

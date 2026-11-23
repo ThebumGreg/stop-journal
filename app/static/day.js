@@ -510,6 +510,32 @@ function followBlock(s, err) {
 
 // Optional grammar check (LanguageTool): the button only appears when the server has one configured.
 let grammarOn = null;
+let phrases = null;
+// Under Work performed: tap-to-add quick phrases (Settings → Notes) and, on an empty note, "Start from last visit here".
+function notesHelpers(s, notes) {
+  const box = el('div');
+  const add = text => {
+    const cur = notes.value.replace(/\s+$/, '');
+    notes.value = cur ? cur + (/[.!?]$/.test(cur) ? ' ' : '. ') + text : text;
+    sheet.vals.notes = notes.value; touched();
+  };
+  if (s.last_notes && !notes.value.trim()) {
+    const ln = s.last_notes;
+    const b = el('button', 'quick', '↺ Start from last visit (' + ln.date + ')'); b.type = 'button';
+    b.title = ln.text.slice(0, 200);
+    b.onclick = () => { if (!notes.value.trim()) { notes.value = ln.text; sheet.vals.notes = ln.text; touched(); } b.remove(); };
+    box.append(b);
+  }
+  const chips = el('div', 'phrases');
+  box.append(chips);
+  (phrases ? Promise.resolve(phrases) : api('GET', '/api/note-phrases').then(d => (phrases = d.phrases), () => []))
+    .then(list => list.forEach(t => {
+      const c = el('button', null, '+ ' + t); c.type = 'button';
+      c.onclick = () => add(t);
+      chips.append(c);
+    }));
+  return box;
+}
 let aiOn = null, aiAsk = null;
 const aiStatus = () => aiOn !== null ? Promise.resolve(aiOn)
   : (aiAsk = aiAsk || api('GET', '/api/ai/status').then(r => (aiOn = r.notes), () => (aiOn = false)));
@@ -836,7 +862,7 @@ function openSheet(id) {
     if (type !== 'vendor') grid.append(sh.exp);
     grid.append(sh.fu);
     det.append(grid);
-    sec2.append(el('h3', null, '2 · Work'), labeled('Work performed', notes), grammarBlock(notes), polishBlock(notes),
+    sec2.append(el('h3', null, '2 · Work'), labeled('Work performed', notes), notesHelpers(s, notes), grammarBlock(notes), polishBlock(notes),
                 catBox, sh.parts);
     if (type === 'vendor') sec2.append(sh.exp);          // purchases are the main thing at a vendor
     sec2.append(sh.photos, det);
@@ -926,6 +952,11 @@ async function finishStop() {
     return;
   }
   S.flash = 'Stop ' + stopNum(s) + ' finished.';
+  // the next stop that still needs something: later ones first, then earlier ones
+  const i = S.stops.findIndex(x => x.id === s.id);
+  const open_ = x => x.id !== s.id && x.kind === 'stop' && (!x.stop_type || (SHEET_TYPES.includes(x.stop_type) &&
+                     ((x.needs || []).length || (x.stop_type !== 'gas' && x.status !== 'Confirmed'))));
+  S.flashNext = (S.stops.slice(i + 1).find(open_) || S.stops.slice(0, i).find(open_) || {}).id || null;
   await closeSheet(true);
 }
 
@@ -1428,6 +1459,13 @@ function toolbar() {
   }
   mk('+ Add stop', () => { S.tool = S.tool === 'add' ? null : 'add'; render(false); });
   if (S.flash) bar.append(el('span', 'hint flash', S.flash));
+  const nx = S.flash && S.flashNext && S.stops.find(x => x.id === S.flashNext);
+  if (nx) {
+    const need = !nx.stop_type ? 'needs a type' : (nx.needs || []).length ? 'needs ' + nx.needs.join(', ') : 'not finished';
+    const b = el('button', 'quick', 'Next: Stop ' + stopNum(nx) + ' ' + need + ' ›'); b.type = 'button';
+    b.onclick = () => { S.flash = ''; S.flashNext = null; setSel(nx.id, true); openSheet(nx.id); };
+    bar.append(b);
+  }
   return bar;
 }
 
@@ -1559,7 +1597,7 @@ async function load() {
   document.getElementById('toolslink').href = '/tools?date=' + S.date;
   history.replaceState(null, '', '/day/' + S.date);
   if (sheet.id) await closeSheet();
-  S.tool = null; S.sel = null; S.flash = ''; S.drafts = {}; S.open.clear(); S.openDrives.clear();
+  S.tool = null; S.sel = null; S.flash = ''; S.flashNext = null; S.drafts = {}; S.open.clear(); S.openDrives.clear();
   pathLayer.clearLayers(); candLayer.clearLayers(); markers = {};
   const m = el('div', null, 'Loading…'); m.id = 'msg'; listEl.replaceChildren(m);
   try {

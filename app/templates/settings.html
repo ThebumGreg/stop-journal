@@ -43,6 +43,9 @@
                    placeholder="Paste a value to set or replace it">
             <div class="help">Currently: <strong>{{ info.hint }}</strong>{% if info.from_env %} (from environment){% endif %}. {{ f.help }}</div>
             <label class="chk"><input type="checkbox" name="clear_{{ f.key }}" value="1"> Remove the saved value</label>
+          {% elif f.kind == 'lines' %}
+            <textarea id="{{ f.key }}" name="{{ f.key }}" rows="6" placeholder="{{ defaults[f.key] }}">{{ values[f.key] }}</textarea>
+            <div class="help">{{ f.help }} Leave empty to use the defaults.</div>
           {% elif f.kind == 'choice' %}
             <select id="{{ f.key }}" name="{{ f.key }}">
               <option value="" {% if not values[f.key] %}selected{% endif %}>Default ({{ defaults[f.key] }})</option>

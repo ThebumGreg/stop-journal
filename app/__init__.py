@@ -501,6 +501,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         kind = request.args.get("kind") if request.args.get("kind") in parts.KINDS else None
         return catalog(lambda conn: {"parts": parts.list_parts(conn, q, everything, kind)})
 
+    @app.get("/api/note-phrases")
+    def note_phrases():
+        return jsonify(phrases=[l for l in eff().note_phrases.split("\n") if l.strip()])
+
     @app.get("/api/ai/status")
     def ai_status():
         return jsonify(notes=ai.enabled(eff()))

@@ -443,6 +443,11 @@ stop departed 12:21, and listed billable parts with no cost.
 - Part rows: name with the line total ("$17.50 ($8.75 each)"), − qty + (whole steps; typing any amount still works; − stops at 1,
   ✕ removes), a labelled "Bill" switch.
 - With AI notes on, Check grammar (LanguageTool) is hidden: one writing helper.
+- Under Work performed: quick-phrase chips (Settings → Notes → Quick phrases, `NOTE_PHRASES` with | separators, kind "lines",
+  20 max; `GET /api/note-phrases`) that append to the notes, and on an empty note "↺ Start from last visit (date)" (payload
+  `last_notes` from the last Confirmed stop with notes at the same saved place, else same name).
+- After Finish the toolbar message offers "Next: Stop 4 needs notes ›" (the next stop with needs, later ones first), opening it.
+  The Grammar settings tab is now "Notes" (Quick phrases + LanguageTool).
 
 ## Tools and equipment (2026-11-23)
 - Purpose: document purchases of owned tools (about 100); no loans, no calibration, not linked to stops. `app/equipment.py`;

@@ -68,3 +68,20 @@ def test_finish_gas_needs_a_total_and_keeps_its_status(tmp_path):
     c.put(f"/api/stops/{sid}/fuel", json={"total": 40})
     s = c.post(f"/api/stops/{sid}/finish", json={}).json["stops"][0]
     assert s["status"] == "Traffic" and s["needs"] == []
+
+
+def test_quick_phrases_and_last_visit_notes(tmp_path):
+    from tests.test_export import D, make
+    c = make(tmp_path)
+    assert "Customer signed off." in c.get("/api/note-phrases").json["phrases"]
+    r = c.post("/settings", data={"note_phrases": "Swapped filter\r\n\r\n  Tested OK  \n"})
+    assert r.status_code in (200, 302)
+    assert c.get("/api/note-phrases").json["phrases"] == ["Swapped filter", "Tested OK"]
+    ss = c.get(f"/api/day/{D}").json["stops"]
+    a, b = ss[0], ss[1]
+    c.patch(f"/api/stops/{a['id']}", json={"business_name": "Acme", "status": "Confirmed", "notes": "Replaced the valve."})
+    r = c.patch(f"/api/stops/{b['id']}", json={"business_name": "Acme"}).json
+    s = next(x for x in r["stops"] if x["id"] == b["id"])
+    assert s["last_notes"] == {"date": D, "text": "Replaced the valve."}
+    r = c.patch(f"/api/stops/{b['id']}", json={"notes": "New work"}).json
+    assert next(x for x in r["stops"] if x["id"] == b["id"])["last_notes"] is None     # only offered on an empty note

@@ -100,6 +100,10 @@ SPEC = [
         dict(key="ai_monthly_cap", label="Most AI requests per month", kind="int", lo=0, hi=5000,
              help="A spending safeguard on top of the Anthropic account's own limit."),
     ]),
+    ("Quick phrases", [
+        dict(key="note_phrases", label="Phrases under Work performed", kind="lines",
+             help="One per line (20 at most). Tapping one adds it to the notes."),
+    ]),
     ("Grammar check (LanguageTool)", [
         dict(key="languagetool_url", label="Grammar check server (LanguageTool)", kind="url",
              help="Your own LanguageTool container, for example http://192.168.1.10:8010. Only the note text is "
@@ -165,7 +169,7 @@ TABS = [
     ("Calendar", ["Calendar (Outlook)"]),
     ("Receipts", ["Receipts"]),
     ("AI", ["AI (Claude)"]),
-    ("Grammar", ["Grammar check (LanguageTool)"]),
+    ("Notes", ["Quick phrases", "Grammar check (LanguageTool)"]),
     ("General", ["Stop detection", "Backups"]),
 ]
 FIELDS = {f["key"]: f for _, fs in SPEC for f in fs}
@@ -198,6 +202,11 @@ def _convert(field, raw):
         except ValueError:
             raise ValueError("must be a time like 07:30")
         return f"{int(h):02d}:{int(m):02d}"
+    if field["kind"] == "lines":
+        lines = [l.strip()[:120] for l in raw.replace("\r", "").split("\n") if l.strip()][:20]
+        if not lines:
+            raise ValueError("add at least one line, or leave it empty for the defaults")
+        return "\n".join(lines)
     if field["kind"] == "days":
         parse_days(raw)
         return raw

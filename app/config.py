@@ -48,6 +48,8 @@ class Config:
     anthropic_key: str = ""          # AI notes (Settings → AI); blank = off
     ai_notes: str = "on"
     ai_monthly_cap: int = 300
+    note_phrases: str = ("Tested, all working.\nCustomer signed off.\nCleaned up the work area.\n"
+                         "Explained the work to the customer.\nWill return with parts.")
     routing_url: str = ""    # "" = off; from_env defaults to the public OSRM server
     languagetool_url: str = ""   # "" = grammar check off
     auto_sync_min: int = 2       # day page for today syncs this often while open; 0 = off
@@ -96,6 +98,7 @@ class Config:
             anthropic_key=e("ANTHROPIC_API_KEY", "").strip(),
             ai_notes=e("AI_NOTES", "on").strip() or "on",
             ai_monthly_cap=_int("AI_MONTHLY_CAP", 300),
+            **({"note_phrases": e("NOTE_PHRASES", "").replace("|", "\n")} if e("NOTE_PHRASES", "") else {}),
             routing_url=e("ROUTING_URL", "https://router.project-osrm.org").strip().rstrip("/"),
             languagetool_url=e("LANGUAGETOOL_URL", "").strip().rstrip("/"),
             auto_sync_min=_int("AUTO_SYNC_MIN", 2),
