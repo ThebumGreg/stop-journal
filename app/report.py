@@ -223,6 +223,7 @@ def build_day(payload, cfg):
         prev_type = PLACE_TYPE.get(s.get("site_kind"), "Client")
         out_stops.append({
             "stop_number": len(out_stops) + 1,
+            "stop_uid": s.get("uid") or "",
             "business_name": s["business_name"], "address": s["address"],
             "place_type": _place_type(s["category"]),
             "latitude": s["lat"], "longitude": s["lon"],
@@ -241,7 +242,8 @@ def build_day(payload, cfg):
             "parts_used": used,
             "consumables_used": consumed,
             "expenses": spent,
-            "follow_ups": [{"what": f["text"], "owner": f["owner"], "due": f["due"]} for f in s["follow_ups"]],
+            "follow_ups": [{"what": f["text"], "owner": f["owner"], "due": f["due"], "follow_up_id": f.get("id")}
+                           for f in s["follow_ups"]],
             "photos": [p["id"] for p in s.get("photos") or []],
         })
         pic_from.append((f"Stop {len(out_stops)}, {s['business_name'] or 'no name'}, {s['arrive']}",
@@ -287,7 +289,7 @@ def build_day(payload, cfg):
     fuel = [{"arrival": s["arrive"], "departure": s["depart"], "station": s["business_name"] or "",
              **{k: (s.get("fuel") or {}).get(k) for k in ("gallons", "total", "price_per_gallon", "odometer")}}
             for s in stops if s.get("stop_type") == "gas" and s["status"] == "Traffic"]
-    return {"date": payload["date"],
+    return {"date": payload["date"], "report_key": payload["date"],
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
                         "drive_minutes": drive_min, "traffic_minutes": traffic,
@@ -310,7 +312,7 @@ def records_to_update(days):
     rows = []
     for day in days:
         for s in day["stops"]:
-            rows.append({"date": day["date"], "stop_number": s["stop_number"],
+            rows.append({"date": day["date"], "stop_number": s["stop_number"], "stop_uid": s["stop_uid"],
                          "business_name": s["business_name"], "address": s["address"],
                          "arrival": s["arrival"], "departure": s["departure"],
                          "category": s["category"], "job_reference": s["job_reference"],
@@ -326,7 +328,7 @@ def follow_ups(days):
     for day in days:
         for s in day["stops"]:
             for f in s["follow_ups"]:
-                rows.append({"date": day["date"], "stop_number": s["stop_number"],
+                rows.append({"date": day["date"], "stop_number": s["stop_number"], "stop_uid": s["stop_uid"],
                              "business_name": s["business_name"], **f})
     return rows
 

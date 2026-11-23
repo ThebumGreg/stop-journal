@@ -369,6 +369,9 @@ def redetect(conn, cfg, date, kept, run_cfg):
     # photos are kept: each goes to the new stop that covers the middle of its old stop's time
     pics = conn.execute(f"SELECT p.id, (s.arrive_utc + s.depart_utc) / 2 AS mid FROM photos p JOIN stops s ON s.id=p.stop_id "
                         f"WHERE s.date=? AND s.source!='manual'", (date,)).fetchall()
+    # stable IDs carry over the same way: each goes to the new stop covering the middle of its old stop
+    uids = conn.execute("SELECT uid, (arrive_utc + depart_utc) / 2 AS mid FROM stops WHERE date=? AND source!='manual' "
+                        "ORDER BY arrive_utc", (date,)).fetchall()
     parts.release_stops(conn, gone)
     conn.executemany("DELETE FROM follow_ups WHERE stop_id=?", [(i,) for i in gone])
     conn.executemany("DELETE FROM fuel WHERE stop_id=?", [(i,) for i in gone])
@@ -380,6 +383,13 @@ def redetect(conn, cfg, date, kept, run_cfg):
                           (date, p["mid"], p["mid"])).fetchone()
         if to:
             conn.execute("UPDATE photos SET stop_id=? WHERE id=?", (to["id"], p["id"]))
+    taken = set()
+    for u in uids:
+        to = conn.execute("SELECT id FROM stops WHERE date=? AND source!='manual' AND arrive_utc<=? AND depart_utc>=? "
+                          "ORDER BY arrive_utc LIMIT 1", (date, u["mid"], u["mid"])).fetchone()
+        if to and to["id"] not in taken and u["uid"]:
+            taken.add(to["id"])
+            conn.execute("UPDATE stops SET uid=? WHERE id=?", (u["uid"], to["id"]))
     conn.commit()
 
 
@@ -1236,7 +1246,7 @@ def day_payload(conn, cfg, date, include_path=False):
         "needs": stop_needs(r, stop_type(r, site_kind.get(r["known_site_id"]) or ""),
                             "" if r["work_category"] else last_category(conn, r["id"], r["business_name"], r["known_site_id"]),
                             fuel.get(r["id"])),
-        "id": r["id"], "seq": r["seq"], "kind": r["kind"] or "stop", "source": r["source"],
+        "id": r["id"], "uid": r["uid"], "seq": r["seq"], "kind": r["kind"] or "stop", "source": r["source"],
         "lat": r["lat"], "lon": r["lon"],
         "arrive": fmt_time(cfg, r["arrive_utc"]), "depart": fmt_time(cfg, r["depart_utc"]),
         "arrive_ts": r["arrive_utc"], "depart_ts": r["depart_utc"],

@@ -306,7 +306,14 @@ MIGRATIONS = [
     ("parts", "last_cost", "REAL"),
     ("stops", "fuel_check", "INTEGER"),
     ("tool_files", "read_json", "TEXT"),
+    ("stops", "uid", "TEXT"),
 ]
+
+
+# A random UUID (version 4 form) in SQL, so every way a stop is created gets one (see the trigger below).
+UUID_SQL = ("lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) "
+            "|| '-' || substr('89ab', 1 + abs(random()) % 4, 1) || substr(lower(hex(randomblob(2))), 2) || '-' "
+            "|| lower(hex(randomblob(6)))")
 
 
 def _migrate(conn):
@@ -314,6 +321,12 @@ def _migrate(conn):
         cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if col not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    # stops.uid: a stable ID for the report (stop numbers shift when stops are added, merged or split). Filled by a
+    # trigger on every insert that has none (Undo re-inserts rows WITH their uid, so it is restored); existing rows once.
+    conn.execute(f"UPDATE stops SET uid={UUID_SQL} WHERE uid IS NULL")
+    conn.execute(f"CREATE TRIGGER IF NOT EXISTS stops_uid AFTER INSERT ON stops WHEN NEW.uid IS NULL "
+                 f"BEGIN UPDATE stops SET uid={UUID_SQL} WHERE id=NEW.id; END")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_stops_uid ON stops(uid)")
     conn.commit()
 
 

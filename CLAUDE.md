@@ -608,3 +608,8 @@ D. Later / parked
   next to lunch made lunch swallow the whole gap). Summary adds `fuel_stop_minutes` and `short_break_minutes` (both included
   in `traffic_minutes`). Invariant test (`tests/test_paid_invariant.py`): paid_minutes = paid timesheet rows; drive_minutes =
   drive rows.
+- **Stable stop IDs**: `stops.uid` (UUID4 form), set by the SQLite trigger `stops_uid` on every insert without one (so split's
+  new part and every other new stop get one; Undo re-inserts rows with their uid) and backfilled on connect; unique index.
+  Merge keeps the earlier stop (its uid); split keeps the uid on the first part; re-detect gives each old uid to the new stop
+  covering the middle of the old one (like photos). Report: `stop_uid` in `days[].stops[]`, `records_to_update[]`, top-level
+  `follow_ups[]`; `follow_up_id` on every follow-up; day `report_key` = the date. Payload stop `uid`.
