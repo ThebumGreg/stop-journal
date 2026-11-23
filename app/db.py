@@ -237,4 +237,6 @@ def connect(data_dir):
     _migrate(conn)
     from . import photos             # pictures stored in the database by the first version move to files
     photos.move_to_files(conn, data_dir)
+    from .places import known       # one-time data repair: vendor branches saved as clients
+    known.repair_vendor_branches(conn)
     return conn

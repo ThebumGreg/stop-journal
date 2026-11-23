@@ -241,3 +241,31 @@ def test_place_history_and_gas_stations(tmp_path):
     assert 'aria-current="page"' in page and ">Places<" in page.split('aria-current="page"')[1][:20]
     day = c.get(f"/day/{D}").data.decode()
     assert 'id="toolslink"' in day and '<a href="/day" aria-current="page">Day</a>' in day
+
+
+def test_new_vendor_branch_stays_a_vendor_and_old_ones_are_repaired(tmp_path):
+    from app import db
+    from tests.test_export import D, make
+    c = make(tmp_path)
+    ss = c.get(f"/api/day/{D}").json["stops"]
+    a, b, d = ss[0], ss[1], ss[2]
+    c.post("/api/places", json={"name": "Home Depot", "lat": a["lat"], "lon": a["lon"], "kind": "vendor"})
+    c.patch(f"/api/stops/{b['id']}", json={"business_name": "Home Depot", "status": "Confirmed"})   # typed the old way
+    kinds = sorted(p["kind"] for p in c.get("/api/places").json["places"])
+    assert kinds == ["vendor", "vendor"]                        # a new branch of a vendor is a vendor
+    # a customer with the same name at two addresses (a relocation) stays a client
+    c.patch(f"/api/stops/{d['id']}", json={"business_name": "Acme Dental", "status": "Confirmed"})
+    assert next(p for p in c.get("/api/places").json["places"] if p["name"] == "Acme Dental")["kind"] == "client"
+    # data saved by the old version: a vendor branch stored as a client gets repaired once
+    conn = db.connect(str(tmp_path))
+    conn.execute("UPDATE known_sites SET kind=NULL WHERE id=(SELECT MAX(id) FROM known_sites WHERE name='Home Depot')")
+    conn.execute("DELETE FROM settings WHERE key='_fix_vendor_branches'")
+    conn.commit(); conn.close()
+    conn = db.connect(str(tmp_path))
+    assert [r["kind"] for r in conn.execute("SELECT kind FROM known_sites WHERE name='Home Depot'")] == ["vendor", "vendor"]
+    assert conn.execute("SELECT kind FROM known_sites WHERE name='Acme Dental'").fetchone()["kind"] is None
+    conn.execute("UPDATE known_sites SET kind=NULL WHERE name='Home Depot'")   # runs once only
+    conn.commit(); conn.close()
+    conn = db.connect(str(tmp_path))
+    assert conn.execute("SELECT COUNT(*) FROM known_sites WHERE kind='vendor'").fetchone()[0] == 0
+    conn.close()

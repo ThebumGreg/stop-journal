@@ -630,7 +630,7 @@ def patch_stop(conn, cfg, sid, f):
             # confirming teaches the known-sites table (once, on the transition)
             upd["known_site_id"] = known.learn(
                 conn, name, upd.get("address", s["address"] or ""), lat, lon,
-                upd.get("category", s["category"] or ""))
+                upd.get("category", s["category"] or ""), kind=upd.get("stop_type", s["stop_type"]))
         if s["status"] != "Confirmed" and not upd.get("work_category", s["work_category"]):
             hint = last_category(conn, s["id"], name, upd.get("known_site_id", s["known_site_id"]))
             if not hint:     # a vendor stop (parts pickup) is internal work unless you say otherwise

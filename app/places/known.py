@@ -40,8 +40,31 @@ def search(conn, query, limit=10):
     return [_cand(r) for r in rows]
 
 
-def learn(conn, name, address, lat, lon, category="", radius_m=None):
-    """Record a confirmed business. Returns the known_sites id."""
+def branch_kind(conn, name):
+    """The kind another place with this name already has (a new branch of a vendor or office is one too)."""
+    r = conn.execute("SELECT kind FROM known_sites WHERE lower(name)=lower(?) AND kind IN ('vendor','office') "
+                     "ORDER BY times_confirmed DESC LIMIT 1", (name,)).fetchone()
+    return r["kind"] if r else None
+
+
+def repair_vendor_branches(conn):
+    """One-time fix (2026-11-23): branches of a vendor saved as 'client' by the old learn() become vendors.
+    Only places whose name matches a vendor or office place; customer places are never touched."""
+    done = conn.execute("SELECT value FROM settings WHERE key='_fix_vendor_branches'").fetchone()
+    if done:
+        return 0
+    n = conn.execute("UPDATE known_sites SET kind=(SELECT k.kind FROM known_sites k WHERE lower(k.name)=lower(known_sites.name) "
+                     "AND k.kind IN ('vendor','office') ORDER BY k.times_confirmed DESC LIMIT 1) "
+                     "WHERE COALESCE(kind,'client')='client' AND lower(name) IN "
+                     "(SELECT lower(name) FROM known_sites WHERE kind IN ('vendor','office'))").rowcount
+    conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES ('_fix_vendor_branches', ?)", (str(n),))
+    conn.commit()
+    return n
+
+
+def learn(conn, name, address, lat, lon, category="", radius_m=None, kind=None):
+    """Record a confirmed business. Returns the known_sites id. A new place takes `kind` (the stop's type: vendor or
+    office), else the kind of another place with the same name (a new branch), else it is a client."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     for r in conn.execute("SELECT * FROM known_sites WHERE lower(name)=lower(?)",
                           (name,)):
@@ -56,10 +79,11 @@ def learn(conn, name, address, lat, lon, category="", radius_m=None):
                 (n, now, nlat, nlon, address or "", r["id"]))
             conn.commit()
             return r["id"]
+    kind = kind if kind in ("vendor", "office") else branch_kind(conn, name)
     cur = conn.execute(
-        "INSERT INTO known_sites(name,address,lat,lon,radius_m,category,"
-        "times_confirmed,last_confirmed) VALUES (?,?,?,?,?,?,1,?)",
-        (name, address, lat, lon, radius_m or DEFAULT_SITE_RADIUS_M, category, now))
+        "INSERT INTO known_sites(name,address,lat,lon,radius_m,category,kind,"
+        "times_confirmed,last_confirmed) VALUES (?,?,?,?,?,?,?,1,?)",
+        (name, address, lat, lon, radius_m or DEFAULT_SITE_RADIUS_M, category, kind, now))
     conn.commit()
     return cur.lastrowid
 
