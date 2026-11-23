@@ -232,6 +232,72 @@ def apply_places(conn, date):
                 "UPDATE stops SET business_name=?, address=?, category=?, known_site_id=?, status=? "
                 "WHERE id=?", (site["name"], site["address"] or "", f"place={site['kind']}",
                                site["id"], site["default_status"] or "Draft", s["id"]))
+    apply_trip(conn, date)
+
+
+# ---- Go to a place (Home page) --------------------------------------------
+TRIP_MAX_S = 12 * 3600       # a trip you started this long ago is forgotten
+TRIP_NEAR_M = 300            # the stop must be this close to the place (or inside its radius)
+TRIP_EARLY_S = 120           # a stop that began just before you tapped still counts (tapped in the driveway)
+KIND_TYPE = {"client": "job", "vendor": "vendor", "office": "office", "home": "personal"}
+
+
+def active_trip(conn, now=None):
+    """The place you are heading to (Home page → Go to a place), until a stop there is filled in or you cancel."""
+    now = now or int(time.time())
+    r = conn.execute("SELECT t.*, k.name, k.address, k.kind, k.lat, k.lon, k.radius_m FROM trips t "
+                     "JOIN known_sites k ON k.id=t.site_id WHERE t.cleared=0 ORDER BY t.id DESC LIMIT 1").fetchone()
+    if not r or now - r["set_at"] > TRIP_MAX_S:
+        return None
+    return r
+
+
+def start_trip(conn, cfg, site_id, now=None):
+    now = now or int(time.time())
+    site = conn.execute("SELECT * FROM known_sites WHERE id=?", (site_id,)).fetchone()
+    if not site:
+        raise EditError("That place no longer exists.")
+    date = datetime.fromtimestamp(now, ZoneInfo(cfg.app_tz)).date().isoformat()
+    conn.execute("UPDATE trips SET cleared=1 WHERE cleared=0")
+    conn.execute("INSERT INTO trips(site_id, date, set_at) VALUES (?,?,?)", (site_id, date, now))
+    conn.commit()
+    return site
+
+
+def cancel_trip(conn):
+    conn.execute("UPDATE trips SET cleared=1 WHERE cleared=0")
+    conn.commit()
+
+
+def apply_trip(conn, date):
+    """When you picked a place on the Home page and then stop there, the stop is filled in with that place (name,
+    address, saved place, type) without asking. Only the first stop near it that began after you tapped, with no
+    name yet (or a name filled in from a saved place, never one you typed), and only once."""
+    t = active_trip(conn)
+    if not t or t["stop_id"] or t["date"] != date or t["lat"] is None:
+        return None
+    near = max(TRIP_NEAR_M, t["radius_m"] or 0)
+    for s in _ordered(conn, date):
+        if s["arrive_utc"] < t["set_at"] - TRIP_EARLY_S or s["lat"] is None:
+            continue
+        if haversine_m(s["lat"], s["lon"], t["lat"], t["lon"]) > near:
+            continue
+        if s["edited"] or s["status"] == "Confirmed" or (s["business_name"] and not s["known_site_id"]):
+            return None          # you already dealt with it
+        typ = KIND_TYPE.get(t["kind"] or "client", "job")
+        status = TYPE_STATUS.get(typ, "Draft")
+        conn.execute("UPDATE stops SET business_name=?, address=?, known_site_id=?, category=?, stop_type=?, status=? "
+                     "WHERE id=?", (t["name"], t["address"] or "", t["site_id"], f"place={t['kind'] or 'client'}",
+                                    typ, status, s["id"]))
+        conn.execute("UPDATE trips SET stop_id=?, cleared=1 WHERE id=?", (s["id"], t["id"]))
+        return s["id"]
+    return None
+
+
+def last_trip(conn, date):
+    """The trip that filled in a stop today (for the Home page: "Arrived at X, stop filled in")."""
+    return conn.execute("SELECT t.stop_id, t.set_at, k.name FROM trips t JOIN known_sites k ON k.id=t.site_id "
+                        "WHERE t.date=? AND t.stop_id IS NOT NULL ORDER BY t.id DESC LIMIT 1", (date,)).fetchone()
 
 
 def _after_end(conn, cfg, date, arrive):

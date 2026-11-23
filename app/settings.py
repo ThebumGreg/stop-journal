@@ -8,7 +8,7 @@ address, user and device can be picked on the Settings page.
 import secrets
 from dataclasses import replace
 
-SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user", "calendar_url", "receipt_key", "anthropic_key")
+SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user", "calendar_url", "receipt_key", "anthropic_key", "smtp_password")
 DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
@@ -100,6 +100,20 @@ SPEC = [
         dict(key="ai_monthly_cap", label="Most AI requests per month", kind="int", lo=0, hi=5000,
              help="A spending safeguard on top of the Anthropic account's own limit."),
     ]),
+    ("Email (Gmail)", [
+        dict(key="mail_to", label="Send reports to", kind="email",
+             help="The address your work AI agent reads (your work email). Blank turns Email report off."),
+        dict(key="smtp_user", label="Gmail address that sends", kind="email",
+             help="The Gmail account the reports are sent from."),
+        dict(key="smtp_password", label="Gmail App password", kind="secret",
+             help="Not your normal password: Google Account → Security → 2-Step Verification (must be on) → App "
+                  "passwords → create one named JobHub, and paste the 16 letters. Write-only."),
+        dict(key="mail_from", label="From address (optional)", kind="email",
+             help="Blank = the Gmail address above."),
+        dict(key="smtp_host", label="Mail server", kind="text", help="smtp.gmail.com for Gmail."),
+        dict(key="smtp_port", label="Mail server port", kind="int", lo=1, hi=65535,
+             help="587 (STARTTLS) for Gmail; 465 uses SSL."),
+    ]),
     ("Quick phrases", [
         dict(key="note_phrases", label="Phrases under Work performed", kind="lines",
              help="One per line (20 at most). Tapping one adds it to the notes."),
@@ -169,6 +183,7 @@ TABS = [
     ("Calendar", ["Calendar (Outlook)"]),
     ("Receipts", ["Receipts"]),
     ("AI", ["AI (Claude)"]),
+    ("Email", ["Email (Gmail)"]),
     ("Notes", ["Quick phrases", "Grammar check (LanguageTool)"]),
     ("General", ["Stop detection", "Backups"]),
 ]
@@ -207,6 +222,11 @@ def _convert(field, raw):
         if not lines:
             raise ValueError("add at least one line, or leave it empty for the defaults")
         return "\n".join(lines)
+    if field["kind"] == "email":
+        import re
+        if not re.fullmatch(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+", raw):
+            raise ValueError("must be one email address, like name@example.com")
+        return raw
     if field["kind"] == "days":
         parse_days(raw)
         return raw

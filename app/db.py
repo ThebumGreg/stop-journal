@@ -225,6 +225,23 @@ CREATE TABLE IF NOT EXISTS undo_log (
 );
 CREATE INDEX IF NOT EXISTS idx_undo_date ON undo_log(date, id);
 
+CREATE TABLE IF NOT EXISTS email_log (
+  id INTEGER PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  date_from TEXT NOT NULL, date_to TEXT NOT NULL,
+  mail_to TEXT, subject TEXT,
+  version INTEGER, ok INTEGER, error TEXT, attached TEXT
+);
+
+CREATE TABLE IF NOT EXISTS trips (
+  id INTEGER PRIMARY KEY,
+  site_id INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  set_at INTEGER NOT NULL,
+  stop_id INTEGER,
+  cleared INTEGER DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS day_marks (
   date TEXT PRIMARY KEY,
   start_utc INTEGER,

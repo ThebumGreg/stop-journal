@@ -117,6 +117,8 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 ## Privacy and security
 - Location data stays on the user's server. The only outbound calls are place lookups,
   which send coordinates (and search text) to the chosen provider, and tile requests.
+- Email report (user-approved 2026-11-23) sends the full report (names, addresses, notes, coordinates unless left out)
+  to the user's own work address, ONLY when the user taps Email report. Never send it automatically.
 - Pushover notifications (alerts, e.g. "no location data") are the one other outbound call. Their
   text must never contain coordinates, addresses or business names: it passes through a third party.
 - Never log raw coordinates to stdout in production; no analytics or telemetry.
@@ -527,3 +529,24 @@ stop departed 12:21, and listed billable parts with no cost.
 - Keep dependencies few and pinned; write a short README as you go.
 - Use sample data until the live Recorder is confirmed reachable; never hardcode
   credentials or the user's addresses in the repo.
+
+## Email report and Go to a place (2026-11-23)
+- **Email report** (`app/mailer.py`, Gmail SMTP via smtplib, no new package): Settings → Email (`MAIL_TO`, `SMTP_USER`,
+  `SMTP_PASSWORD` secret = Gmail App password, spaces dropped for Gmail; `MAIL_FROM`, `SMTP_HOST` smtp.gmail.com, `SMTP_PORT`
+  587 STARTTLS / 465 SSL) with **Send test email** (`/settings/test-email`, uses the form's values). Reports page has an Email
+  report box under the downloads: ticks JSON / PDF / Receipts and photos (remembered per phone, `email_opts`), a confirm
+  dialog, the last sends for that range. `POST /api/export/email?from&to&omit {pdf,json,photos,anyway}`: same Draft block as
+  downloads; subject `JobHub Daily Summary <date>[ to <date>]`, ` (update n)` on later sends (counted from successful sends in
+  `email_log`); body `Dates: / Version: / Confirmed stops: / Report schema version: / Attached: / Left out on purpose:` then
+  a stop list. Photos are attached until ~17 MB, the rest are counted as skipped. `GET /api/export/emails` → on/ready/to/history.
+  The user taps it after checking the day: it is never sent automatically.
+- New Include section **GPS coordinates** (`omit=coordinates`): removes latitude/longitude from JSON stops and the
+  Latitude/Longitude PDF row (downloads and email).
+- **Go to a place** (Home page card): pick a saved place (current addresses only, nearest first from the live position;
+  `GET /api/go/places`), then Apple Maps or Google Maps (coordinates if known, else the address). Tapping records a trip
+  (`trips` table; `POST /api/go {site_id}`, `DELETE /api/go`; one active, forgotten after 12 h). `service.apply_trip` (run by
+  `apply_places` on every detect/sync) fills the first stop that began after the tap (2 min slack) within max(300 m, the place
+  radius) of the place: name, address, known_site_id, type from the place kind (client → job, vendor, office, home →
+  personal) and its status. Never over a name you typed or an edited/confirmed stop; used once. Home shows "Heading to …" with
+  the map buttons and Cancel, then "✓ <place>: stop filled in" linking to the stop. The next appointment card also has both map
+  buttons.

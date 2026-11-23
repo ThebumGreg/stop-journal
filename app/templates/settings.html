@@ -55,7 +55,7 @@
           {% else %}
             <input id="{{ f.key }}" name="{{ f.key }}" value="{{ values[f.key] }}"
                    placeholder="Default: {{ defaults[f.key] }}" autocapitalize="off" autocorrect="off"
-                   {% if f.kind == 'int' %}inputmode="numeric"{% elif f.kind == 'url' %}inputmode="url"{% endif %}>
+                   {% if f.kind == 'int' %}inputmode="numeric"{% elif f.kind == 'url' %}inputmode="url"{% elif f.kind == 'email' %}inputmode="email"{% endif %}>
             <div class="help">{{ f.help }} Leave blank to use the default.</div>
           {% endif %}
           {% if errors.get(f.key) %}<div class="err">{{ errors[f.key] }}</div>{% endif %}
@@ -72,6 +72,12 @@
         <div class="box">
           <div class="row"><button type="button" id="testgram">Test grammar server</button><span id="gramtestmsg"></span></div>
           <div class="help">Sends one made-up sentence (not your notes) to the address above, even if it is not saved yet.</div>
+        </div>
+      {% endif %}
+      {% if group == 'Email (Gmail)' %}
+        <div class="box">
+          <div class="row"><button type="button" id="testmail">Send test email</button><span id="mailmsg"></span></div>
+          <div class="help">Uses the values above, even before you save them. Reports are only sent when you tap Email report on the Reports page.</div>
         </div>
       {% endif %}
       {% if group == 'Calendar (Outlook)' %}
@@ -167,6 +173,17 @@ document.getElementById('testcal').onclick = async () => {
     fd.append('calendar_url', document.getElementById('calendar_url').value);
     fd.append('calendar_keyword', document.getElementById('calendar_keyword').value);
     const d = await (await fetch('/settings/test-calendar', {method: 'POST', body: fd})).json();
+    out.className = d.ok ? 'ok' : 'err'; out.textContent = d.message;
+  } catch (e) { out.className = 'err'; out.textContent = 'Request failed.'; }
+};
+document.getElementById('testmail').onclick = async () => {
+  const out = document.getElementById('mailmsg');
+  out.className = ''; out.textContent = 'Sending…';
+  try {
+    const fd = new FormData();
+    for (const k of ['mail_to', 'smtp_user', 'smtp_password', 'mail_from', 'smtp_host', 'smtp_port'])
+      fd.append(k, document.getElementById(k).value);
+    const d = await (await fetch('/settings/test-email', {method: 'POST', body: fd})).json();
     out.className = d.ok ? 'ok' : 'err'; out.textContent = d.message;
   } catch (e) { out.className = 'err'; out.textContent = 'Request failed.'; }
 };

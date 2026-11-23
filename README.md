@@ -129,6 +129,18 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `BACKUP_KEEP` | 7 | daily database snapshots to keep (0 = off) |
 | `PUID`, `PGID` | 1000 | compose only: the user the container runs as |
 
+## Email reports (Gmail)
+
+For a work AI agent that updates HubSpot from your mailbox: Reports page → **Email report** sends the JSON (every field,
+schema version 1) and the PDF, optionally the receipts and photos, to your work address. Subject
+`JobHub Daily Summary 2026-11-23`; sending the same dates again adds `(update 2)` and the body says it replaces the
+earlier one. The body starts with `Dates:`, `Version:`, `Confirmed stops:` and `Attached:` lines and a short stop list.
+
+Setup: turn on 2-Step Verification on the Gmail account, then Google Account → Security → App passwords → create one
+named JobHub. In Settings → Email fill in "Send reports to", the Gmail address and the 16-letter App password, then
+**Send test email**. Env equivalents: `MAIL_TO`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `SMTP_HOST`
+(smtp.gmail.com), `SMTP_PORT` (587).
+
 ## Backup and restore
 
 The SQLite file in `/data` holds the state (stops, edits, parts, places, settings). Photos and receipts are files next to
@@ -149,6 +161,9 @@ do not contain them, so back up the whole `/data` folder (at least `backups/` an
 - The only outbound calls are place lookups (coordinates and search text go to the provider you
   choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, reading your published calendar (only if you set the link), Google Vision for receipts and Claude for Polish notes (only if
   turned on; receipt photos and the note text respectively), map tiles, and Pushover notifications (whose text never contains locations).
+- **Email report** (Settings → Email) sends the report, including customer names, addresses, notes and (unless you
+  untick "GPS coordinates") coordinates, to the address you set, through your Gmail account. It is sent only when you
+  tap Email report on the Reports page.
 - Request URLs contain coordinates, so the server keeps its access log off. Nothing is logged to
   stdout that includes locations. No analytics or telemetry.
 - If you ever track technicians, that needs written consent and work-hours-only tracking. This app

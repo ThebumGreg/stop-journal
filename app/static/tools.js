@@ -21,7 +21,7 @@ async function api(method, url, body) {
 // Sections that can be left out of an export; ticks are remembered on this phone.
 const SECTIONS = [['costs', 'Part and material costs'], ['expenses', 'Expenses'], ['fuel', 'Fuel'], ['photos', 'Receipts and photos'], ['materials', 'Non-billable materials'],
   ['categories', 'Hours by category'], ['follow_ups', 'Follow-ups'], ['mileage', 'Mileage table'],
-  ['recap', 'Day recap (timesheet)']];
+  ['recap', 'Day recap (timesheet)'], ['coordinates', 'GPS coordinates']];
 
 function exportForm() {
   const f = el('div', 'box');
@@ -78,6 +78,60 @@ function exportForm() {
     if (window.resetFileLink) [pdf, zip, js].forEach(resetFileLink);
   }
   overBox.onchange = setLinks;
+
+  // Email report: sent only when tapped, after checking the day. Attachment ticks are remembered on this phone.
+  const mail = el('div', 'box mailbox');
+  const mailHead = el('div', 'hint');
+  let mopts = {pdf: true, json: true, photos: false};
+  try { mopts = {...mopts, ...JSON.parse(localStorage.getItem('email_opts') || '{}')}; } catch (e) {}
+  const mticks = el('div', 'acts');
+  [['json', 'JSON (for the AI agent)'], ['pdf', 'PDF'], ['photos', 'Receipts and photos']].forEach(([k, t]) => {
+    const l = el('label', 'hint'), c = el('input'); c.type = 'checkbox'; c.checked = !!mopts[k];
+    c.onchange = () => { mopts[k] = c.checked; localStorage.setItem('email_opts', JSON.stringify(mopts)); };
+    l.append(c, ' ' + t); mticks.append(l);
+  });
+  const send = el('button', 'primary', 'Email report');
+  const mailMsg = el('div', 'hint');
+  const mailLog = el('div', 'hint');
+  mail.append(mailHead, mticks, send, mailMsg, mailLog);
+  let mailTo = '';
+  function showLog(h) {
+    mailLog.replaceChildren();
+    (h || []).slice(0, 5).forEach(x => {
+      const t = new Date(x.ts * 1000).toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
+      mailLog.append(el('div', x.ok ? null : 'err', (x.ok ? '✓ Sent ' : '✗ Failed ') + t + ' · ' + x.subject +
+        (x.ok ? (x.attached ? ' · ' + x.attached : '') : ' · ' + (x.error || ''))));
+    });
+  }
+  async function mailInfo() {
+    try {
+      const m = await api('GET', '/api/export/emails?' + q());
+      mailTo = m.to;
+      if (!m.ready) {
+        mailHead.replaceChildren('Set up Gmail in ');
+        const a = el('a', null, 'Settings → Email'); a.href = '/settings'; mailHead.append(a, ' to email the report to your work address.');
+        send.disabled = true; mticks.hidden = true;
+      } else {
+        mailHead.textContent = 'Sends the report to ' + m.to + ' (with the Include choices above).';
+        send.disabled = false; mticks.hidden = false;
+      }
+      showLog(m.history);
+    } catch (e) { mailHead.textContent = e.message; }
+  }
+  send.onclick = async () => {
+    if (blocked && !overBox.checked) { mailMsg.className = 'err'; mailMsg.textContent = 'Some stops are not confirmed yet. Confirm them, or tick “Export anyway”.'; return; }
+    const dates = from.value + (to.value && to.value !== from.value ? ' to ' + to.value : '');
+    if (!confirm('Email the report for ' + dates + ' to ' + mailTo + '?')) return;
+    send.disabled = true; mailMsg.className = 'hint'; mailMsg.textContent = 'Sending…';
+    try {
+      const r = await api('POST', '/api/export/email?' + q(), {...mopts, anyway: overBox.checked});
+      mailMsg.className = 'ok';
+      mailMsg.textContent = 'Sent to ' + r.mail_to + ': “' + r.subject + '”.' +
+        (r.skipped_photos ? ' ' + r.skipped_photos + ' photo(s) were too large for one email and were left off.' : '');
+      showLog(r.history);
+    } catch (e) { mailMsg.className = 'err'; mailMsg.textContent = e.message; mailInfo(); }
+    send.disabled = false;
+  };
   async function refresh() {
     info.className = 'hint'; info.textContent = 'Checking…';
     pdf.removeAttribute('href'); zip.removeAttribute('href'); js.removeAttribute('href'); dbg.removeAttribute('href');
@@ -100,12 +154,13 @@ function exportForm() {
       over.hidden = !blocked; overBox.checked = false;
       setLinks();
       dbg.href = '/api/debug/' + from.value + '.json';
+      mailInfo();
     } catch (e) { info.className = 'err'; info.textContent = e.message; }
   }
   from.onchange = () => { if (to.value < from.value) to.value = from.value; refresh(); };
   to.onchange = refresh;
   f.append(el('div', 'hint', 'Only Confirmed stops are included in detail. Pick a range to export several days.'),
-           two, inc, info, warn, over, acts);
+           two, inc, info, warn, over, acts, el('h3', null, 'Email report'), mail);
   syncBoxes();
   refresh();
   return f;

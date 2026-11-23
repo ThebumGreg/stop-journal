@@ -53,6 +53,12 @@ class Config:
     routing_url: str = ""    # "" = off; from_env defaults to the public OSRM server
     languagetool_url: str = ""   # "" = grammar check off
     auto_sync_min: int = 2       # day page for today syncs this often while open; 0 = off
+    smtp_host: str = "smtp.gmail.com"   # Email report (Settings → Email)
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""      # secret (a Gmail App password)
+    mail_from: str = ""          # blank = smtp_user
+    mail_to: str = ""            # where reports go; blank = email off
 
     @classmethod
     def from_env(cls):
@@ -102,4 +108,10 @@ class Config:
             routing_url=e("ROUTING_URL", "https://router.project-osrm.org").strip().rstrip("/"),
             languagetool_url=e("LANGUAGETOOL_URL", "").strip().rstrip("/"),
             auto_sync_min=_int("AUTO_SYNC_MIN", 2),
+            smtp_host=e("SMTP_HOST", "smtp.gmail.com").strip(),
+            smtp_port=_int("SMTP_PORT", 587),
+            smtp_user=e("SMTP_USER", "").strip(),
+            smtp_password=e("SMTP_PASSWORD", "").strip(),
+            mail_from=e("MAIL_FROM", "").strip(),
+            mail_to=e("MAIL_TO", "").strip(),
         )

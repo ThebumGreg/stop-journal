@@ -14,9 +14,10 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import ai, equipment, kits, photos, receipts, summary, vendors
+from . import ai, equipment, kits, mailer, photos, receipts, summary, vendors
 from . import report as reports
 from .config import Config
+from .geo import haversine_m
 from .places import PlacesError, UsageCounter, known, ranking
 from . import recorder as recorder_mod
 from .recorder import RecorderClient
@@ -202,6 +203,39 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         def go(conn, cfg):
             rep = build_report(conn, cfg)
             return download(pdf.render(rep, lambda pid: photos.get(conn, cfg.data_dir, pid)), "application/pdf", rep, "pdf")
+        return with_conn(go)
+
+    @app.post("/api/export/email")
+    def export_email():
+        """Email report (Reports page): the same range and Include ticks as the downloads; body {pdf, json, photos, anyway}.
+        Refused while stops are not confirmed unless `anyway`, like the downloads."""
+        def go(conn, cfg):
+            b = request.get_json(silent=True) or {}
+            if not cfg.mail_to:
+                raise service.EditError("Email is not set up: add the address to send to in Settings → Email.")
+            full = build_report(conn, cfg, filtered=False)
+            if reports.check(full)["not_confirmed"] and not b.get("anyway"):
+                raise service.EditError("Some stops are not confirmed yet. Confirm them, or tick “Export anyway”.")
+            rep = reports.apply_omit(full, reports.parse_omit(request.args.get("omit")))
+            a, z = rep["date_from"], rep["date_to"]
+            name = f"jobhub-daily-summary-{a}" if a == z else f"jobhub-daily-summary-{a}_to_{z}"
+            load = lambda pid: photos.get(conn, cfg.data_dir, pid)
+            body = pdf.render(rep, load) if b.get("pdf") else b""
+            try:
+                sent = mailer.send_report(conn, cfg, rep, name, body,
+                                          {k: bool(b.get(k)) for k in ("pdf", "json", "photos")}, load)
+            except mailer.MailError as e:
+                raise service.EditError(str(e))
+            return jsonify(ok=True, **sent, history=mailer.history(conn, a, z))
+        return with_conn(go)
+
+    @app.get("/api/export/emails")
+    def export_emails():
+        def go(conn, cfg):
+            start = request.args.get("from", "")
+            dates = reports.date_range(start, request.args.get("to") or start)
+            return jsonify(on=bool(cfg.mail_to), ready=mailer.enabled(cfg), to=cfg.mail_to,
+                           history=mailer.history(conn, dates[0], dates[-1]))
         return with_conn(go)
 
     @app.get("/api/export.view")
@@ -898,8 +932,59 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             if out["live"]:                    # the page needs no coordinates
                 out["live"] = {k: v for k, v in out["live"].items() if k not in ("lat", "lon", "acc")}
             out["live_error"] = err or ""
+            out["trip"] = trip_json(conn, now)
+            done = service.last_trip(conn, date)
+            out["trip_done"] = ({"name": done["name"], "url": f"/day/{date}?stop={done['stop_id']}"}
+                                if done and now - done["set_at"] < 4 * 3600 else None)
             return jsonify(out)
         return with_conn(go)
+
+    # ---- Go to a place (Home page) ----------------------------------------
+    def trip_json(conn, now):
+        t = service.active_trip(conn, now)
+        if not t:
+            return None
+        return {"site_id": t["site_id"], "name": t["name"], "address": t["address"] or "", "kind": t["kind"] or "client",
+                "lat": t["lat"], "lon": t["lon"],
+                "since": datetime.fromtimestamp(t["set_at"], tz).strftime("%-I:%M %p")}
+
+    @app.get("/api/go/places")
+    def go_places():
+        """Saved places to drive to, nearest first when the phone's position is known (current addresses only)."""
+        def go(conn, cfg):
+            now = int(time.time())
+            st, _, _ = live_now(cfg, now)
+            pos = (st["lat"], st["lon"]) if st and st.get("lat") is not None else None
+            rows = conn.execute(
+                "SELECT k.id, k.name, k.address, k.kind, k.lat, k.lon, "
+                "(SELECT MAX(date) FROM stops s WHERE s.known_site_id=k.id) AS last_visit "
+                "FROM known_sites k WHERE COALESCE(k.old_address,0)=0 AND (k.lat IS NOT NULL OR COALESCE(k.address,'')!='')"
+            ).fetchall()
+            out = []
+            for r in rows:
+                d = dict(r)
+                d["kind"] = d["kind"] or "client"
+                d["miles"] = (round(haversine_m(pos[0], pos[1], r["lat"], r["lon"]) / 1609.344, 1)
+                              if pos and r["lat"] is not None else None)
+                out.append(d)
+            out.sort(key=lambda x: (x["miles"] is None, x["miles"] or 0, -(int((x["last_visit"] or "0").replace("-", "")))))
+            return jsonify(places=out[:300], located=bool(pos), trip=trip_json(conn, now))
+        return with_conn(go)
+
+    @app.post("/api/go")
+    def go_start():
+        """Heading to a saved place: the next stop there is filled in with it."""
+        def go(conn, cfg):
+            sid = (request.get_json(silent=True) or {}).get("site_id")
+            if not isinstance(sid, int):
+                raise service.EditError("Pick a place.")
+            service.start_trip(conn, cfg, sid)
+            return jsonify(trip=trip_json(conn, int(time.time())))
+        return with_conn(go)
+
+    @app.delete("/api/go")
+    def go_cancel():
+        return with_conn(lambda conn, cfg: (service.cancel_trip(conn), jsonify(trip=None))[1])
 
     @app.get("/api/live")
     def live_status():
@@ -1098,6 +1183,29 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return jsonify(ok=False, message=str(e))
         return jsonify(ok=True, message=f"Read the calendar: {n} timed event{'s' if n != 1 else ''} in the next 7 days, "
                                        f"{on} marked “{kw}”." + ("" if on else " Add the word to an appointment to try it."))
+
+    @app.post("/settings/test-email")
+    def settings_test_email():
+        """Sends a short test email using the form's values (else the saved ones); the password only from the saved
+        settings unless one is typed."""
+        cfg = eff()
+        f = request.form
+        try:
+            port = int(f.get("smtp_port") or cfg.smtp_port)
+        except ValueError:
+            return jsonify(ok=False, message="The port must be a number.")
+        t = replace(cfg, mail_to=(f.get("mail_to") or "").strip() or cfg.mail_to,
+                    smtp_user=(f.get("smtp_user") or "").strip() or cfg.smtp_user,
+                    smtp_password=(f.get("smtp_password") or "").strip() or cfg.smtp_password,
+                    mail_from=(f.get("mail_from") or "").strip() or cfg.mail_from,
+                    smtp_host=(f.get("smtp_host") or "").strip() or cfg.smtp_host, smtp_port=port)
+        if not t.mail_to:
+            return jsonify(ok=False, message="Fill in “Send reports to” first.")
+        try:
+            mailer.test(t)
+        except mailer.MailError as e:
+            return jsonify(ok=False, message=str(e))
+        return jsonify(ok=True, message=f"Sent a test email to {t.mail_to}. Check that inbox (and its junk folder).")
 
     @app.post("/settings/test-grammar")
     def settings_test_grammar():

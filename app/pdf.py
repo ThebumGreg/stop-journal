@@ -299,15 +299,17 @@ def _stop_block(s, st):
             drive_txt += f", {drive['minutes']} min" + (" (estimated: no location data)" if drive.get("estimated") else "")
     if drive and drive["notes"]:
         drive_txt += f". Drive notes: {drive['notes']}"
-    latlon = "(no GPS data)" if s["latitude"] is None else f"{s['latitude']:.6f}, {s['longitude']:.6f}"
+    latlon = None if "latitude" not in s else (
+        "(no GPS data)" if s["latitude"] is None else f"{s['latitude']:.6f}, {s['longitude']:.6f}")
     rows = [("Stop number", str(s["stop_number"])), ("Business name", s["business_name"]),
             ("Address", s["address"])]
     if s["place_type"]:
         rows.append(("Place type", s["place_type"]))
     lunch = s.get("lunch_non_billable") or []
     on_site = _hm(s["time_on_site_minutes"]) + (" (lunch and breaks not included)" if lunch or s.get("personal_breaks_unpaid") else "")
-    rows += [("Latitude/Longitude", latlon), ("Arrival", s["arrival"]), ("Departure", s["departure"]),
-             ("Time on site", on_site)]
+    if latlon is not None:                                   # left out when "GPS coordinates" is unticked
+        rows.append(("Latitude/Longitude", latlon))
+    rows += [("Arrival", s["arrival"]), ("Departure", s["departure"]), ("Time on site", on_site)]
     if lunch:
         rows.append(("Lunch (non-billable)", "; ".join(f"{x['from']} to {x['to']}, {x['minutes']} min" for x in lunch)))
     brk = s.get("personal_breaks_unpaid") or []

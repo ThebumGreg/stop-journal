@@ -391,6 +391,7 @@ OMIT_SECTIONS = {
     "follow_ups": "Follow-ups",
     "mileage": "Mileage table",
     "recap": "Day recap (timesheet)",
+    "coordinates": "GPS coordinates",
 }
 
 
@@ -417,6 +418,8 @@ def apply_omit(report, omit):
                 s.pop("consumables_used", None)
             if "follow_ups" in omit:
                 s.pop("follow_ups", None)
+            if "coordinates" in omit:
+                s.pop("latitude", None); s.pop("longitude", None)
         if "expenses" in omit:
             sm.pop("expenses_total", None)
         if "categories" in omit:
