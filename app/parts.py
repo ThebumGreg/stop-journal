@@ -317,9 +317,69 @@ def record_purchase(conn, p, qty, total, vendor="", note=""):
 
 
 # ---- CSV ---------------------------------------------------------------
-def _norm_header(h):
+def _raw_header(h):
     h = (h or "").strip().lower().replace(" ", "_").replace("-", "_").replace("/", "_").rstrip("?")
+    return re.sub(r"_+", "_", h).strip("_")
+
+
+def _norm_header(h):
+    h = _raw_header(h)
     return ALIASES.get(h, h)
+
+
+# QuickBooks Online "Products and Services" export (Sales → Products and services → Export). Recognised by its
+# "Product/Service Name" header. Sales price is what the customer is charged, which is JobHub's unit_cost (the price in
+# reports); Purchase cost is what you pay, which is last_cost ("Last paid"). Quantity on hand and Reorder point are the
+# company's stock, not the truck's, so they are NOT imported. Service and Bundle rows (labor, fees) are not parts and
+# are skipped. Rows match existing parts by SKU, then by name, so the QuickBooks SKU becomes the part number.
+QBO_COLUMNS = {"product_service_name": "name", "product_service": "name", "sku": "sku",
+               "sales_price_rate": "unit_cost", "sales_price": "unit_cost", "purchase_cost": "last_cost",
+               "type": "type", "preferred_vendor": "vendor", "category": "category"}
+QBO_TYPES = {"inventory": "part", "non_inventory": "part", "noninventory": "part"}
+
+
+def _qbo_import(conn, header, reader):
+    cols = [QBO_COLUMNS.get(_raw_header(h)) for h in header]
+    ignored = sorted({h for h, c in zip(header, cols) if not c and h.strip()})
+    res = {"created": 0, "updated": 0, "skipped": 0, "errors": [], "ignored_columns": ignored,
+           "format": "QuickBooks Products and Services", "services_skipped": 0}
+    for n, row in enumerate(reader, 2):
+        if n - 1 > MAX_ROWS:
+            res["errors"].append(f"Stopped at {MAX_ROWS} rows.")
+            break
+        if not any((c or "").strip() for c in row):
+            continue
+        rec = {c: _unsafe(row[i].strip() if i < len(row) else "") for i, c in enumerate(cols) if c}
+        qtype = _raw_header(rec.pop("type", "") or "inventory")
+        if qtype not in QBO_TYPES:
+            res["services_skipped"] += 1
+            continue
+        rec["type"] = QBO_TYPES[qtype]
+        if rec.get("name", "").count(":"):          # QuickBooks sub-items: "Cable:Cat 6" -> "Cat 6"
+            rec["name"] = rec["name"].rsplit(":", 1)[1].strip()
+        for k in ("unit_cost", "last_cost"):
+            if rec.get(k):
+                rec[k] = rec[k].replace("$", "").replace(",", "")
+        last = rec.pop("last_cost", "")
+        try:
+            existing = find_part(conn, None, rec.get("sku")) if rec.get("sku") else None
+            if existing is None and rec.get("name"):
+                existing = conn.execute("SELECT * FROM parts WHERE lower(name)=lower(?)", (rec["name"],)).fetchone()
+            if existing is None:
+                pid = create_part(conn, rec)
+                res["created"] += 1
+            else:
+                rec.pop("type", None)      # QuickBooks has no consumables: keep the kind JobHub already has
+                _update_from_row(conn, existing, rec)
+                pid = existing["id"]
+                res["updated"] += 1
+            if last:
+                conn.execute("UPDATE parts SET last_cost=? WHERE id=?", (_num(last, "Purchase cost", 0), pid))
+        except EditError as e:
+            res["skipped"] += 1
+            res["errors"].append(f"Row {n}: {e}")
+    conn.commit()
+    return res
 
 
 def import_csv(conn, text):
@@ -329,6 +389,8 @@ def import_csv(conn, text):
         header = next(reader)
     except StopIteration:
         raise EditError("The file is empty.")
+    if any(_raw_header(h) in ("product_service_name", "product_service") for h in header):
+        return _qbo_import(conn, header, reader)
     cols = [_norm_header(h) for h in header]
     if "name" not in cols:
         raise EditError("No name column found. The first row must be headers, including “name”.")

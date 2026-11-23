@@ -391,6 +391,8 @@ def warnings(report):
             for p in s["parts_used"]:
                 if p["billable"] and not p["unit_cost"]:
                     out.append(f"{who}: billable part “{p['name']}” has no unit cost.")
+                if p["billable"] and not p["part_number"]:
+                    out.append(f"{who}: billable part “{p['name']}” has no part number (QuickBooks matches items by SKU).")
                 if (p["unit"] or "ea") == "ea" and any(w in p["name"].lower() for w in LENGTH_WORDS):
                     out.append(f"{who}: “{p['name']}” is counted in each; is the quantity really a count (not feet)?")
             for f in s["follow_ups"]:

@@ -634,3 +634,9 @@ D. Later / parked
 - **Lunch is paid** setting: Settings → General → Pay rules (`LUNCH_PAID` on|off, default on = the rules above). Off: lunch
   timesheet rows are `paid: false`, lunch leaves `paid_minutes`, the PDF says "Lunch (unpaid)" and the recap lists it in brackets.
   `summary.lunch_paid` says which. Mileage is unchanged.
+- **QuickBooks parts import**: the parts CSV import recognises a QBO "Products and Services" export ("Product/Service Name"
+  header; `parts._qbo_import`): SKU → part number, Sales price / Rate → unit_cost (the price you charge), Purchase cost →
+  last_cost (what you pay; the review suggested unit_cost, which would bill at cost), Preferred vendor, Category; "Parent:Child"
+  names keep the child; Service / Bundle rows skipped (`services_skipped`); Quantity on hand and Reorder point NOT imported
+  (company stock, not the truck); an existing part keeps its kind (QBO has no consumables). Export warns on a billable part
+  with no part number.

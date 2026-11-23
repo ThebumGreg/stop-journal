@@ -950,7 +950,9 @@ function dataView() {
   const out = el('div');
   const row = el('div', 'row'); row.append(check, go);
   imp.append(file, row, el('div', 'hint', 'Check file shows what an import would do without changing anything. ' +
-    'Matching is by part number, else name. A filled on_hand sets the truck count and turns tracking on.'), out);
+    'Matching is by part number, else name. A filled on_hand sets the truck count and turns tracking on. ' +
+    'A QuickBooks “Products and services” export also works as it is: SKU becomes the part number, Sales price the unit ' +
+    'cost, Purchase cost the last paid; QuickBooks stock and Service items are not imported.'), out);
   const runCsv = async dry => {
     out.replaceChildren();
     const f = file.files[0];
@@ -959,7 +961,8 @@ function dataView() {
       const fd = new FormData(); fd.append('file', f);
       const r = await api('POST', '/api/parts/import' + (dry ? '?dry=1' : ''), fd, fd);
       out.append(el('div', 'ok', (dry ? 'Check only, nothing saved. Would import: ' : 'Imported: ') +
-        r.created + ' new, ' + r.updated + ' updated, ' + r.skipped + ' skipped.'));
+        (r.format ? r.format + ': ' : '') + r.created + ' new, ' + r.updated + ' updated, ' + r.skipped + ' skipped' +
+        (r.services_skipped ? ', ' + r.services_skipped + ' service item' + (r.services_skipped === 1 ? '' : 's') + ' left out' : '') + '.'));
       if (r.ignored_columns.length) out.append(el('div', 'hint', 'Ignored columns: ' + r.ignored_columns.join(', ')));
       r.errors.slice(0, 20).forEach(m => out.append(el('div', 'err', m)));
       if (r.errors.length > 20) out.append(el('div', 'hint', '…and ' + (r.errors.length - 20) + ' more.'));
