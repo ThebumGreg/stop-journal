@@ -105,10 +105,12 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     @app.after_request
     def _logreq(resp):
         # path only (never the query string: it can hold coordinates); no static files or health checks
-        if request.endpoint not in ("static", "health", "manifest", "client_log"):
+        if request.endpoint not in ("static", "health", "manifest"):
             ms = (time.monotonic() - request.environ.get("jobhub.t0", time.monotonic())) * 1000
-            (reqlog.warning if resp.status_code >= 500 or ms > 5000 else reqlog.info)(
-                "%s %s %s %.0fms", request.method, request.path, resp.status_code, ms)
+            lvl = reqlog.warning if resp.status_code >= 500 or ms > 5000 else (
+                reqlog.debug if request.endpoint == "client_log" else reqlog.info)
+            lvl("%s %s %s %.0fms %sB", request.method, request.path, resp.status_code, ms,
+                resp.calculate_content_length() if not resp.is_streamed else "?")
         return resp
 
     @app.errorhandler(Exception)

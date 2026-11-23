@@ -23,4 +23,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # One worker on purpose: the background alert checker runs inside each worker. Threads handle
 # concurrency. No access log: request URLs contain coordinates, which must never be logged.
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--timeout", "60", "app:create_app()"]
+# Gunicorn's access log is written only once a reply has been fully sent: "sent" + method, PATH ONLY (%(U)s, never the
+# query string, which can hold coordinates), status, bytes, microseconds, and the client address (LAN devices).
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--timeout", "60", \
+     "--access-logfile", "-", "--access-logformat", "sent %(h)s %(m)s %(U)s %(s)s %(B)sB %(D)sus", "app:create_app()"]

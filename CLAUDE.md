@@ -713,3 +713,8 @@ D. Later / parked
   log). `faulthandler.register(SIGUSR1, chain=True)`: `docker kill --signal=USR1 JobHub` dumps on demand. Evidence 2026-11-23
   14:52-14:55: DELETE /api/stop-parts/24 logged 200 in 58 ms, but the client got no answer for ~3 min and the phone's /api/live
   polls stopped too: the whole worker stopped answering after the response was built (outside the request watchdog's view).
+- **Delivery log**: gunicorn `--access-logfile -` with format `sent %(h)s %(m)s %(U)s %(s)s %(B)sB %(D)sus` (path only, `%(U)s`, never
+  the query string) is written only after a reply has been fully sent; the app's `jobhub.http` line (now with the reply size) is
+  written when the reply is built. A request with a `jobhub.http` line but no `sent` line was not delivered by the server.
+  Findings 2026-11-23 15:13-15:16: the server answered /health every 5 s (port and inside the container) while Firefox showed every
+  request "blocked" ~60 s with status 0 (all 6 connections to the host busy waiting on earlier replies that never arrived).
