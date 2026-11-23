@@ -102,6 +102,8 @@ def polish(conn, cfg, text, client=None):
         raise EditError("The AI returned nothing. Keep yours.")
     if resp.stop_reason == "max_tokens":
         raise EditError("The AI's answer was cut off. Try a shorter piece.")
+    import logging
+    logging.getLogger("jobhub.ai").info("notes polished (%d characters in, %d out)", len(text), len(out))
     return out
 
 

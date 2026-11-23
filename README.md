@@ -171,6 +171,16 @@ do not contain them, so back up the whole `/data` folder (at least `backups/` an
   (Unraid appdata backup, rsync, cron).
 - **Restore**: stop the container, copy a snapshot over `data/stop_journal.db` (renaming it), start it.
 
+## Logs
+
+JobHub writes one line per request (path only), errors with a short code (the page shows the same code), and events
+such as syncs, emails, alerts, invites and backups. Coordinates are never written. Settings → General → Log: detail
+(info / debug), **View recent log** and **Download log**.
+
+On Unraid: Docker tab → JobHub icon → **Logs**, or `docker logs --tail 200 JobHub` (`docker logs -f JobHub` to follow).
+`docker compose` commands only work inside the folder that holds `docker-compose.yml`. Turn on log rotation in
+Settings → Docker (Docker log rotation) so the container log cannot fill the disk.
+
 ## Security and privacy
 
 - Do **not** expose the app to the internet without protection. Safe options: LAN only, a VPN

@@ -100,7 +100,9 @@ def due(data_dir, tz_name, now=None):
 def run_once(base_cfg, resolve, now=None):
     cfg = resolve()
     if cfg.backup_keep > 0 and due(cfg.data_dir, cfg.app_tz, now):
-        return snapshot(cfg.data_dir, cfg.app_tz, cfg.backup_keep, now=now)
+        out = snapshot(cfg.data_dir, cfg.app_tz, cfg.backup_keep, now=now)
+        log.info("daily database backup saved (keeping %d)", cfg.backup_keep)
+        return out
     return None
 
 

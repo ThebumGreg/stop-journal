@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import ai, equipment, kits, mailer, photos, receipts, summary, vendors
+from . import ai, equipment, kits, logs, mailer, photos, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .geo import haversine_m
@@ -29,7 +29,7 @@ TEXT_SEARCH_FALLOFF_M = 50000  # free-text hits: nearer-to-stop still ranks firs
 
 FILE_TOKEN_S = 600       # a download link made for Safari works for 10 minutes
 FILE_PATHS = ("/api/export.", "/api/debug/", "/api/parts/template.csv", "/api/parts/export.csv", "/api/tools/export.csv",
-              "/api/tools/template.csv", "/api/places/export.csv",
+              "/api/tools/template.csv", "/api/places/export.csv", "/settings/log",
               "/settings/backup")
 
 def create_app(cfg=None, client=None, provider=None, start_background=None):
@@ -57,7 +57,47 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
 
     conn0 = db.connect(base.data_dir)
     app.secret_key = settings.secret_key(conn0)
+    cfg0 = settings.effective(base, conn0)
+    log = logs.setup(cfg0.log_level)
+    try:
+        n_stops = conn0.execute("SELECT COUNT(*) FROM stops").fetchone()[0]
+        n_parts = conn0.execute("SELECT COUNT(*) FROM parts WHERE active=1").fetchone()[0]
+        n_places = conn0.execute("SELECT COUNT(*) FROM known_sites").fetchone()[0]
+        on = [name for name, v in (("recorder", cfg0.recorder_url), ("email", mailer.enabled(cfg0)),
+                                    ("calendar feed", cfg0.calendar_url), ("calendar invites", cfg0.calendar_invites == "on"),
+                                    ("pushover", cfg0.pushover_token), ("AI", cfg0.anthropic_key),
+                                    ("receipts", cfg0.receipt_reader != "off")) if v]
+        log.info("JobHub started: timezone %s, %d stops, %d parts, %d places; on: %s; log detail %s",
+                 base.app_tz, n_stops, n_parts, n_places, ", ".join(on) or "nothing extra", cfg0.log_level)
+    except Exception as e:
+        log.warning("start-up summary failed: %s", type(e).__name__)
     conn0.close()
+    reqlog = logs.get("http")
+
+    @app.before_request
+    def _t0():
+        request.environ["jobhub.t0"] = time.monotonic()
+
+    @app.after_request
+    def _logreq(resp):
+        # path only (never the query string: it can hold coordinates); no static files or health checks
+        if request.endpoint not in ("static", "health", "manifest"):
+            ms = (time.monotonic() - request.environ.get("jobhub.t0", time.monotonic())) * 1000
+            (reqlog.warning if resp.status_code >= 500 else reqlog.info)(
+                "%s %s %s %.0fms", request.method, request.path, resp.status_code, ms)
+        return resp
+
+    @app.errorhandler(Exception)
+    def _crash(e):
+        from werkzeug.exceptions import HTTPException
+        if isinstance(e, HTTPException):
+            return e
+        code = logs.ref()
+        logs.get("error").exception("error %s on %s %s", code, request.method, request.path)
+        msg = f"Something went wrong (error {code}). The details are in the JobHub log (Settings → General → Log)."
+        if request.path.startswith("/api/") or request.method != "GET":
+            return jsonify(error=msg), 500
+        return Response(f"<p style='font:16px sans-serif;padding:16px'>{msg}</p>", status=500, mimetype="text/html")
 
     @app.before_request
     def gate():
@@ -777,7 +817,13 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             text = raw.decode("latin-1")  # Excel "CSV" exports are often not UTF-8
         dry = request.args.get("dry") == "1"
         swk = eff().qbo_service_with_sku != "off"
-        return catalog(lambda conn: parts.preview_csv(conn, text, swk) if dry else parts.import_csv(conn, text, swk))
+
+        def go(conn):
+            r = parts.preview_csv(conn, text, swk) if dry else parts.import_csv(conn, text, swk)
+            logs.get("import").info("parts import%s: %d new, %d updated, %d skipped, %d errors",
+                                    " (check only)" if dry else "", r["created"], r["updated"], r["skipped"], len(r["errors"]))
+            return r
+        return catalog(go)
 
     def csv_response(body, name):
         return Response(body, mimetype="text/csv",
@@ -1101,7 +1147,13 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             text = f.read().decode("utf-8-sig")
         except UnicodeDecodeError:
             return jsonify(error="The file is not UTF-8 text (save it as CSV UTF-8)."), 400
-        return catalog(lambda conn: known.import_csv(conn, text, dry=request.args.get("dry") == "1"))
+        def go(conn):
+            r = known.import_csv(conn, text, dry=request.args.get("dry") == "1")
+            logs.get("import").info("places import%s: %d updated, %d unchanged, %d not found, %d errors",
+                                    " (check only)" if r["dry"] else "", r["updated"], r["unchanged"],
+                                    len(r["not_found"]), len(r["errors"]))
+            return r
+        return catalog(go)
 
     @app.delete("/api/places/<int:sid>")
     def places_delete(sid):
@@ -1177,7 +1229,19 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             ctx["values"] = {k: request.form.get(k, "") for k, f in settings.FIELDS.items()
                              if f["kind"] != "secret"}
             return render_template("settings.html", errors=errors, saved=None, **ctx), 400
+        cfg = eff()
+        logs.set_level(cfg.log_level)
+        logs.get("settings").info("settings saved (log detail %s)", cfg.log_level)
         return redirect(url_for("settings_page", saved=1))
+
+    @app.get("/settings/log")
+    def settings_log():
+        """The last lines of the JobHub log (also in the container log), newest last. ?download=1 saves it as a file."""
+        text = "\n".join(logs.recent(int(request.args.get("n") or 300))) or "(nothing logged since the app started)"
+        if request.args.get("download"):
+            return Response(text + "\n", mimetype="text/plain",
+                            headers={"Content-Disposition": "attachment; filename=jobhub-log.txt"})
+        return Response(text + "\n", mimetype="text/plain")
 
     @app.post("/settings/test-google")
     def settings_test_google():

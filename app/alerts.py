@@ -165,6 +165,8 @@ def apply(conn, cfg, cond, now, send):
                  "WHERE key=?", (1 if ok else 0, 1 if ok else 0, now, cond.key))
     conn.commit()
     notify.record(conn, cond.title, cond.message, ok, err)
+    (log.info if ok else log.warning)("alert %s: %s%s", cond.key.split(":")[0], "sent" if ok else "not sent",
+                                      "" if ok else f" ({err})")
     return ok
 
 

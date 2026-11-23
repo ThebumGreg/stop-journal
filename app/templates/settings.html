@@ -82,6 +82,14 @@
           <div class="help">Uses the saved settings: a 15-minute “JobHub · Test event” starting in 5 minutes.</div>
         </div>
       {% endif %}
+      {% if group == 'Log' %}
+        <div class="box">
+          <div class="row"><a class="btn" href="/settings/log" target="_blank">View recent log</a>
+            <a class="btn" href="/settings/log?download=1&amp;n=1000" data-file="log">Download log</a></div>
+          <div class="help">The last 300 lines since the app started (the full log is in Unraid: Docker → JobHub → Logs, or
+            <code>docker logs --tail 200 JobHub</code>). Errors show a short code, like “error 3f9a1c2b”, that you can find here.</div>
+        </div>
+      {% endif %}
       {% if group == 'Calendar (Outlook)' %}
         <div class="box">
           <div class="row"><button type="button" id="testcal">Test calendar</button><span id="calmsg"></span></div>

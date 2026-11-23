@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 from . import mailer, service
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("jobhub.calendar")
 UID_DOMAIN = "jobhub"
 MAX_PER_DAY = 150
 QUARTER = 15 * 60
@@ -161,6 +161,8 @@ def sync(conn, cfg, date, now=None, send=_send):
         conn.execute("INSERT INTO cal_sync_log(day, ts, stop_id, method) VALUES (?,?,?,'CANCEL')", (date, now, sid))
         conn.commit()
         cancelled += 1
+    if sent or cancelled:
+        log.info("calendar %s: %d invite%s sent, %d cancelled", date, sent, "" if sent == 1 else "s", cancelled)
     return sent, cancelled
 
 

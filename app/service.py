@@ -1520,7 +1520,10 @@ def _catch_up(conn, client, cfg, date):
     if not (last and last > stored):
         return False
     point_store.load_day(conn, client, cfg, date, refresh=True, incremental=True)
-    sync_new(conn, cfg, date, kept_points(conn, cfg, date), cfg)
+    n = sync_new(conn, cfg, date, kept_points(conn, cfg, date), cfg)
+    import logging
+    logging.getLogger("jobhub.sync").info("sync %s: new points up to %s, %d new stop%s", date,
+                                          fmt_time(cfg, last), n, "" if n == 1 else "s")
     return True
 
 

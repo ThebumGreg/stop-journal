@@ -14,6 +14,7 @@ The message is made easy for an agent to pick up:
 - Attachments: the JSON (the data, schema version 1), the PDF, and optionally the pictures (named as in the report).
 """
 import json
+import logging
 import smtplib
 import ssl
 import time
@@ -22,6 +23,7 @@ from email.utils import formatdate, make_msgid
 
 from .report import attachment_name
 
+log = logging.getLogger("jobhub.email")
 MAX_ATTACH_BYTES = 17 * 1024 * 1024      # Gmail allows 25 MB per message; base64 adds about a third
 TIMEOUT_S = 30
 
@@ -175,6 +177,7 @@ def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo):
     try:
         send(cfg, msg)
     except MailError as e:
+        log.warning("report email failed: %s: %s", subject, e)
         conn.execute("INSERT INTO email_log(ts,date_from,date_to,mail_to,subject,version,ok,error,attached) "
                      "VALUES (?,?,?,?,?,?,0,?,?)", (entry["ts"], a, b, cfg.mail_to, subject, version, str(e), entry["attached"]))
         conn.commit()
@@ -182,6 +185,7 @@ def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo):
     conn.execute("INSERT INTO email_log(ts,date_from,date_to,mail_to,subject,version,ok,error,attached) "
                  "VALUES (?,?,?,?,?,?,1,NULL,?)", (entry["ts"], a, b, cfg.mail_to, subject, version, entry["attached"]))
     conn.commit()
+    log.info("report emailed: %s (%s)%s", subject, entry["attached"], ", signed" if sig else "")
     return {**entry, "skipped_photos": skipped}
 
 

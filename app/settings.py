@@ -237,6 +237,11 @@ SPEC += [
              help="When QuickBooks inventory tracking is off, every item is a Service. on: a Service item with a SKU is "
                   "imported as a part. Items without a SKU, and anything called Labor, are always skipped."),
     ]),
+    ("Log", [
+        dict(key="log_level", label="Log detail", kind="choice", choices=["info", "debug"],
+             help="info: requests (path only), errors and events such as syncs, emails and alerts. debug: more detail, "
+                  "for tracking down a problem. Coordinates are never written to the log."),
+    ]),
     ("Backups", [
         dict(key="backup_keep", label="Daily backups to keep", kind="int", lo=0, hi=365,
              help="One snapshot of the database is saved each day. 0 turns automatic backups off."),
@@ -253,7 +258,7 @@ TABS = [
     ("AI", ["AI (Claude)"]),
     ("Email", ["Email (Gmail)"]),
     ("Notes", ["Quick phrases", "Grammar check (LanguageTool)"]),
-    ("General", ["Technician", "Pay rules", "Parts import", "Stop detection", "Backups"]),
+    ("General", ["Technician", "Pay rules", "Parts import", "Stop detection", "Backups", "Log"]),
 ]
 FIELDS = {f["key"]: f for _, fs in SPEC for f in fs}
 

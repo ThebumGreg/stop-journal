@@ -195,4 +195,10 @@ def extract(conn, cfg, jpeg, session=None):
                    "Try a flat, well-lit photo that fills the screen."}
     except ReceiptError as e:
         out = {"ok": False, "reader": cfg.receipt_reader, "error": str(e)}
+    import logging
+    lg = logging.getLogger("jobhub.receipts")
+    if out.get("ok"):
+        lg.info("receipt read (%s): total found%s", cfg.receipt_reader, ", fuel" if out.get("gallons") else "")
+    else:
+        lg.warning("receipt not read (%s): %s", cfg.receipt_reader, out.get("error", "")[:160])
     return out

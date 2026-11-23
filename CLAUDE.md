@@ -668,3 +668,12 @@ D. Later / parked
 - C3 (lunch default): not changed; the user keeps Lunch is paid = on until management decides.
 - Unit **stick** (aliases sticks, length, lengths) for things sold by the foot but bought in lengths: unit ft, pack_size 6,
   pack_unit stick (raceway). "+ Add stick (6)" with Paid records the cost per ft.
+
+## Logging (2026-11-23)
+- `app/logs.py`: the `jobhub.*` loggers write to stdout (the container log) and a 1000-line memory ring. Every line passes
+  `logs.scrub` (numbers with 4+ decimals -> [coord]), tracebacks included. `LOG_LEVEL` / Settings → General → Log detail
+  (info | debug), applied on save. Requests: `jobhub.http` "GET /path 200 12ms" — PATH ONLY, never the query string; no static,
+  health or manifest. Unhandled errors: `@app.errorhandler(Exception)` logs the traceback with an 8-character code and returns
+  "Something went wrong (error <code>)…" (JSON for /api and non-GET). Events (counts only, no names or places): start-up summary,
+  sync (`jobhub.sync`), alerts sent, report emails (subject = dates), calendar invites, backups, parts/places imports, receipt
+  reads, AI polish. `GET /settings/log[?n=&download=1]` (text) behind the login; Settings → General → Log has View / Download.
