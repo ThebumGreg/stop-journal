@@ -340,7 +340,7 @@ function setStat(kind, msg) {
   sh.stat.textContent = t; sh.stat.className = 'sheet-stat ' + kind;
 }
 function touched() {
-  setStat('unsaved'); clearTimeout(sheet.timer);
+  setStat('unsaved'); clearTimeout(sheet.timer); sheet.chain = 0;
   keepDraft();
   sheet.timer = setTimeout(saveSheet, 2000);
 }
@@ -407,6 +407,16 @@ async function saveSheet() {
   try {
     applyDay(await api('PATCH', '/api/stops/' + s.id, body));
     sheet.failed = false; sheet.offline = false; sh.everSaved = true; sh.err.textContent = '';
+    // The server may store a tidied value (spaces trimmed, "#1042" -> "1042", a ticket link -> its ID, 9:05 -> 09:05).
+    // Take it over for every field that still holds what was sent, or the sheet would keep re-saving forever.
+    const now = curStop();
+    if (now) Object.keys(body).forEach(k => {
+      if (sheet.vals[k] === body[k] && now[k] !== undefined && now[k] !== body[k]) {
+        sheet.vals[k] = now[k];
+        const inp = sh.inputs && sh.inputs[k];
+        if (inp && document.activeElement !== inp && inp.value === body[k]) inp.value = now[k] == null ? '' : now[k];
+      }
+    });
     render(false);
   } catch (e) {
     sheet.failed = true;
@@ -415,7 +425,10 @@ async function saveSheet() {
   }
   sheet.saving = false;
   if (!sheet.failed) {
-    if (sheet.again || sheetDirty()) { sheet.again = false; return saveSheet(); }
+    // save again only for new typing, and never more than a few times in a row (a safety net against a save loop)
+    sheet.chain = (sheet.chain || 0) + 1;
+    if ((sheet.again || sheetDirty()) && sheet.chain < 4) { sheet.again = false; return saveSheet(); }
+    sheet.chain = 0;
     keepDraft();                                           // all saved: clears the copy on the phone
     setStat('saved');
   }
