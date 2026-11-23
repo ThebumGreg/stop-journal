@@ -41,3 +41,24 @@ def test_page_errors_reach_the_log(tmp_path):
     text = "\n".join(logs.recent(50))
     assert "jobhub.page: /day/2026-11-18 | boom at day.js:12 near [coord]" in text
     assert 'name="jobhub-log" content="info"' in c.get("/day").get_data(as_text=True)
+
+
+def test_watchdog_reports_a_stuck_request():
+    import threading
+    import time
+    go = threading.Event()
+
+    def stuck_handler():
+        logs.request_started("POST", "/api/stops/16/parts")
+        go.wait(5)                      # pretend to be stuck here
+        logs.request_ended()
+
+    t = threading.Thread(target=stuck_handler)
+    t.start()
+    time.sleep(0.1)
+    assert logs.check_stuck(now=time.monotonic() + logs.STUCK_S + 1) == 1
+    assert logs.check_stuck(now=time.monotonic() + logs.STUCK_S + 2) == 0          # not again within REPEAT_S
+    go.set(); t.join()
+    text = "\n".join(logs.recent(80))
+    assert "request still running after" in text and "POST /api/stops/16/parts" in text and "go.wait(5)" in text
+    assert logs.check_stuck(now=time.monotonic() + 999) == 0                        # finished requests are forgotten

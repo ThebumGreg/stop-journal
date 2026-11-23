@@ -703,3 +703,8 @@ D. Later / parked
   link or ✕ underneath and navigate mid-request: Firefox "NetworkError when attempting to fetch resource"). Static files are
   served with `SEND_FILE_MAX_AGE_DEFAULT=0` (no-cache) so phones and desktops use updated scripts at once. Tested with
   Playwright (Firefox mouse + touch, iPhone 13 WebKit) using the container: add by search, quantities, no navigation.
+- **Stuck-request watchdog** (`logs.request_started/ended` in before/teardown_request; `logs.start_watchdog` thread with the
+  background threads): a request running > 15 s is logged as "request still running after Ns: METHOD /path (n in progress)"
+  with the last 8 stack frames, repeated every 30 s while it lasts. Requests slower than 5 s log at WARNING. Gunicorn runs 8
+  threads (was 4). Investigated 2026-11-23: the site stopped answering for ~5 min on desktop Firefox with no restart, no OOM,
+  background sync still running, and no request finishing; idle pre-connected sockets were tested and do NOT block gthread.

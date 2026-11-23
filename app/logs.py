@@ -74,3 +74,61 @@ def ref():
 
 def get(name):
     return logging.getLogger("jobhub." + name)
+
+
+# ---- stuck-request watchdog ---------------------------------------------------------------------------
+# Requests in progress, by thread: when one runs longer than STUCK_S its path and the code it is waiting in are logged
+# (again every REPEAT_S while it lasts), so a site that "hangs" says why instead of showing nothing.
+STUCK_S, REPEAT_S = 15, 30
+_active = {}
+_active_lock = threading.Lock()
+
+
+def request_started(method, path):
+    import time
+    with _active_lock:
+        _active[threading.get_ident()] = [method, path, time.monotonic(), 0.0]
+
+
+def request_ended():
+    with _active_lock:
+        _active.pop(threading.get_ident(), None)
+
+
+def check_stuck(now=None):
+    """Log requests running longer than STUCK_S with their stack. Returns how many were reported."""
+    import sys
+    import time
+    import traceback
+    now = now or time.monotonic()
+    lg = get("watchdog")
+    frames = sys._current_frames()
+    with _active_lock:
+        items = [(tid, list(v)) for tid, v in _active.items()]
+        busy = len(items)
+    n = 0
+    for tid, (method, path, t0, last) in items:
+        if now - t0 < STUCK_S or (last and now - last < REPEAT_S):
+            continue
+        with _active_lock:
+            if tid in _active:
+                _active[tid][3] = now
+        fr = frames.get(tid)
+        where = "".join(traceback.format_stack(fr)[-8:]) if fr else "(no stack)"
+        lg.warning("request still running after %ds: %s %s (%d request%s in progress)\n%s",
+                   now - t0, method, path, busy, "" if busy == 1 else "s", where.rstrip())
+        n += 1
+    return n
+
+
+def start_watchdog(interval=5):
+    import time
+
+    def loop():
+        while True:
+            time.sleep(interval)
+            try:
+                check_stuck()
+            except Exception as e:                  # never let the watchdog die
+                get("watchdog").warning("watchdog check failed: %s", type(e).__name__)
+    threading.Thread(target=loop, daemon=True, name="jobhub-watchdog").start()

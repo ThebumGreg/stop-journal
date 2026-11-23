@@ -23,4 +23,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # One worker on purpose: the background alert checker runs inside each worker. Threads handle
 # concurrency. No access log: request URLs contain coordinates, which must never be logged.
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "4", "--timeout", "60", "app:create_app()"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--timeout", "60", "app:create_app()"]

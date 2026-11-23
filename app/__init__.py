@@ -96,13 +96,18 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     @app.before_request
     def _t0():
         request.environ["jobhub.t0"] = time.monotonic()
+        logs.request_started(request.method, request.path)
+
+    @app.teardown_request
+    def _t_end(exc=None):
+        logs.request_ended()
 
     @app.after_request
     def _logreq(resp):
         # path only (never the query string: it can hold coordinates); no static files or health checks
         if request.endpoint not in ("static", "health", "manifest", "client_log"):
             ms = (time.monotonic() - request.environ.get("jobhub.t0", time.monotonic())) * 1000
-            (reqlog.warning if resp.status_code >= 500 else reqlog.info)(
+            (reqlog.warning if resp.status_code >= 500 or ms > 5000 else reqlog.info)(
                 "%s %s %s %.0fms", request.method, request.path, resp.status_code, ms)
         return resp
 
@@ -1461,6 +1466,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         start_background = (not client_given and os.environ.get("SAMPLE_DATA") != "1"
                             and os.environ.get("DISABLE_ALERTS") != "1")
     if start_background:
+        logs.start_watchdog()
         alerts.start(base, client)
         backup.start(base, eff)
 
