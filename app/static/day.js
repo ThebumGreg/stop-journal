@@ -392,7 +392,10 @@ async function setType(s, k, err) {
   else { sheetEl.hidden = backEl.hidden = true; document.body.classList.remove('sheet-open'); }
 }
 
-function typeRow(s, err) {
+// The type buttons, with a Tools button in the last slot (under Gas) that opens the stop tools right below.
+const toolsOpen = new Set();      // stop ids whose tools are showing (kept across re-renders)
+function typeRow(s, err, inSheet) {
+  const wrap = el('div');
   const types = el('div', 'types');
   TYPES.forEach(([k, label]) => {
     const b = el('button', s.stop_type === k ? 'on' : (!s.stop_type && k === 'gas' && s.gas_hint ? 'hint' : ''), label);
@@ -400,7 +403,20 @@ function typeRow(s, err) {
     b.onclick = () => setType(s, k, err);
     types.append(b);
   });
-  return types;
+  const box = el('div', 'toolbox');
+  const tb = el('button', 'toolsbtn', 'Tools ▾'); tb.type = 'button';
+  tb.title = 'Split, merge, delete, start or end the day here, save as a place';
+  const show = on => {
+    box.hidden = !on; tb.classList.toggle('on', on); tb.textContent = on ? 'Tools ▴' : 'Tools ▾';
+    if (on) toolsOpen.add(s.id); else toolsOpen.delete(s.id);
+    if (on && !inSheet) box.replaceChildren(toolsBlock(s, err, false));
+  };
+  tb.onclick = () => show(box.hidden);
+  types.append(tb);
+  wrap.append(types, box);
+  wrap.tools = box;
+  show(toolsOpen.has(s.id));
+  return wrap;
 }
 
 // Split, merge, start/end the day here, save as a place, back to draft, delete.
@@ -532,7 +548,8 @@ function openSheet(id) {
 
   // (1) what and where
   const sec1 = el('section', 'sec');
-  sh.types = typeRow(s, sh.err);
+  sh.types = typeRow(s, sh.err, true);
+  sh.tools = sh.types.tools;
   const nameIn = el('input'); nameIn.value = s.business_name;
   nameIn.placeholder = {vendor: 'Vendor (supply shop)', gas: 'Station (optional)', office: 'Office'}[type] || 'Business name';
   nameIn.addEventListener('input', () => { v.known_site_id = null; });
@@ -611,10 +628,7 @@ function openSheet(id) {
   }
   sh.needs = el('div', 'needs');
   sh.finish = el('div', 'finish');
-  const tools = el('details', 'sheet-more');
-  sh.tools = el('div');
-  tools.append(el('summary', null, 'Stop tools (split, merge, delete…)'), sh.tools);
-  sec3.append(sh.needs, sh.finish, tools);
+  sec3.append(sh.needs, sh.finish);
 
   const body = el('div', 'sheet-body');
   body.append(sh.stat, sh.err, sec1, sec2, sec3);
@@ -950,10 +964,7 @@ function buildEdit(edit, s) {
     nameIn.onblur = () => laterSave(s.id, err);
     edit.append(labeled('Name', nameIn));
   }
-  edit.append(times, err);
-  const tools = el('details', 'sheet-more');
-  tools.append(el('summary', null, 'Stop tools (split, merge, delete…)'), toolsBlock(s, err, false));
-  edit.append(tools, stat);
+  edit.append(times, err, stat);
 }
 
 // ---- drive row ---------------------------------------------------------

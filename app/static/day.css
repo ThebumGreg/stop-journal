@@ -187,6 +187,9 @@ body.sheet-open { overflow:hidden; }
 .types { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:8px; }
 .types button { font-size:14px; padding:6px 4px; min-height:40px; }
 .types button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+.types .toolsbtn { color:var(--muted); border-style:dashed; }
+.types .toolsbtn.on { background:var(--sel); color:inherit; border-style:solid; }
+.toolbox { padding:8px; margin-bottom:8px; border:1px solid var(--line); border-radius:8px; background:var(--sel); }
 .types button.hint { border-color:var(--acc); border-width:2px; }
 .acts { align-items:center; }
 .acts .notready { opacity:.55; }

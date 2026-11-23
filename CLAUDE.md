@@ -311,7 +311,8 @@ stop departed 12:21, and listed billable parts with no cost.
   where (type buttons, business/station + Find, address, Arrived/Left, Here now + Leaving now), 2 Work (Work performed,
   grammar, category with "last time here", parts, vendor purchases, photos, details: ticket/expenses/follow-ups; Gas: fuel +
   receipts), 3 Finish (visit result for jobs, due date for a return/waiting follow-up, "Still needed" links that jump to the
-  field, **Finish stop**, "Save & close (finish later)", Stop tools). All typed fields autosave (FIELDS include business_name,
+  field, **Finish stop**, "Save & close (finish later)"). Stop tools (split, merge, delete, start/end day here, save as a place) open from a
+  **Tools** button in the last slot of the type grid (under Gas), on the sheet and on the card. All typed fields autosave (FIELDS include business_name,
   address, category, known_site_id, arrive, depart). Closing always returns to the list on that stop.
 - **Saved places by type**: the sheet has a "Saved clients / vendors / offices (n)…" dropdown (Job = client places, Vendor = vendor,
   Office = office; nearest first with distance) that fills name, address and `known_site_id`. Picking the Office type fills the
