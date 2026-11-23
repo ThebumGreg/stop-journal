@@ -199,3 +199,21 @@ def test_pages_and_login_gate(tmp_path):
     assert c.post("/api/parts/import", data="name\nx\n").status_code == 401
     c.post("/login", data={"password": "pw"})
     assert c.get("/truck").status_code == 200 and c.get("/api/parts").status_code == 200
+
+
+def test_part_page_history_and_truck_tabs(tmp_path):
+    from tests.test_export import D, make
+    c = make(tmp_path)
+    p = c.post("/api/parts", json={"name": "Ball valve", "unit_cost": "8.75", "on_hand": "10"}).json
+    sid = c.get(f"/api/day/{D}").json["stops"][0]["id"]
+    c.post(f"/api/stops/{sid}/parts", json={"part_id": p["id"], "qty": 2})
+    c.post(f"/api/parts/{p['id']}/adjust", json={"delta": 5, "note": "Ferguson"})
+    h = c.get(f"/api/parts/{p['id']}/history").json
+    assert h["part"]["on_hand"] == 13 and h["totals"] == {"used": 2, "stops": 1}
+    assert h["uses"][0]["url"] == f"/day/{D}?stop={sid}"
+    reasons = [x["reason"] for x in h["log"]]
+    assert "Used on a stop" in reasons and "Stock added" in reasons and h["log"][0]["note"] == "Ferguson"
+    page = c.get("/truck").data.decode()
+    for tab in ('href="#parts"', 'href="#stock"', 'href="#fuel"', 'href="#data"'):
+        assert tab in page
+    assert ">Reports<" in page and "Import / export</a>" in page

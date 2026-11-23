@@ -529,6 +529,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return parts.part_dict(parts.get_part(conn, pid))
         return catalog(go)
 
+    @app.get("/api/parts/<int:pid>/history")
+    def parts_history(pid):
+        return catalog(lambda conn: parts.history(conn, pid))
+
     @app.patch("/api/parts/<int:pid>")
     def parts_patch(pid):
         b = request.get_json(silent=True) or {}

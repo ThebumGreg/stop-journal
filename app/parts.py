@@ -584,3 +584,26 @@ def choices(conn):
     key = lambda x: x.lower()
     return {"vendors": sorted(vend, key=key), "categories": sorted(cats, key=key),
             "units": [{"value": k, "label": v} for k, v in UNITS.items()]}
+
+
+REASON_LABEL = {"used": "Used on a stop", "return": "Back to the truck (removed from a stop)", "count": "Truck count",
+                "restock": "Stock added", "adjust": "Stock removed", "import": "CSV import", "delete": "Stop deleted",
+                "redetect": "Stop re-detected"}
+
+
+def history(conn, pid, limit=100):
+    """One part's page: the part, the stops it was used on (newest first), and every stock change."""
+    p = get_part(conn, pid)
+    uses = [{"stop_id": r["stop_id"], "date": r["date"], "business_name": r["business_name"] or "",
+             "qty": r["qty"], "unit": r["unit"] or p["unit"] or "ea", "unit_cost": r["unit_cost"],
+             "billable": bool(r["billable"]), "url": f"/day/{r['date']}?stop={r['stop_id']}"}
+            for r in conn.execute(
+                "SELECT sp.*, s.date, s.business_name FROM stop_parts sp JOIN stops s ON s.id=sp.stop_id "
+                "WHERE sp.part_id=? ORDER BY s.date DESC, s.arrive_utc DESC LIMIT ?", (pid, limit))]
+    log = [{"ts": r["ts"], "delta": r["delta"], "reason": REASON_LABEL.get(r["reason"], r["reason"]),
+            "note": r["note"] or ""}
+           for r in conn.execute("SELECT * FROM inventory_log WHERE part_id=? ORDER BY ts DESC, id DESC LIMIT ?",
+                                 (pid, limit))]
+    used = conn.execute("SELECT COALESCE(SUM(qty),0), COUNT(DISTINCT stop_id) FROM stop_parts WHERE part_id=?",
+                        (pid,)).fetchone()
+    return {"part": part_dict(p), "uses": uses, "log": log, "totals": {"used": used[0], "stops": used[1]}}

@@ -406,6 +406,16 @@ stop departed 12:21, and listed billable parts with no cost.
   (Google Routes would cost money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
   Drive); not built.
 
+## Truck page layout (redesign, 2026-11-22)
+- Menu: Home, Day, **Reports** (was Export; `/tools`), Places, Truck, Settings.
+- Truck has tabs in the URL hash: **Parts** (#parts: search, filter chips, Show removed, list; **+ New part** opens a sheet with
+  grouped fields), a page per part (#part-<id>: stock with +/−/packs/set, Used on (stops, linked), Edit details, Stock changes from
+  `inventory_log`; `GET /api/parts/<id>/history`), **Stock** (#stock: Count the truck, Shopping list), **Fuel** (#fuel),
+  **Import / export** (#data: parts CSV import with Check file, export, template, column list). Vendors and Kits tabs get added
+  when built (no empty tabs).
+- Parts plan build order from here: shelf location + duplicate warning, Mark bought + share list, Vendors tab (one record per
+  vendor), purchase log, install kits.
+
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.
 - Show each milestone working before starting the next.

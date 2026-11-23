@@ -891,7 +891,7 @@ async function markHere(s, which, err) {
   const n = S.stops.filter(x => x.id !== s.id && x.status !== 'Personal' &&
     (which === 'start' ? x.arrive_ts < s.arrive_ts : x.arrive_ts > s.arrive_ts)).length;
   if (n && !confirm('Make this the ' + (which === 'start' ? 'start' : 'end') + ' of the day? ' + n + ' stop' +
-      (n > 1 ? 's' : '') + (which === 'start' ? ' before' : ' after') + ' it will be marked Personal (you can undo this on the Export & tools page).')) return;
+      (n > 1 ? 's' : '') + (which === 'start' ? ' before' : ' after') + ' it will be marked Personal (you can undo this on the Reports page).')) return;
   await run(() => api('POST', '/api/stops/' + s.id + '/mark', {which}), err,
             () => { S.flash = n ? n + ' stop' + (n > 1 ? 's' : '') + ' marked Personal.' : ''; });
 }
@@ -1167,7 +1167,7 @@ async function markNow(which) {
     if (which === 'end') {
       const n = S.totals.draft;
       if (!n) { location.href = '/tools?date=' + S.date; return; }
-      S.flash = n + ' stop' + (n > 1 ? 's' : '') + ' still in Draft: review them, then use Export.';
+      S.flash = n + ' stop' + (n > 1 ? 's' : '') + ' still in Draft: review them, then use Reports.';
     } else S.flash = 'Day started.';
     render(false);
   } catch (e) { alert(e.message); }

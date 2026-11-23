@@ -2,18 +2,31 @@
 <html lang="en">
 <head>
 {% include "_head.html" %}
-<title>JobHub – Truck parts</title>
+<title>JobHub – Truck</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
 <style>
-  .part { border-bottom:1px solid var(--line); }
-  .head { display:flex; gap:10px; align-items:center; padding:12px 4px; min-height:56px; cursor:pointer; }
-  .head .body { flex:1; min-width:0; }
-  .head .n { font-weight:600; }
-  .head .m { color:var(--muted); font-size:14px; }
+  .subnav { display:flex; gap:4px; overflow-x:auto; margin:0 0 12px; padding-bottom:2px; border-bottom:1px solid var(--line); }
+  .subnav a { padding:8px 12px; border-radius:8px 8px 0 0; text-decoration:none; color:var(--acc); white-space:nowrap; font-size:15px; }
+  .subnav a.on { background:var(--sel); color:var(--fg); font-weight:700; }
+  .chips { display:flex; gap:6px; overflow-x:auto; margin:8px 0; }
+  .chips button { border-radius:999px; padding:4px 12px; min-height:34px; font-size:14px; white-space:nowrap; }
+  .chips button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .bar { display:flex; gap:8px; align-items:center; }
+  .bar input { flex:1; }
+  .part { display:flex; gap:10px; align-items:center; padding:12px 4px; min-height:56px; border-bottom:1px solid var(--line);
+          cursor:pointer; color:inherit; text-decoration:none; }
+  .part .body { flex:1; min-width:0; }
+  .part .n { font-weight:600; }
+  .part .m { color:var(--muted); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .part::after { content:'›'; color:var(--muted); font-size:20px; }
   .qty { font-weight:700; white-space:nowrap; }
   .low { color:var(--warn); } .neg { color:var(--err); }
-  .edit { padding:4px 4px 14px; display:grid; gap:10px; }
-  .tabs button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .card { border:1px solid var(--line); border-radius:12px; padding:12px; margin:10px 0; display:grid; gap:10px; }
+  .card h2 { margin:0; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .stocknow { font-size:28px; font-weight:800; }
+  .hrow { padding:8px 0; border-top:1px solid var(--line); font-size:14px; color:inherit; text-decoration:none; display:block; }
+  .hrow .m { color:var(--muted); font-size:13px; }
+  .back { display:inline-block; margin-bottom:6px; text-decoration:none; color:var(--acc); }
   .crow { display:grid; grid-template-columns:1fr 96px; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
   .crow input { width:100%; }
   .group h3 { margin:14px 0 4px; font-size:16px; }
@@ -23,67 +36,26 @@
   .fuellog { width:100%; border-collapse:collapse; font-size:13px; }
   .fuellog td, .fuellog th { padding:4px; border-bottom:1px solid var(--line); text-align:right; }
   .fuellog td:first-child, .fuellog th:first-child, .fuellog td:nth-child(2), .fuellog th:nth-child(2) { text-align:left; }
+  .tools button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  /* new-part sheet */
+  .sheetbg { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:50; display:flex; align-items:flex-end; justify-content:center; }
+  .sheetbox { background:var(--bg); width:100%; max-width:760px; max-height:92vh; overflow:auto; border-radius:14px 14px 0 0;
+              padding:14px 16px calc(16px + env(safe-area-inset-bottom)); display:grid; gap:10px; }
+  .sheetbox h2 { margin:0; }
+  .sheetbox fieldset { border:1px solid var(--line); border-radius:10px; padding:8px 10px 10px; }
+  .sheetbox legend { font-size:13px; color:var(--muted); padding:0 4px; }
 </style>
 </head>
 <body>
 {% include "_header.html" %}
 <main>
-  <h1 class="page-title">Truck parts</h1>
-  <div class="row tabs" id="tabs">
-    <button type="button" data-k="" class="on">All</button>
-    <button type="button" data-k="part">Parts</button>
-    <button type="button" data-k="consumable">Consumables</button>
-    <button type="button" data-k="expense">Expenses</button>
-    <button type="button" data-k="low">Low stock</button>
-  </div>
-  <label class="chk"><input type="checkbox" id="showoff"> Show removed items</label>
-  <input id="filter" placeholder="Search by name, part number, category or vendor">
-
-  <h2>Count, shopping &amp; fuel</h2>
-  <div class="row">
-    <button type="button" id="countbtn">Count the truck</button>
-    <button type="button" id="shopbtn">Shopping list</button>
-    <button type="button" id="fuelbtn">Fuel</button>
-  </div>
-  <div id="tools"></div>
-
-  <h2>Add an item</h2>
-  <div class="grid" id="addform">
-    <div><label>Name</label><input id="a_name"></div>
-    <div><label>Type</label><select id="a_kind"><option value="part">Part (billable)</option><option value="consumable">Consumable (not billed)</option><option value="expense">Expense (money, not stock)</option></select></div>
-    <div><label>Part #</label><input id="a_sku"></div>
-    <div><label>Vendor</label><select id="a_vendor"></select></div>
-    <div><label>Category</label><select id="a_category"></select></div>
-    <div><label>Unit (what you use or sell)</label><select id="a_unit"></select></div>
-    <div><label>Unit cost</label><input id="a_cost" inputmode="decimal"></div>
-    <div><label>On truck now (optional)</label><input id="a_oh" inputmode="decimal"></div>
-    <div><label>Reorder at</label><input id="a_reorder" inputmode="decimal"></div>
-    <div><label>Comes in packs of (optional)</label><input id="a_pack" inputmode="decimal" placeholder="e.g. 25"></div>
-    <div><label>Pack is a</label><select id="a_packunit"></select></div>
-    <div><label><input type="checkbox" id="a_bill" checked> Billable</label><button class="primary" id="a_go" type="button">Add</button></div>
-  </div>
-  <div class="err" id="a_err"></div>
-  <div class="hint">Leave “on truck” blank for parts you don’t want stock tracked for.</div>
-
-  <h2>Import / export</h2>
-  <div class="box">
-    <div class="row">
-      <input type="file" id="csvfile" accept=".csv,text/csv" style="width:auto;flex:1">
-      <button id="csvcheck" type="button">Check file</button>
-      <button id="csvgo" type="button">Import CSV</button>
-    </div>
-    <div class="hint" style="margin-top:6px">
-      <a href="/api/parts/template.csv" data-file="template">Download template</a> ·
-      <a href="/api/parts/export.csv" data-file="parts CSV">Export current parts</a>.
-      Columns: <code>name</code> (required), <code>sku</code>, <code>type</code> (part, consumable or expense), <code>unit</code> (each, pair, pack, box, bag, case, roll, foot, gallon or pound; any other unit rejects the row),
-      <code>unit_cost</code>, <code>billable</code>, <code>category</code>, <code>vendor</code>, <code>on_hand</code>, <code>reorder_at</code>, <code>pack_size</code>, <code>pack_unit</code>.
-      Matching is by part number, else name. <b>Check file</b> shows what an import would do without changing anything. A filled <code>on_hand</code> sets the truck count and turns tracking on.
-    </div>
-    <div id="csvres"></div>
-  </div>
-
-  <h2>Items <span class="hint" id="count"></span></h2>
-  <div id="list"></div>
+  <nav class="subnav" id="subnav" aria-label="Truck sections">
+    <a href="#parts" data-v="parts">Parts</a>
+    <a href="#stock" data-v="stock">Stock</a>
+    <a href="#fuel" data-v="fuel">Fuel</a>
+    <a href="#data" data-v="data">Import / export</a>
+  </nav>
+  <div id="view"></div>
 </main>
 <script src="{{ url_for('static', filename='truck.js') }}"></script>
 </body>
