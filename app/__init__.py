@@ -703,6 +703,18 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return r
         return catalog(go)
 
+    @app.get("/api/places/<int:sid>/history")
+    def places_history(sid):
+        return with_conn(lambda conn, cfg: jsonify(service.place_history(conn, cfg, sid)))
+
+    @app.get("/api/gas-stations")
+    def gas_stations():
+        return with_conn(lambda conn, cfg: jsonify(stations=service.gas_stations(conn, cfg)))
+
+    @app.get("/api/gas-stations/history")
+    def gas_station_history():
+        return with_conn(lambda conn, cfg: jsonify(service.station_history(conn, cfg, request.args.get("key", ""))))
+
     @app.patch("/api/places/<int:sid>")
     def places_patch(sid):
         b = request.get_json(silent=True) or {}

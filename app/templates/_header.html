@@ -1,13 +1,3 @@
-{% set ep = request.endpoint %}
 <header>
-  <div class="top">
-    <a class="brand" href="/">JobHub</a>
-    <nav>
-      <a href="/">Day</a>
-      <a href="/tools" {% if ep == 'tools_page' %}aria-current="page"{% endif %}>Export</a>
-      <a href="/places" {% if ep == 'places_page' %}aria-current="page"{% endif %}>Places</a>
-      <a href="/truck" {% if ep == 'truck_page' %}aria-current="page"{% endif %}>Truck</a>
-      <a href="/settings" {% if ep in ('settings_page', 'settings_save') %}aria-current="page"{% endif %}>Settings</a>
-    </nav>
-  </div>
+{% include "_nav.html" %}
 </header>

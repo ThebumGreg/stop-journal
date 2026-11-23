@@ -216,3 +216,28 @@ def test_live_endpoint(tmp_path):
     assert d2["place"] == "" and d2["address"].startswith("9 Sample Ave")
     e, _ = make(tmp_path / "e", points=[])
     assert e.get("/api/live").status_code == 404
+
+
+def test_place_history_and_gas_stations(tmp_path):
+    from tests.test_export import D, make
+    c = make(tmp_path)
+    ss = c.get(f"/api/day/{D}").json["stops"]
+    a, b = ss[0], ss[1]
+    c.patch(f"/api/stops/{a['id']}", json={"status": "Confirmed", "business_name": "Acme", "notes": "Fixed the valve\nmore",
+                                          "work_category": "Time & Material", "visit_result": "complete"})
+    site = next(x for x in c.get(f"/api/day/{D}").json["stops"] if x["id"] == a["id"])["known_site_id"]
+    h = c.get(f"/api/places/{site}/history").json
+    v = h["visits"][0]
+    assert h["totals"]["visits"] == 1 and h["totals"]["minutes"] == a["minutes"]
+    assert v["summary"] == "Fixed the valve…" and v["visit_result"] == "Complete" and v["type_label"] == "Job"
+    assert v["url"] == f"/day/{D}?stop={a['id']}"
+    c.patch(f"/api/stops/{b['id']}", json={"stop_type": "gas", "business_name": "Corner Fuel"})
+    c.put(f"/api/stops/{b['id']}/fuel", json={"gallons": 10, "total": 40})
+    st = c.get("/api/gas-stations").json["stations"]
+    assert st[0]["name"] == "Corner Fuel" and st[0]["fills"] == 1 and st[0]["total"] == 40
+    g = c.get("/api/gas-stations/history?key=corner fuel").json
+    assert g["totals"]["avg_price_per_gallon"] == 4.0 and g["visits"][0]["fuel"]["total"] == 40
+    page = c.get("/places").data.decode()
+    assert 'aria-current="page"' in page and ">Places<" in page.split('aria-current="page"')[1][:20]
+    day = c.get(f"/day/{D}").data.decode()
+    assert 'id="toolslink"' in day and '<a href="/" aria-current="page">Day</a>' in day

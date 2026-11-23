@@ -23,9 +23,11 @@ textarea { min-height:84px; resize:vertical; }
 header { padding:max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
          border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; }
 header .top { display:flex; align-items:center; gap:12px; flex:1 1 auto; justify-content:space-between; }
-.brand { font-weight:800; font-size:20px; letter-spacing:-.3px; color:var(--acc); }
-nav { display:flex; gap:4px; }
-nav a { color:var(--acc); text-decoration:none; padding:10px 8px; font-size:15px; }
+.brand { font-weight:800; font-size:20px; letter-spacing:-.3px; color:var(--acc); text-decoration:none; }
+nav { display:flex; gap:2px; }
+nav a { color:var(--acc); text-decoration:none; padding:7px 8px; font-size:15px; border-radius:8px; white-space:nowrap; }
+nav a[aria-current] { background:var(--acc); color:#fff; font-weight:700; }
+@media (max-width:400px) { nav a { padding:7px 6px; font-size:14px; } .brand { font-size:18px; } }
 .datebar { display:flex; gap:6px; align-items:center; flex:1 1 260px; }
 .datebar input { flex:1; width:auto; }
 .datebar button { width:48px; padding:0; }

@@ -1377,3 +1377,85 @@ def left_unfinished(conn, cfg, date, now, since=None):
         if needs or (t != "gas" and r["status"] != "Confirmed"):
             out.append((r, needs or ["finish"]))
     return out
+
+
+# ---- Places history: past visits to a place, and fill-ups per gas station ------------
+SAME_NAME_NEAR_M = 300     # a stop with the place's name this close counts as a visit even if it was never linked
+
+
+def _visit(conn, cfg, r, site_kind=""):
+    t = stop_type(r, site_kind)
+    notes = (r["notes"] or "").strip()
+    first = notes.splitlines()[0] if notes else ""
+    f = conn.execute("SELECT * FROM fuel WHERE stop_id=?", (r["id"],)).fetchone()
+    return {"stop_id": r["id"], "date": r["date"], "arrive": fmt_time(cfg, r["arrive_utc"]),
+            "depart": fmt_time(cfg, r["depart_utc"]), "minutes": round((r["depart_utc"] - r["arrive_utc"]) / 60),
+            "stop_type": t, "type_label": STOP_TYPES.get(t, ""), "status": r["status"] or "Draft",
+            "business_name": r["business_name"] or "",
+            "work_category": r["work_category"] or "", "visit_result": VISIT_RESULTS.get(r["visit_result"] or "", ""),
+            "ticket": r["ticket"] or "",
+            "summary": first[:140] + ("…" if len(first) > 140 or len(notes.splitlines()) > 1 else ""),
+            "parts": conn.execute("SELECT COUNT(*) FROM stop_parts WHERE stop_id=? AND COALESCE(kind,'part')!='expense'",
+                                  (r["id"],)).fetchone()[0],
+            "photos": conn.execute("SELECT COUNT(*) FROM photos WHERE stop_id=?", (r["id"],)).fetchone()[0],
+            "fuel": _fuel_row(f) if f else None,
+            "url": f"/day/{r['date']}?stop={r['id']}"}
+
+
+def place_history(conn, cfg, site_id, limit=200):
+    """Every stop at a saved place, newest first, with totals. Linked stops, plus same-name stops nearby."""
+    site = known.get_site(conn, site_id)
+    name = (site["name"] or "").strip().lower()
+    rows = []
+    for r in conn.execute("SELECT * FROM stops WHERE COALESCE(kind,'stop')='stop' AND "
+                          "(known_site_id=? OR lower(trim(COALESCE(business_name,'')))=?) "
+                          "ORDER BY date DESC, arrive_utc DESC", (site_id, name)):
+        if r["known_site_id"] != site_id:
+            if r["known_site_id"] or site["lat"] is None or r["lat"] is None or \
+                    haversine_m(r["lat"], r["lon"], site["lat"], site["lon"]) > SAME_NAME_NEAR_M:
+                continue
+        rows.append(r)
+    visits = [_visit(conn, cfg, r, site["kind"] or "") for r in rows[:limit]]
+    work = [v for v in visits if v["status"] == "Confirmed" or v["stop_type"] == "gas"]
+    return {"place": known.site_dict(site), "visits": visits,
+            "totals": {"visits": len(rows), "finished": len(work),
+                       "minutes": sum(v["minutes"] for v in work),
+                       "last": visits[0]["date"] if visits else None,
+                       "first": visits[-1]["date"] if visits else None}}
+
+
+def _gas_rows(conn):
+    return conn.execute("SELECT * FROM stops WHERE COALESCE(kind,'stop')='stop' AND "
+                        "(stop_type='gas' OR id IN (SELECT stop_id FROM fuel)) ORDER BY date DESC, arrive_utc DESC")
+
+
+def gas_stations(conn, cfg):
+    """Stations from your fill-ups (gas stations are not saved places): name, address, fill-ups, spend, last visit."""
+    out = {}
+    for r in _gas_rows(conn):
+        key = (r["business_name"] or "").strip().lower()
+        st = out.setdefault(key, {"name": (r["business_name"] or "").strip() or "Unnamed station",
+                                  "key": key, "address": r["address"] or "", "fills": 0, "total": 0.0,
+                                  "gallons": 0.0, "last": r["date"]})
+        f = conn.execute("SELECT * FROM fuel WHERE stop_id=?", (r["id"],)).fetchone()
+        st["fills"] += 1
+        if f:
+            st["total"] = round(st["total"] + (f["total"] or 0), 2)
+            st["gallons"] = round(st["gallons"] + (f["gallons"] or 0), 3)
+        if not st["address"] and r["address"]:
+            st["address"] = r["address"]
+    return sorted(out.values(), key=lambda s: s["last"], reverse=True)
+
+
+def station_history(conn, cfg, key, limit=200):
+    key = (key or "").strip().lower()
+    rows = [r for r in _gas_rows(conn) if (r["business_name"] or "").strip().lower() == key]
+    visits = [_visit(conn, cfg, r) for r in rows[:limit]]
+    fills = [v["fuel"] for v in visits if v["fuel"]]
+    gal = sum(f["gallons"] or 0 for f in fills)
+    tot = sum(f["total"] or 0 for f in fills)
+    return {"name": rows[0]["business_name"] if rows and rows[0]["business_name"] else "Unnamed station",
+            "visits": visits,
+            "totals": {"visits": len(rows), "total": round(tot, 2), "gallons": round(gal, 3),
+                       "avg_price_per_gallon": round(tot / gal, 3) if gal else None,
+                       "last": visits[0]["date"] if visits else None}}

@@ -8,10 +8,7 @@
 </head>
 <body>
 <header>
-  <div class="top">
-    <span class="brand">JobHub</span>
-    <nav><a href="/tools" id="toolslink">Export</a><a href="/places">Places</a><a href="/truck">Truck</a><a href="/settings">Settings</a></nav>
-  </div>
+{% include "_nav.html" %}
   <div class="datebar">
     <button id="prev" aria-label="Previous day">&larr;</button>
     <input type="date" id="date" value="{{ date }}">

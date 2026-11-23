@@ -15,13 +15,20 @@
   .edit { padding:4px 4px 14px; display:grid; gap:10px; }
   .cand { padding:10px 4px; border-top:1px solid var(--line); cursor:pointer; }
   .cand .n { font-weight:600; } .cand .a { color:var(--muted); font-size:13px; }
+  .tot { font-weight:600; margin-bottom:4px; }
+  .visit { display:block; padding:10px 8px; border:1px solid var(--line); border-radius:8px; margin-bottom:6px;
+           color:inherit; text-decoration:none; }
+  .visit .n { font-weight:600; } .visit .m { color:var(--muted); font-size:13px; } .visit .s { font-size:14px; margin-top:2px; }
+  .visit::after { content:'›'; float:right; margin-top:-34px; color:var(--muted); font-size:20px; }
+  .editplace > summary { cursor:pointer; padding:8px 0; color:var(--acc); font-weight:600; }
+  .editplace[open] { display:grid; gap:10px; }
 </style>
 </head>
 <body>
 {% include "_header.html" %}
 <main>
   <h1 class="page-title">Places</h1>
-  <p class="hint">Save your home, office and vendor locations. Stops detected there are pre-filled with the place’s name. Home pre-marks stops as Personal, but you can switch any stop to real work. You can also save a place from any stop on the day view.</p>
+  <p class="hint">Tap a place to see every visit there; tap a visit to open it. Save your home, office and vendor locations. Stops detected there are pre-filled with the place’s name. Home pre-marks stops as Personal, but you can switch any stop to real work. You can also save a place from any stop on the day view.</p>
 
   <h2>Add a place</h2>
   <div class="box">
@@ -53,6 +60,7 @@
       <option value="">All places</option>
       <option value="home">Home</option><option value="office">Office</option>
       <option value="vendor">Vendors</option><option value="client">Clients</option>
+      <option value="gas">Gas stations (from fill-ups)</option>
     </select>
   </div>
   <div id="list"></div>
