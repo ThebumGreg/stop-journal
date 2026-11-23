@@ -434,6 +434,16 @@ stop departed 12:21, and listed billable parts with no cost.
   (Google Routes would cost money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
   Drive); not built.
 
+## Tools and equipment (2026-11-23)
+- Purpose: document purchases of owned tools (about 100); no loans, no calibration, not linked to stops. `app/equipment.py`;
+  tables `tools` (name, make, model, serial, category, purchased, price, vendor, warranty_until, location truck|shop|repair|lost|
+  retired, notes) and `tool_files` (receipt|photo, `photos/tools/<tool>-<file>-<kind>.jpg`, re-encoded without metadata, max 8;
+  in the full backup zip). Truck → Tools (#tools, #tool-<id>, #tool-new): tiles (tools in use, their value, bought this year),
+  search, where chips, 🧾 when a receipt is attached, "n tools have no receipt"; tool page with purchase details, warranty,
+  receipt/photo upload (shrunk on the phone) and an in-page viewer. Import / export tab: tools CSV import (Check file), export,
+  template (columns in `equipment.COLUMNS`, aliases like Brand, Serial #, Cost, Date, Where; matched by serial, else name+model).
+  Tool vendors appear in vendor lists; vendor pages list "Tools bought here"; vendor rename updates tools.
+
 ## AI notes (2026-11-23, the user approved the cost)
 - `app/ai.py`, Settings → AI: `ANTHROPIC_API_KEY` (secret, write-only), `AI_NOTES` on/off, `AI_MONTHLY_CAP` 300 (counted in
   `api_usage` provider "ai"). Official SDK `anthropic==2.12.0`, imported lazily. Model `claude-opus-5-5`, effort low, server-side
@@ -477,7 +487,7 @@ stop departed 12:21, and listed billable parts with no cost.
 - Truck has tabs in the URL hash: **Parts** (#parts: search, filter chips, Show removed, list; **+ New part** opens a sheet with
   grouped fields), a page per part (#part-<id>: stock with +/−/packs/set, Used on (stops, linked), Edit details, Stock changes from
   `inventory_log`; `GET /api/parts/<id>/history`), **Stock** (#stock: Count the truck, Shopping list), **Vendors**, **Fuel** (#fuel),
-  **Kits**, **Import / export** (#data: parts CSV import with Check file, export, template, column list).
+  **Kits**, **Tools**, **Import / export** (#data: parts CSV import with Check file, export, template, column list).
 - **Vendors tab** (#vendors, #vendor/<name>; `app/vendors.py`): a vendor is a NAME (case-insensitive) joining vendor places (its
   branches) and `parts.vendor`; table `vendors` holds only account, phone, contact, website, notes. List: locations, parts, low
   (low first), last visit. Page: tap-to-call, account/contact/notes, Low at the truck with ✓ Bought, parts (links), locations

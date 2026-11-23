@@ -22,7 +22,8 @@ Single user. Your location data stays on your own server.
 - Saved **Places** (home, office, vendors) pre-fill and pre-mark matching stops.
 - **Truck** has tabs: Parts (each part has its own page with stock, shelf and bin, where it was used, what you paid and every
   stock change), Stock (count shelf by shelf, shopping list with Bought and Share, purchases), Vendors (one per vendor across
-  branches), Kits (a set of parts added to a stop in one tap), Fuel and Import / export.
+  branches), Kits (a set of parts added to a stop in one tap), Tools (what you own: purchase date, price, vendor, serial,
+  warranty, receipt and photo), Fuel and Import / export (parts and tools CSV).
 - **Truck parts and consumables**: a catalog with stock levels, fixed unit list and pack sizes (buy a bag of 25, use them one by one), vendor and category dropdowns, CSV import/export, reorder levels, non-billable
   consumables, a weekly **Count the truck** screen and a vendor-grouped **Shopping list**.
 - **Reports** (own page, header link): a text-based PDF and a JSON twin for one day or a date range. **Include** ticks leave

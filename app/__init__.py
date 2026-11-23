@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import ai, kits, photos, receipts, summary, vendors
+from . import ai, equipment, kits, photos, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
@@ -27,7 +27,8 @@ TEXT_SEARCH_FALLOFF_M = 50000  # free-text hits: nearer-to-stop still ranks firs
 
 
 FILE_TOKEN_S = 600       # a download link made for Safari works for 10 minutes
-FILE_PATHS = ("/api/export.", "/api/debug/", "/api/parts/template.csv", "/api/parts/export.csv",
+FILE_PATHS = ("/api/export.", "/api/debug/", "/api/parts/template.csv", "/api/parts/export.csv", "/api/tools/export.csv",
+              "/api/tools/template.csv",
               "/settings/backup")
 
 def create_app(cfg=None, client=None, provider=None, start_background=None):
@@ -567,6 +568,66 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return jsonify(parts.purchases(conn, ts(a.get("from")), end_ts, a.get("vendor") or None,
                                            int(a["part"]) if a.get("part", "").isdigit() else None))
         return with_conn(go)
+
+    # ---- tools and equipment (Truck → Tools) ------------------------------------------------
+    @app.get("/api/tools")
+    def tools_list():
+        return catalog(equipment.list_tools)
+
+    @app.post("/api/tools")
+    def tools_create():
+        return catalog(lambda conn: equipment.create(conn, request.get_json(silent=True) or {}))
+
+    @app.patch("/api/tools/<int:tid>")
+    def tools_update(tid):
+        return catalog(lambda conn: equipment.update(conn, tid, request.get_json(silent=True) or {}))
+
+    @app.delete("/api/tools/<int:tid>")
+    def tools_delete(tid):
+        return with_conn(lambda conn, cfg: jsonify(equipment.delete(conn, cfg.data_dir, tid) or {"ok": True}))
+
+    @app.post("/api/tools/<int:tid>/files")
+    def tools_file_add(tid):
+        f = request.files.get("file")
+        return with_conn(lambda conn, cfg: jsonify(equipment.add_file(conn, cfg.data_dir, tid, f.read() if f else b"",
+                                                                      request.form.get("kind", "receipt"))))
+
+    @app.get("/api/tool-files/<int:fid>.jpg")
+    def tools_file_get(fid):
+        def go(conn, cfg):
+            data = equipment.get_file(conn, cfg.data_dir, fid)
+            if data is None:
+                return jsonify(error="not found"), 404
+            return Response(data, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+        return with_conn(go)
+
+    @app.delete("/api/tool-files/<int:fid>")
+    def tools_file_delete(fid):
+        return with_conn(lambda conn, cfg: jsonify(equipment.delete_file(conn, cfg.data_dir, fid)))
+
+    @app.get("/api/tools/export.csv")
+    def tools_export():
+        conn = db.connect(base.data_dir)
+        try:
+            return csv_response(equipment.export_csv(conn), "jobhub-tools.csv")
+        finally:
+            conn.close()
+
+    @app.get("/api/tools/template.csv")
+    def tools_template():
+        return Response(equipment.template_csv(), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=jobhub-tools-template.csv"})
+
+    @app.post("/api/tools/import")
+    def tools_import():
+        f = request.files.get("file")
+        if not f:
+            return jsonify(error="Choose a CSV file."), 400
+        try:
+            text = f.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return jsonify(error="The file is not UTF-8 text (save it as CSV UTF-8)."), 400
+        return catalog(lambda conn: equipment.import_csv(conn, text, dry=request.args.get("dry") == "1"))
 
     @app.get("/api/kits")
     def kits_list():

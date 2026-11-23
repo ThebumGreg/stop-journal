@@ -628,6 +628,7 @@ def choices(conn):
     vend = {r[0].strip() for r in conn.execute(
         "SELECT vendor FROM parts WHERE COALESCE(vendor,'')!='' UNION "
         "SELECT name FROM known_sites WHERE kind='vendor' AND COALESCE(name,'')!='' UNION "
+        "SELECT vendor FROM tools WHERE COALESCE(vendor,'')!='' UNION "
         "SELECT name FROM vendors")}
     cats = {r[0].strip() for r in conn.execute("SELECT category FROM parts WHERE COALESCE(category,'')!=''")}
     key = lambda x: x.lower()

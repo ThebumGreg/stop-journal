@@ -142,6 +142,24 @@ CREATE TABLE IF NOT EXISTS purchases (
 );
 CREATE INDEX IF NOT EXISTS idx_purchases_part ON purchases(part_id);
 
+-- tools and equipment (Truck → Tools): what you own and what you paid; receipts/photos in tool_files
+CREATE TABLE IF NOT EXISTS tools (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  make TEXT, model TEXT, serial TEXT, category TEXT,
+  purchased TEXT, price REAL, vendor TEXT, warranty_until TEXT,
+  location TEXT NOT NULL DEFAULT 'truck',
+  notes TEXT,
+  created INTEGER
+);
+CREATE TABLE IF NOT EXISTS tool_files (
+  id INTEGER PRIMARY KEY,
+  tool_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  path TEXT NOT NULL,
+  created INTEGER
+);
+
 -- install kits: a named set of parts added to a stop in one tap
 CREATE TABLE IF NOT EXISTS kits (
   id INTEGER PRIMARY KEY,

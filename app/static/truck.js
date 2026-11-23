@@ -111,11 +111,12 @@ function route() {
   const m = /^part-(\d+)$/.exec(h);
   const vm = /^vendor\/(.+)$/.exec(h);
   const km = /^kit-(\d+|new)$/.exec(h);
-  const tab = m ? 'parts' : vm ? 'vendors' : km ? 'kits' : h;
+  const tm = /^tool-(\d+|new)$/.exec(h);
+  const tab = m ? 'parts' : vm ? 'vendors' : km ? 'kits' : tm ? 'tools' : h;
   document.querySelectorAll('#subnav a').forEach(a => a.classList.toggle('on', a.dataset.v === tab));
   view.replaceChildren(el('div', 'hint', 'Loading…'));
-  const show = m ? partPage(+m[1]) : vm ? vendorPage(decodeURIComponent(vm[1])) : km ? kitPage(km[1])
-    : ({parts: partsView, stock: stockView, vendors: vendorsView, kits: kitsView, fuel: () => fuelView('month'), data: dataView}[tab] || partsView)();
+  const show = m ? partPage(+m[1]) : vm ? vendorPage(decodeURIComponent(vm[1])) : km ? kitPage(km[1]) : tm ? toolPage(tm[1])
+    : ({parts: partsView, stock: stockView, vendors: vendorsView, kits: kitsView, tools: toolsView, fuel: () => fuelView('month'), data: dataView}[tab] || partsView)();
   Promise.resolve(show).catch(e => { view.replaceChildren(el('div', 'err', e.message)); });
 }
 window.addEventListener('hashchange', route);
@@ -622,7 +623,10 @@ async function vendorPage(name) {
     catch (e) { err.textContent = e.message; }
   };
   ed.append(save);
-  view.replaceChildren(back, head, err, info, low, ps, locs, vis, buys, ed);
+  const tl = el('details', 'card');
+  tl.append(el('summary', null, 'Tools bought here (' + d.tools.length + ')'));
+  d.tools.forEach(t => { const a = el('a', 'hrow'); a.href = '#tool-' + t.id; a.append(t.name + (t.purchased ? ' · ' + t.purchased : '') + (t.price != null ? ' · ' + money(t.price) : '')); tl.append(a); });
+  view.replaceChildren(back, head, err, info, low, ps, locs, vis, buys, ...(d.tools.length ? [tl] : []), ed);
 }
 
 // ---- Kits: a named set of parts added to a stop in one tap -----------------------------------
@@ -698,6 +702,165 @@ async function kitPage(id) {
   card.append(lab('Kit name', name), lab('Notes', notes), el('label', null, 'Parts (quantity per kit)'), rows, more);
   if (k.price != null) card.append(el('div', 'hint', 'Parts in this kit come to ' + money(k.price) + ' at your unit costs.'));
   view.replaceChildren(back, el('h1', 'page-title', id === 'new' ? 'New kit' : k.name), err, card, acts);
+}
+
+// ---- Tools: what you own and what you paid for it, with the receipt ------------------------
+let TOOL_WHERE = 'owned', TOOL_Q = '';
+async function toolsView() {
+  const d = await api('GET', '/api/tools');
+  const t = d.totals;
+  const tiles = el('div', 'tiles');
+  [['Tools', String(t.count)], ['Value', money(t.value) || '$0.00'], ['Bought in ' + t.year, money(t.this_year) || '$0.00']].forEach(([k, v]) => {
+    const x = el('div', 'tile'); x.append(el('b', null, v), el('span', 'hint', k)); tiles.append(x);
+  });
+  const bar = el('div', 'bar');
+  const q = el('input'); q.type = 'search'; q.placeholder = 'Search name, make, model, serial…'; q.value = TOOL_Q;
+  const add = el('a', 'btn primary', '+ New tool'); add.href = '#tool-new';
+  bar.append(q, add);
+  const chips = el('div', 'chips');
+  [['owned', 'In use'], ['truck', 'On truck'], ['shop', 'Shop'], ['repair', 'Repair'], ['gone', 'Lost / retired'], ['all', 'All']].forEach(([k, l]) => {
+    const b = el('button', TOOL_WHERE === k ? 'on' : null, l); b.type = 'button';
+    b.onclick = () => { TOOL_WHERE = k; chips.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); draw(); };
+    chips.append(b);
+  });
+  const list = el('div');
+  const hint = el('div', 'hint');
+  function draw() {
+    const words = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const shown = d.tools.filter(x => {
+      const where = TOOL_WHERE === 'all' || (TOOL_WHERE === 'owned' ? !['lost', 'retired'].includes(x.location)
+        : TOOL_WHERE === 'gone' ? ['lost', 'retired'].includes(x.location) : x.location === TOOL_WHERE);
+      const hay = [x.name, x.make, x.model, x.serial, x.category, x.vendor].join(' ').toLowerCase();
+      return where && words.every(w => hay.includes(w));
+    });
+    list.replaceChildren();
+    if (!d.tools.length) list.append(el('div', 'hint', 'No tools yet. Tap + New tool, or import a spreadsheet under Import / export.'));
+    shown.forEach(x => {
+      const a = el('a', 'part'); a.href = '#tool-' + x.id;
+      const body = el('div', 'body');
+      body.append(el('div', 'n', x.name + (x.has_receipt ? ' 🧾' : '')),
+                  el('div', 'm', [[x.make, x.model].filter(Boolean).join(' '), x.serial ? 'S/N ' + x.serial : '',
+                                  x.purchased, x.location !== 'truck' ? x.location_label : ''].filter(Boolean).join(' · ')));
+      a.append(body, el('div', 'qty', x.price != null ? money(x.price) : ''));
+      list.append(a);
+    });
+    hint.textContent = t.no_receipt ? t.no_receipt + ' tool' + (t.no_receipt === 1 ? ' has' : 's have') + ' no receipt yet (no 🧾).' : '';
+  }
+  q.oninput = () => { TOOL_Q = q.value; draw(); };
+  view.replaceChildren(tiles, bar, chips, hint, list);
+  draw();
+}
+
+function shrinkImage(file, side = 1600) {      // the phone shrinks the picture before upload (quick on weak signal)
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.naturalWidth * k); cv.height = Math.round(img.naturalHeight * k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob(b => resolve(b || file), 'image/jpeg', 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+function viewImage(src) {
+  const ov = el('div', 'viewer');
+  const close = el('button', 'primary', 'Close'); close.type = 'button'; close.onclick = () => ov.remove();
+  const img = el('img'); img.src = src; img.alt = 'Picture';
+  ov.append(close, img);
+  document.body.append(ov);
+}
+
+async function toolPage(id) {
+  const all = await api('GET', '/api/tools');
+  const isNew = id === 'new';
+  const x = isNew ? {name: '', make: '', model: '', serial: '', category: '', purchased: '', price: null, vendor: '',
+                     warranty_until: '', location: 'truck', notes: '', files: []} : all.tools.find(t => t.id === +id);
+  if (!x) { view.replaceChildren(el('div', 'err', 'That tool no longer exists.')); return; }
+  await loadParts();                                  // vendor choices
+  const back = el('a', 'back', '‹ All tools'); back.href = '#tools';
+  const err = el('div', 'err');
+  const F = {};
+  const inp = (k, label, val, opt) => {
+    const i = el(opt && opt.area ? 'textarea' : 'input'); i.value = val == null ? '' : val;
+    if (opt && opt.type) i.type = opt.type;
+    if (opt && opt.mode) i.inputMode = opt.mode;
+    if (opt && opt.ph) i.placeholder = opt.ph;
+    F[k] = i; return lab(label, i);
+  };
+  const where = el('select');
+  all.locations.forEach(l => { const o = el('option', null, l.label); o.value = l.value; where.append(o); });
+  where.value = x.location; F.location = where;
+  let dl = document.getElementById('toolcats');
+  if (!dl) { dl = el('datalist'); dl.id = 'toolcats'; document.body.append(dl); }
+  dl.replaceChildren(...all.categories.map(c => { const o = el('option'); o.value = c; return o; }));
+  const grid = el('div', 'grid');
+  grid.append(inp('name', 'Name', x.name, {ph: 'e.g. Cordless drill'}), inp('make', 'Make', x.make, {ph: 'DeWalt'}),
+              inp('model', 'Model', x.model), inp('serial', 'Serial number', x.serial),
+              inp('category', 'Category', x.category, {ph: 'Power tools'}), lab('Where', where));
+  F.category.setAttribute('list', 'toolcats');
+  const buy = el('div', 'grid');
+  F.vendor = vendorSel(x.vendor);
+  buy.append(inp('purchased', 'Bought on', x.purchased, {type: 'date'}), inp('price', 'Price paid', x.price, {mode: 'decimal', ph: '0.00'}),
+             lab('Bought from', F.vendor), inp('warranty_until', 'Warranty until', x.warranty_until, {type: 'date'}));
+  const notes = inp('notes', 'Notes', x.notes, {area: true});
+  const save = el('button', 'primary', isNew ? 'Add tool' : 'Save'); save.type = 'button';
+  save.onclick = async () => {
+    err.textContent = '';
+    const b = {};
+    Object.keys(F).forEach(k => { b[k] = F[k].value; });
+    try {
+      const r = await api(isNew ? 'POST' : 'PATCH', '/api/tools' + (isNew ? '' : '/' + id), b);
+      if (isNew) location.hash = 'tool-' + r.id; else route();
+    } catch (e) { err.textContent = e.message; }
+  };
+  const acts = el('div', 'row'); acts.append(save);
+  if (!isNew) {
+    const del = el('button', 'danger', 'Delete'); del.type = 'button';
+    del.onclick = async () => {
+      if (!confirm('Delete “' + x.name + '” and its pictures? To keep the record, set Where to Lost or Retired instead.')) return;
+      try { await api('DELETE', '/api/tools/' + id); location.hash = 'tools'; } catch (e) { err.textContent = e.message; }
+    };
+    acts.append(del);
+  }
+  const card = el('section', 'card'); card.append(el('h2', null, 'The tool'), grid);
+  const card2 = el('section', 'card'); card2.append(el('h2', null, 'Purchase'), buy, notes);
+  if (x.under_warranty) card2.append(el('div', 'ok', 'Under warranty until ' + x.warranty_until + '.'));
+  const parts_ = [back, el('h1', 'page-title', isNew ? 'New tool' : x.name), err, card, card2];
+  if (!isNew) {
+    const files = el('section', 'card');
+    files.append(el('h2', null, 'Receipt and photos'));
+    const th = el('div', 'thumbs');
+    x.files.forEach(f => {
+      const w = el('div', 'th');
+      const img = el('img'); img.src = '/api/tool-files/' + f.id + '.jpg'; img.alt = f.kind; img.loading = 'lazy';
+      img.onclick = () => viewImage(img.src);
+      const rm = el('button', 'danger x', '✕'); rm.type = 'button'; rm.title = 'Remove';
+      rm.onclick = async () => { if (!confirm('Remove this picture?')) return; try { await api('DELETE', '/api/tool-files/' + f.id); route(); } catch (e) { err.textContent = e.message; } };
+      w.append(img, el('span', 'k', f.kind === 'receipt' ? 'Receipt' : 'Photo'), rm);
+      th.append(w);
+    });
+    const up = kind => {
+      const l = el('label', 'btn'); const i = el('input'); i.type = 'file'; i.accept = 'image/*'; i.hidden = true;
+      l.append(kind === 'receipt' ? '+ Receipt' : '+ Photo', i);
+      i.onchange = async () => {
+        const f = i.files[0]; if (!f) return;
+        l.firstChild.textContent = 'Uploading…';
+        const fd = new FormData(); fd.append('file', await shrinkImage(f), 'picture.jpg'); fd.append('kind', kind);
+        try { await api('POST', '/api/tools/' + id + '/files', fd, fd); route(); }
+        catch (e) { err.textContent = e.message; l.firstChild.textContent = kind === 'receipt' ? '+ Receipt' : '+ Photo'; }
+      };
+      return l;
+    };
+    const row = el('div', 'row'); row.append(up('receipt'), up('photo'));
+    files.append(th, row, el('div', 'hint', 'Pictures are shrunk and their location data removed. They are in the full backup.'));
+    parts_.push(files);
+  }
+  parts_.push(acts);
+  view.replaceChildren(...parts_);
 }
 
 // ---- Fuel: fill-ups logged on Gas stops (day page) ------------------------------------------
@@ -788,7 +951,35 @@ function dataView() {
     ['unit_cost', ''], ['billable', 'yes / no'], ['category', ''], ['vendor', ''], ['on_hand', 'sets the truck count'],
     ['reorder_at', ''], ['pack_size', 'e.g. 25'], ['pack_unit', 'bag, box…'], ['shelf', 'where on the truck, e.g. Shelf 2 or Door'], ['bin', 'bin or drawer on that shelf, e.g. 12']];
   cols.forEach(([c, h]) => { const d = el('div', 'hint'); d.append(el('code', null, c), h ? ' – ' + h : ''); fmt.append(d); });
-  box.append(imp, exp, fmt);
+  // tools: same idea, its own file
+  const timp = el('section', 'card');
+  timp.append(el('h2', null, 'Tools (CSV)'));
+  const tfile = el('input'); tfile.type = 'file'; tfile.accept = '.csv,text/csv';
+  const tcheck = el('button', null, 'Check file'); tcheck.type = 'button';
+  const tgo = el('button', 'primary', 'Import tools'); tgo.type = 'button';
+  const tout = el('div');
+  const trun = async dry => {
+    tout.replaceChildren();
+    const f = tfile.files[0];
+    if (!f) { tout.append(el('div', 'err', 'Choose a CSV file first.')); return; }
+    try {
+      const fd = new FormData(); fd.append('file', f);
+      const r = await api('POST', '/api/tools/import' + (dry ? '?dry=1' : ''), fd, fd);
+      tout.append(el('div', 'ok', (dry ? 'Check only, nothing saved. Would import: ' : 'Imported: ') +
+        r.created + ' new, ' + r.updated + ' updated, ' + r.skipped + ' skipped.'));
+      if (r.ignored_columns.length) tout.append(el('div', 'hint', 'Ignored columns: ' + r.ignored_columns.join(', ')));
+      r.errors.slice(0, 20).forEach(m => tout.append(el('div', 'err', m)));
+    } catch (e) { tout.append(el('div', 'err', e.message)); }
+  };
+  tcheck.onclick = () => trun(true); tgo.onclick = () => trun(false);
+  const t1 = el('a', 'btn', 'Download tools list (CSV)'); t1.href = '/api/tools/export.csv'; t1.dataset.file = 'tools CSV';
+  const t2 = el('a', 'btn', 'Tools template'); t2.href = '/api/tools/template.csv'; t2.dataset.file = 'tools template';
+  const trow = el('div', 'row'); trow.append(tcheck, tgo);
+  const trow2 = el('div', 'row'); trow2.append(t1, t2);
+  timp.append(tfile, trow, tout, trow2, el('div', 'hint', 'Columns: name (required), make, model, serial, category, purchased ' +
+    '(2026-03-14 or 3/14/2026), price, vendor, warranty_until, location (truck, shop, repair, lost, retired), notes. ' +
+    'Rows match an existing tool by serial number, else by name and model. The list is what an accountant or insurer needs.'));
+  box.append(imp, exp, fmt, timp);
   view.replaceChildren(box);
 }
 
