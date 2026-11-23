@@ -19,7 +19,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import detect, parts, photos as photo_store, points as point_store, routing
+from . import calendar_feed, detect, parts, photos as photo_store, points as point_store, routing
 from .errors import EditError
 from .geo import haversine_m
 from .places import known
@@ -1176,6 +1176,7 @@ def day_payload(conn, cfg, date, include_path=False):
     out = {"date": date, "tz": cfg.app_tz, "auto_sync_min": cfg.auto_sync_min, "stops": stops, "drives": drives,
            "totals": tot, "undo": undo_available(conn, date),
            "marks": marks, "mileage": mil, "end_day": end_info(conn, cfg, stops, marks, mil)}
+    out["calendar"], out["calendar_error"] = calendar_for_day(cfg, date, stops, now)
     if include_path:
         pts = kept_points(conn, cfg, date)
         out["path"] = [[p["lat"], p["lon"]] for p in pts]
@@ -1459,3 +1460,44 @@ def station_history(conn, cfg, key, limit=200):
             "totals": {"visits": len(rows), "total": round(tot, 2), "gallons": round(gal, 3),
                        "avg_price_per_gallon": round(tot / gal, 3) if gal else None,
                        "last": visits[0]["date"] if visits else None}}
+
+
+# ---- calendar: on-site appointments next to the stops ------------------------------
+CAL_SLACK_S = 30 * 60      # a stop up to 30 min before or after an appointment still matches it
+
+
+def calendar_for_day(cfg, date, stops, now):
+    """([events], error). Each event gets the stop it matches (most overlap, one event per stop) and a state:
+    done (matched), here (matched, still on site), upcoming, missed (ended, no stop). A matched stop whose name is
+    not the event's gets stop['calendar'] so the page can offer "Use calendar"."""
+    if not cfg.calendar_url:
+        return [], ""
+    try:
+        evs = calendar_feed.events_for_day(cfg, date)
+    except calendar_feed.CalendarError as e:
+        return [], str(e)
+    except Exception as e:          # a calendar problem must never break the day page
+        return [], f"Could not read the calendar ({type(e).__name__})."
+    taken = set()
+    out = []
+    for ev in evs:
+        best, best_o = None, 0
+        for st in stops:
+            if st["id"] in taken or st["kind"] != "stop" or st["status"] in ("Personal", "Lunch", "Traffic"):
+                continue
+            o = min(st["depart_ts"], ev["end_ts"] + CAL_SLACK_S) - max(st["arrive_ts"], ev["start_ts"] - CAL_SLACK_S)
+            if o > best_o:
+                best, best_o = st, o
+        e = dict(ev, start=fmt_time(cfg, ev["start_ts"]), end=fmt_time(cfg, ev["end_ts"]),
+                 stop_id=best["id"] if best else None)
+        if best:
+            taken.add(best["id"])
+            e["state"] = "here" if best.get("here_now") else "done"
+            if (best["business_name"] or "").strip().lower() != ev["name"].strip().lower():
+                best["calendar"] = {"name": ev["name"], "location": ev["location"], "ticket": ev["ticket"],
+                                    "start": e["start"], "end": e["end"]}
+        else:
+            e["state"] = "upcoming" if ev["end_ts"] > now else "missed"
+        e["minutes_to_start"] = round((ev["start_ts"] - now) / 60)
+        out.append(e)
+    return out, ""

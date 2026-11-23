@@ -27,6 +27,10 @@ Single user. Your location data stays on your own server.
   the report says what was left out. **Zip: PDF + photos** downloads the PDF, the JSON and every receipt and photo in the
   report, filed as `photos/YYYY/MM/DD/stop-1-acme-receipt-1.jpg` (the PDF prints each picture's file name).
   From the Home Screen app the files open the share sheet (Save to Files, Mail).
+- **Places history**: tap a client, vendor, office or gas station to see every visit (date, time, work, parts, fill-ups) and
+  tap a visit to open it.
+- **Outlook calendar** (optional): paste the published ICS link in Settings → Calendar; appointments with "onsite" in them show
+  on the day, next to the stop they match, with a one-tap "Use calendar" to fill in the name and address.
 - **Alerts** to your phone through Pushover (for example: no location data during work hours, or you drove away from a stop
   you had not finished; tapping that one opens the stop).
 - A **live status** box: where the phone is now and how long it has been there.
@@ -132,7 +136,7 @@ do not contain them, so back up the whole `/data` folder (at least `backups/` an
 - Do **not** expose the app to the internet without protection. Safe options: LAN only, a VPN
   (WireGuard/Tailscale), or a reverse proxy with authentication and HTTPS. Always set `APP_PASSWORD`.
 - The only outbound calls are place lookups (coordinates and search text go to the provider you
-  choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, map tiles, and Pushover notifications (whose text never contains locations).
+  choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, reading your published calendar (only if you set the link), map tiles, and Pushover notifications (whose text never contains locations).
 - Request URLs contain coordinates, so the server keeps its access log off. Nothing is logged to
   stdout that includes locations. No analytics or telemetry.
 - If you ever track technicians, that needs written consent and work-hours-only tracking. This app

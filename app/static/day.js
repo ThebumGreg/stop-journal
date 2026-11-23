@@ -2,7 +2,7 @@
 // Editable day view. Server is the source of truth: every edit is a request that
 // returns the refreshed day, then the list re-renders. Unsaved typing is kept in
 // S.drafts (keyed 's<id>' / 'd<id>') so a re-render never loses it.
-const S = {parts: [], date: null, path: [], stops: [], drives: [], totals: {}, tool: null,
+const S = {cal: [], calErr: "", parts: [], date: null, path: [], stops: [], drives: [], totals: {}, tool: null,
            open: new Set(), openDrives: new Set(), sel: null, drafts: {}, flash: ''};
 const dateEl = document.getElementById('date');
 const barEl = document.getElementById('bar');
@@ -45,6 +45,7 @@ function applyDay(d) {
   S.stops = d.stops; S.drives = d.drives; S.totals = d.totals; S.undo = d.undo || null;
   S.marks = d.marks || {}; S.endDay = d.end_day || null; S.autoMin = d.auto_sync_min;
   if (d.path) S.path = d.path;
+  S.cal = d.calendar || []; S.calErr = d.calendar_error || '';
 }
 
 // Run a mutation; on success re-render, on failure show the message.
@@ -613,7 +614,14 @@ function openSheet(id) {
   sh.arr = arrIn; sh.dep = depIn;
   const times = el('div', 'two'); times.append(labeled('Arrived', arrIn), labeled('Left', depIn));
   sh.here = el('div');
-  sec1.append(el('h3', null, '1 · What and where'), sh.types,
+  sh.cal = el('div');
+  sh.useCal = c => {
+    nameIn.value = c.name; v.business_name = c.name; v.known_site_id = null;
+    if (c.location) { addrIn.value = c.location; v.address = c.location; }
+    if (c.ticket && !v.ticket) { v.ticket = c.ticket; if (sh.ticket) sh.ticket.value = c.ticket; }
+    saveSheet();
+  };
+  sec1.append(el('h3', null, '1 · What and where'), sh.types, sh.cal,
               labeled(type === 'vendor' ? 'Vendor' : type === 'gas' ? 'Station' : 'Business', nameIn),
               labeled('Address', addrIn), saved, find, times, sh.here);
 
@@ -634,7 +642,7 @@ function openSheet(id) {
     sh.cat = cat;
     sh.catHint = el('div');
     const catBox = labeled('Category', cat); catBox.append(sh.catHint);
-    const ticket = field('ticket', el('input')); ticket.value = s.ticket; ticket.placeholder = 'e.g. #1042, or the project / milestone';
+    const ticket = field('ticket', el('input')); ticket.value = s.ticket; sh.ticket = ticket; ticket.placeholder = 'e.g. #1042, or the project / milestone';
     const det = el('details', 'sheet-more');
     det.append(el('summary', null, type === 'vendor' ? 'Ticket and follow-ups' : 'Ticket, expenses and follow-ups'));
     det.open = !!(s.ticket || (s.follow_ups || []).length || (type !== 'vendor' && (s.parts || []).some(p => p.expense)));
@@ -726,6 +734,14 @@ function refreshSheet() {
   [['arrive', sh.arr], ['depart', sh.dep]].forEach(([k, inp]) => {
     if (document.activeElement !== inp && sheet.vals[k] === inp.value && inp.value !== s[k]) { inp.value = s[k]; sheet.vals[k] = s[k]; }
   });
+  sh.cal.replaceChildren();
+  if (s.calendar && s.stop_type !== 'gas') {
+    const c = s.calendar;
+    const b = el('button', 'quick', '📅 Use calendar: ' + c.name + (c.location ? ' – ' + c.location : '')); b.type = 'button';
+    b.title = 'Appointment ' + c.start + '–' + c.end;
+    b.onclick = () => sh.useCal(c);
+    sh.cal.append(b);
+  }
   sh.here.replaceChildren();
   if (s.here_now) {
     sh.here.append(el('div', 'here', '● Here now. Leave “Left” alone: it follows the GPS until you drive away.'));
@@ -829,6 +845,18 @@ function stopCard(s, i) {
     go.type = 'button';
     go.onclick = stop(() => { setSel(s.id, true); openSheet(s.id); });
     btns.append(go);
+  }
+  if (s.calendar) {
+    const cb = el('button', 'quick', '📅 Use ' + s.calendar.name); cb.type = 'button';
+    cb.title = 'From your calendar (' + s.calendar.start + '–' + s.calendar.end + '): fills in the name and address';
+    cb.onclick = stop(() => {
+      const c = s.calendar, body = {business_name: c.name};
+      if (c.location) body.address = c.location;
+      if (c.ticket && !s.ticket) body.ticket = c.ticket;
+      if (!s.stop_type) body.stop_type = 'job';
+      run(() => api('PATCH', '/api/stops/' + s.id, body), null, () => { if (!s.stop_type) setTimeout(() => openSheet(s.id), 0); });
+    });
+    btns.append(cb);
   }
   if (s.suggest && s.status === 'Draft') {
     const q = el('button', 'quick', (s.business_name ? 'Confirm ' : 'Confirm as ') + s.suggest.name); q.type = 'button';
@@ -1155,6 +1183,7 @@ function render(fit) {
     L.polyline(S.path, {color: '#0b66d0', weight: 3, opacity: .7}).addTo(pathLayer);
     S.path.forEach(p => bounds.push(p));
   }
+  if (S.cal.length || S.calErr) listEl.append(calendarBox());
   if (!S.stops.length) {
     const m = el('div', null, S.path.length ? 'No stops detected for this day.' : 'No location points for this day.');
     m.id = 'msg'; listEl.append(m);
@@ -1176,6 +1205,28 @@ function render(fit) {
     ' confirmed' + drafts + (t.personal ? ' · ' + t.personal + ' personal' : '') + (t.lunch ? ' · lunch' : '') + (t.traffic ? ' · ' + t.traffic + ' traffic' : '');
   footEl.style.color = t.draft ? 'var(--err)' : '';
   if (sheet.id) refreshSheet();
+}
+
+// On-site appointments from the calendar, with the stop each one matched (tap to open it).
+function calendarBox() {
+  const box = el('details', 'calbox');
+  box.open = S.calOpen !== false;
+  box.ontoggle = () => { S.calOpen = box.open; };
+  const left = S.cal.filter(e => e.state === 'upcoming').length;
+  box.append(el('summary', null, '📅 On-site appointments (' + S.cal.length + ')' + (left ? ' · ' + left + ' to go' : '')));
+  if (S.calErr) box.append(el('div', 'err', 'Calendar: ' + S.calErr));
+  S.cal.forEach(e => {
+    const r = el('div', 'calrow ' + e.state);
+    const st = S.stops.find(x => x.id === e.stop_id);
+    const state = e.state === 'done' || e.state === 'here'
+      ? (e.state === 'here' ? 'Here now · stop ' : 'Stop ') + (st ? stopNum(st) : '')
+      : e.state === 'upcoming' ? (e.minutes_to_start > 0 ? 'in ' + dur(e.minutes_to_start) : 'now')
+      : 'No visit detected';
+    r.append(el('div', 'n', e.start + '–' + e.end + ' · ' + e.name), el('div', 'm', [e.location, state].filter(Boolean).join(' · ')));
+    if (st) { r.classList.add('link'); r.onclick = () => { setSel(st.id, true); if (SHEET_TYPES.includes(st.stop_type)) openSheet(st.id); else setOpen(st.id, true); }; }
+    box.append(r);
+  });
+  return box;
 }
 
 // /day/<date>?stop=<id> (alerts, Places history) opens that stop once the day is loaded

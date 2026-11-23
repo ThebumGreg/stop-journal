@@ -8,7 +8,7 @@ address, user and device can be picked on the Settings page.
 import secrets
 from dataclasses import replace
 
-SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user")
+SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user", "calendar_url")
 DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
@@ -70,6 +70,15 @@ SPEC = [
         dict(key="routing_url", label="Road distance service (OSRM)", kind="url",
              help="Used only to document the miles from where the day ended to Home. Coordinates are rounded to about "
                   "100 m before they are sent. Blank turns it off (a straight-line estimate is used)."),
+    ]),
+    ("Calendar (Outlook)", [
+        dict(key="calendar_url", label="Published calendar link (ICS)", kind="secret",
+             help="Outlook on the web: Settings → Calendar → Shared calendars → Publish a calendar → pick the calendar, "
+                  "“Can view all details” → Publish → copy the ICS link. Anyone with the link can read the calendar, so "
+                  "it is write-only here. Blank = off."),
+        dict(key="calendar_keyword", label="Word that marks an on-site appointment", kind="text",
+             help="Only events with this word in the title, location, notes or category show up (on-site and on site "
+                  "match too). Default onsite."),
     ]),
     ("Grammar check (LanguageTool)", [
         dict(key="languagetool_url", label="Grammar check server (LanguageTool)", kind="url",
@@ -133,6 +142,7 @@ TABS = [
     ("Places", ["Business suggestions"]),
     ("Pushover", ["Notifications (Pushover)", "Alerts"]),
     ("Road distance", ["Road distance (OSRM)"]),
+    ("Calendar", ["Calendar (Outlook)"]),
     ("Grammar", ["Grammar check (LanguageTool)"]),
     ("General", ["Stop detection", "Backups"]),
 ]
@@ -210,7 +220,11 @@ def save(conn, form):
         if form.get("clear_" + key):
             deletes.append(key)
         elif new:
-            if len(new) > 200:
+            if key == "calendar_url":
+                new = new.replace("webcal://", "https://", 1) if new.lower().startswith("webcal://") else new
+                if not new.startswith("https://"):
+                    return {key: "must be the https:// (or webcal://) ICS link"}
+            if len(new) > (1000 if key == "calendar_url" else 200):
                 return {key: "is too long"}
             writes[key] = new
     for k in deletes:

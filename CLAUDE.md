@@ -371,6 +371,26 @@ stop departed 12:21, and listed billable parts with no cost.
   `/settings/backup-full.zip` (a consistent DB copy + `photos/`, built in an unlinked temp file). Photos are not copied anywhere
   automatically; off-site (S3 / Linode Object Storage / Google Drive) is not built (costs money: ask first).
 
+## Places history, menu bar, calendar (built 2026-11-22, later)
+- **Menu bar**: one partial `templates/_nav.html` on every page (Day, Export, Places, Truck, Settings); the current page is a
+  filled pill (`aria-current`). The day page includes it inside its own header (date bar below). Export keeps `id=toolslink`.
+- **Places history**: tapping a place shows its visits first (`GET /api/places/<id>/history`: stops linked to the place, plus
+  unlinked same-name stops within 300 m), newest first, totals, 10 then "Show all"; each visit links to `/day/<date>?stop=<id>`.
+  "Edit place" is folded below. Gas stations are not saved places: the filter "Gas stations (from fill-ups)" lists them from
+  Gas stops grouped by name (`/api/gas-stations`, `/api/gas-stations/history?key=`), with fill-ups, spend and avg $/gal.
+- **Calendar** (`app/calendar_feed.py`): Office 365 / Outlook "Publish a calendar" ICS link in Settings → Calendar (secret,
+  write-only, up to 1000 chars, webcal:// accepted) and a keyword (default `onsite`; on-site / on site match) searched in
+  title, location, notes and categories. All-day and cancelled events skipped; recurring events expanded
+  (`recurring-ical-events`); Outlook's Windows time zone blocks work. Feed cached 10 min in memory. Event notes are only
+  searched for the keyword and a ticket number, never stored. `day_payload.calendar` lists the day's on-site events with the
+  matched stop (most overlap, +/- 30 min, one event per stop, never Personal/Lunch/Traffic) and state done | here | upcoming |
+  missed; a matched stop whose name differs gets `calendar` {name, location, ticket}, shown as "📅 Use <name>" on the card and
+  "Use calendar" in the sheet (fills name, address, ticket if empty; an untyped stop becomes a Job). Calendar errors only show a
+  message (`calendar_error`), never break the day. Settings has "Test calendar". Address format: to be confirmed by the user.
+- Not built yet: summary home page with time to the next appointment and ETA while driving (needs geocoding the event address;
+  free OSRM has no traffic, Google Routes costs money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
+  Drive); not built.
+
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.
 - Show each milestone working before starting the next.

@@ -13,7 +13,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
-from . import alerts, backup, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
+from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
 from . import photos
 from . import report as reports
 from .config import Config
@@ -811,6 +811,22 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return jsonify(ok=False, message=str(e))
         except Exception as e:
             return jsonify(ok=False, message=f"Test failed ({type(e).__name__}).")
+
+    @app.post("/settings/test-calendar")
+    def settings_test_calendar():
+        """Reads the calendar (the link typed in the form, else the saved one): events this week, how many on site."""
+        cfg = eff()
+        url = (request.form.get("calendar_url") or "").strip() or cfg.calendar_url
+        kw = (request.form.get("calendar_keyword") or "").strip() or cfg.calendar_keyword
+        if not url:
+            return jsonify(ok=False, message="Paste the ICS link first.")
+        try:
+            calendar_feed.clear_cache()
+            n, on = calendar_feed.test(replace(cfg, calendar_url=url, calendar_keyword=kw))
+        except calendar_feed.CalendarError as e:
+            return jsonify(ok=False, message=str(e))
+        return jsonify(ok=True, message=f"Read the calendar: {n} timed event{'s' if n != 1 else ''} in the next 7 days, "
+                                       f"{on} marked “{kw}”." + ("" if on else " Add the word to an appointment to try it."))
 
     @app.post("/settings/test-grammar")
     def settings_test_grammar():

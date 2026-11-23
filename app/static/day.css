@@ -230,3 +230,8 @@ body.sheet-open { overflow:hidden; }
 .cardacts .quick { margin-top:0; }
 
 .newpart { border:1px solid var(--acc); border-radius:8px; padding:8px; margin-top:6px; display:grid; gap:8px; }
+.calbox { border:1px solid var(--line); border-radius:8px; padding:4px 10px; margin:8px 0; }
+.calbox > summary { cursor:pointer; padding:8px 0; font-weight:700; }
+.calrow { padding:8px 0; border-top:1px solid var(--line); }
+.calrow .n { font-weight:600; } .calrow .m { color:var(--muted); font-size:13px; }
+.calrow.link { cursor:pointer; } .calrow.missed .m { color:var(--warn); } .calrow.here .m { color:var(--acc); }
