@@ -134,6 +134,8 @@ def build_day(payload, cfg):
     tz = ZoneInfo(cfg.app_tz)
     stops, drives = payload["stops"], payload["drives"]
     status = {s["id"]: s["status"] for s in stops}
+    from .settings import owner_emails
+    owners = owner_emails(cfg)
     drive_into = {d["to_stop_id"]: d for d in drives}
 
     def iso(ts):
@@ -242,7 +244,9 @@ def build_day(payload, cfg):
             "parts_used": used,
             "consumables_used": consumed,
             "expenses": spent,
-            "follow_ups": [{"what": f["text"], "owner": f["owner"], "due": f["due"], "follow_up_id": f.get("id")}
+            "follow_ups": [{"what": f["text"], "owner": f["owner"],
+                            "owner_email": owners.get((f["owner"] or "").strip().lower(), ("", ""))[1],
+                            "due": f["due"], "follow_up_id": f.get("id")}
                            for f in s["follow_ups"]],
             "photos": [p["id"] for p in s.get("photos") or []],
         })
@@ -375,6 +379,10 @@ def warnings(report):
                 miss = [w for w, v in (("an owner", f["owner"]), ("a due date", f["due"])) if not v]
                 if miss:
                     out.append(f"{who}: follow-up “{f['what']}” has no {' or '.join(m.split(' ', 1)[1] for m in miss)}.")
+                if f["owner"] and not f.get("owner_email"):
+                    out.append(f"{who}: follow-up “{f['what']}”: " + (
+                        "“Me” has no email (set Technician email in Settings → General)." if f["owner"].strip().lower() == "me"
+                        else f"owner “{f['owner']}” is not in Settings → General → Follow-up owners, so it has no email."))
         for f in day.get("fuel") or []:
             if not f["total"]:
                 out.append(f"{day['date']} fuel stop at {f['arrival']}: no total paid entered.")

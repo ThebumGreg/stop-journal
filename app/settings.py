@@ -12,6 +12,43 @@ SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_use
 DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
+def parse_owners(text):
+    """'Me\nOffice = office@x.com' -> [("Me", ""), ("Office", "office@x.com")]. Me may have no email (it uses the
+    technician email); everyone else needs one. Labels are unique (case-insensitive); 20 at most."""
+    import re
+    out, seen = [], set()
+    for line in (text or "").replace("\r", "").split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        label, _, email = line.partition("=")
+        label, email = label.strip()[:40], email.strip()
+        if not label:
+            raise ValueError(f"“{line}”: give a name before the =")
+        if label.lower() in seen:
+            raise ValueError(f"“{label}” is listed twice")
+        if email and not re.fullmatch(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+", email):
+            raise ValueError(f"“{label}”: “{email}” is not an email address")
+        if not email and label.lower() != "me":
+            raise ValueError(f"“{label}” needs an email, like {label} = name@example.com")
+        seen.add(label.lower())
+        out.append((label, email))
+    if not out:
+        raise ValueError("add at least one owner (Me)")
+    return out[:20]
+
+
+def owner_emails(cfg):
+    """{label lower: (label, email)} from the Follow-up owners setting; Me falls back to the technician email."""
+    try:
+        owners = parse_owners(cfg.followup_owners)
+    except ValueError:
+        owners = [("Me", "")]
+    if not any(k.lower() == "me" for k, _ in owners):
+        owners.insert(0, ("Me", ""))
+    return {k.lower(): (k, v or (cfg.tech_email if k.lower() == "me" else "")) for k, v in owners}
+
+
 def parse_days(text):
     """'Mon-Fri', 'Mon,Wed,Fri' or 'Fri-Mon' -> set of weekday numbers (Mon=0)."""
     def one(t):
@@ -180,6 +217,10 @@ SPEC += [
              help="Your name as HubSpot knows you. It goes in every report (technician) and the report email."),
         dict(key="tech_email", label="Technician email", kind="email",
              help="Your work email, so the agent can set you as the owner of notes and tasks."),
+        dict(key="followup_owners", label="Follow-up owners", kind="owners",
+             help="One per line as Name = email, for example “Office = office@work.com”. “Me” is you (the technician "
+                  "email above). The stop sheet offers these names, and the report gives the agent each owner's email "
+                  "so HubSpot tasks go to the right person."),
     ]),
     ("Backups", [
         dict(key="backup_keep", label="Daily backups to keep", kind="int", lo=0, hi=365,
@@ -239,6 +280,9 @@ def _convert(field, raw):
         if not re.fullmatch(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+", raw):
             raise ValueError("must be one email address, like name@example.com")
         return raw
+    if field["kind"] == "owners":
+        owners = parse_owners(raw)
+        return "\n".join(f"{k} = {v}" if v else k for k, v in owners)
     if field["kind"] == "days":
         parse_days(raw)
         return raw

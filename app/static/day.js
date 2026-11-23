@@ -46,6 +46,7 @@ function applyDay(d) {
   S.marks = d.marks || {}; S.endDay = d.end_day || null; S.autoMin = d.auto_sync_min;
   if (d.path) S.path = d.path;
   S.cal = d.calendar || []; S.calErr = d.calendar_error || '';
+  if (d.followup_owners) S.owners = d.followup_owners;
 }
 
 // Run a mutation; on success re-render, on failure show the message.
@@ -486,7 +487,14 @@ function followBlock(s, err) {
     const row = el('div', 'fu');
     const patch = body => run(() => api('PATCH', '/api/follow-ups/' + f.id, body), err);
     const t = el('input'); t.value = f.text; t.onchange = () => patch({text: t.value});
-    const o = el('input'); o.value = f.owner; o.placeholder = 'Owner'; o.onchange = () => patch({owner: o.value});
+    const o = el('select'); o.title = 'Owner';                    // names from Settings → General → Follow-up owners
+    const names = S.owners || ['Me'];
+    const optFor = (v, t) => { const x = el('option', null, t); x.value = v; return x; };
+    if (!f.owner) o.append(optFor('', 'Owner…'));
+    names.forEach(n => o.append(optFor(n, n)));
+    if (f.owner && !names.some(n => n.toLowerCase() === f.owner.toLowerCase())) o.append(optFor(f.owner, f.owner + ' (not in the list)'));
+    o.value = names.find(n => n.toLowerCase() === (f.owner || '').toLowerCase()) || f.owner || '';
+    o.onchange = () => patch({owner: o.value});
     const d = el('input'); d.type = 'date'; d.value = f.due; d.title = 'Due date'; d.onchange = () => patch({due: d.value});
     const x = el('button', 'danger', '✕'); x.type = 'button'; x.title = 'Remove';
     x.onclick = () => run(() => api('DELETE', '/api/follow-ups/' + f.id), err);
@@ -504,7 +512,7 @@ function followBlock(s, err) {
   };
   add.append(t, go);
   box.append(add);
-  box.append(el('div', 'hint', '“Me” is you; change the owner if someone else has it. Pick a due date.'));
+  box.append(el('div', 'hint', '“Me” is you; pick another owner if someone else has it (the list is in Settings → General). Pick a due date.'));
   return box;
 }
 

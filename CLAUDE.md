@@ -621,3 +621,7 @@ D. Later / parked
   unchanged; never creates places; a bad ID blocks the file). `known.fill_stop_hubspot` copies a place's ID to its CONFIRMED stops
   that have none (run by `service._finish`, place PATCH and import); a stop's ID is never rewritten, except that changing a stop's
   saved place clears it so the new place's ID is copied.
+- **Follow-up owners**: Settings → General → Follow-up owners (`FOLLOWUP_OWNERS`, `|`-separated; kind "owners", one `Name = email`
+  per line, Me may omit the email and uses the technician email; `settings.parse_owners` / `owner_emails`). Day payload
+  `followup_owners` (names); the stop sheet's owner is a dropdown (an older typed owner shows as "(not in the list)"). Report:
+  `owner_email` on every follow-up (stop list and top-level); blank when the owner is not in the list, and the export warns.

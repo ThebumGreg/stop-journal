@@ -193,6 +193,11 @@ def rebuild_drives(conn, cfg, date):
             conn.execute("DELETE FROM drives WHERE id=?", (d["id"],))
 
 
+def _owners(cfg):
+    from .settings import owner_emails
+    return owner_emails(cfg)
+
+
 def _finish(conn, cfg, date):
     known.fill_stop_hubspot(conn)      # confirmed stops on a place with a HubSpot company ID get it (never rewritten)
     _resequence(conn, date)
@@ -1300,7 +1305,8 @@ def day_payload(conn, cfg, date, include_path=False):
         tot["miles_approx"] = mil["total_miles"]
     out = {"date": date, "tz": cfg.app_tz, "auto_sync_min": cfg.auto_sync_min, "stops": stops, "drives": drives,
            "totals": tot, "undo": undo_available(conn, date),
-           "marks": marks, "mileage": mil, "end_day": end_info(conn, cfg, stops, marks, mil)}
+           "marks": marks, "mileage": mil, "end_day": end_info(conn, cfg, stops, marks, mil),
+           "followup_owners": [v[0] for v in _owners(cfg).values()]}
     out["calendar"], out["calendar_error"] = calendar_for_day(cfg, date, stops, now)
     if include_path:
         pts = kept_points(conn, cfg, date)

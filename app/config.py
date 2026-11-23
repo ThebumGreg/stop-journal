@@ -61,6 +61,7 @@ class Config:
     mail_to: str = ""            # where reports go; blank = email off
     tech_name: str = ""          # who did the work (report `technician`)
     tech_email: str = ""
+    followup_owners: str = "Me"     # one per line: "Label = email" (Me = the technician email)
     calendar_invites: str = "off"   # today's stops as invites to mail_to (Settings → Email)
     calendar_invite_min: int = 10
 
@@ -120,6 +121,7 @@ class Config:
             mail_to=e("MAIL_TO", "").strip(),
             tech_name=e("TECH_NAME", "").strip(),
             tech_email=e("TECH_EMAIL", "").strip(),
+            **({"followup_owners": e("FOLLOWUP_OWNERS", "").replace("|", "\n")} if e("FOLLOWUP_OWNERS", "") else {}),
             calendar_invites=e("CALENDAR_INVITES", "off").strip() or "off",
             calendar_invite_min=_int("CALENDAR_INVITE_MIN", 10),
         )
