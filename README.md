@@ -27,6 +27,10 @@ Single user. Your location data stays on your own server.
   the report says what was left out. **Zip: PDF + photos** downloads the PDF, the JSON and every receipt and photo in the
   report, filed as `photos/YYYY/MM/DD/stop-1-acme-receipt-1.jpg` (the PDF prints each picture's file name).
   From the Home Screen app the files open the share sheet (Save to Files, Mail).
+- **Home page**: where you are, the next on-site appointment with drive time ("leave by", or an ETA while driving), and
+  what is still unfinished today. The day view is under **Day**.
+- **Receipt reading** (optional, Google Cloud Vision): a receipt photo suggests the fuel total and gallons, or a store total as
+  an expense; you tap to use it.
 - **Places history**: tap a client, vendor, office or gas station to see every visit (date, time, work, parts, fill-ups) and
   tap a visit to open it.
 - **Outlook calendar** (optional): paste the published ICS link in Settings → Calendar; appointments with "onsite" in them show

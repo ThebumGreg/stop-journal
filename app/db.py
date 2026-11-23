@@ -216,6 +216,7 @@ MIGRATIONS = [
     ("stops", "stop_type", "TEXT"),
     ("photos", "path", "TEXT"),
     ("photos", "read_json", "TEXT"),
+    ("route_cache", "seconds", "REAL"),
 ]
 
 

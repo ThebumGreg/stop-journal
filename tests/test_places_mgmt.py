@@ -240,4 +240,4 @@ def test_place_history_and_gas_stations(tmp_path):
     page = c.get("/places").data.decode()
     assert 'aria-current="page"' in page and ">Places<" in page.split('aria-current="page"')[1][:20]
     day = c.get(f"/day/{D}").data.decode()
-    assert 'id="toolslink"' in day and '<a href="/" aria-current="page">Day</a>' in day
+    assert 'id="toolslink"' in day and '<a href="/day" aria-current="page">Day</a>' in day

@@ -40,3 +40,33 @@ def route_m(conn, cfg, a, b):
         except Exception:
             _down_until = time.time() + 600
     return haversine_m(a[0], a[1], b[0], b[1]) * CROW_FLIES_FACTOR, "estimate"
+
+
+AVG_MPS = 13.4        # ~30 mph: the estimate when routing is off or down
+
+
+def drive_eta(conn, cfg, a, b):
+    """(seconds, meters, method) for driving from a to b now, without traffic. Same privacy rules as route_m
+    (rounded coordinates, cache). Cached per rounded pair for 10 minutes, since 'a' is where the truck is now."""
+    global _down_until
+    a, b = (_r(a[0]), _r(a[1])), (_r(b[0]), _r(b[1]))
+    key = f"eta:{a[0]},{a[1]}>{b[0]},{b[1]}"
+    row = conn.execute("SELECT meters, seconds, ts FROM route_cache WHERE key=?", (key,)).fetchone()
+    if row and row["seconds"] is not None and time.time() - row["ts"] < 600:
+        return row["seconds"], row["meters"], "routed"
+    url = (cfg.routing_url or "").strip().rstrip("/")
+    if url and time.time() >= _down_until:
+        try:
+            r = requests.get(f"{url}/route/v1/driving/{a[1]},{a[0]};{b[1]},{b[0]}",
+                             params={"overview": "false"}, headers={"User-Agent": USER_AGENT}, timeout=5)
+            r.raise_for_status()
+            rt = r.json()["routes"][0]
+            m, s = float(rt["distance"]), float(rt["duration"])
+            conn.execute("INSERT OR REPLACE INTO route_cache(key,meters,seconds,ts) VALUES (?,?,?,?)",
+                         (key, m, s, int(time.time())))
+            conn.commit()
+            return s, m, "routed"
+        except Exception:
+            _down_until = time.time() + 600
+    m = haversine_m(a[0], a[1], b[0], b[1]) * CROW_FLIES_FACTOR
+    return m / AVG_MPS, m, "estimate"

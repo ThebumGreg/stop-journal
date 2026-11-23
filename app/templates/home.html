@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "_head.html" %}
+<title>JobHub</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
+<style>
+  .card { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin:10px 0; background:var(--bg); }
+  .card h2 { margin:0 0 6px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .big { font-size:22px; font-weight:700; line-height:1.25; }
+  .sub { color:var(--muted); font-size:14px; margin-top:2px; }
+  .eta { margin-top:10px; padding:10px; border-radius:10px; background:var(--sel); }
+  .eta b { font-size:20px; }
+  .late { color:var(--err); } .early { color:var(--ok, #1a7f37); }
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; text-align:center; }
+  .stats div { border:1px solid var(--line); border-radius:8px; padding:6px 2px; }
+  .stats b { display:block; font-size:18px; }
+  .stats span { font-size:12px; color:var(--muted); }
+  a.item { display:block; padding:10px 0; border-top:1px solid var(--line); color:inherit; text-decoration:none; }
+  a.item .n { font-weight:600; } a.item .m { color:var(--muted); font-size:13px; }
+  a.item::after { content:'›'; float:right; margin-top:-30px; color:var(--muted); font-size:20px; }
+  .appt { padding:6px 0; border-top:1px solid var(--line); font-size:14px; }
+  .appt.done { color:var(--muted); text-decoration:line-through; } .appt.missed { color:var(--warn); }
+  .go { display:block; text-align:center; margin-top:10px; }
+  .upd { text-align:center; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+{% include "_header.html" %}
+<main>
+  <div id="home"><div class="hint">Loading…</div></div>
+  <div class="upd" id="upd"></div>
+</main>
+<script src="{{ url_for('static', filename='home.js') }}"></script>
+</body>
+</html>

@@ -208,7 +208,7 @@ def test_branding_ios_meta_and_manifest(tmp_path):
     c = create_app(base(tmp_path, app_password="pw"), client=sample.ListRecorder([])).test_client()
     html = c.post("/login", data={"password": "pw"}) and c.get("/").data.decode()
     assert "<title>JobHub</title>" in html and "viewport-fit=cover" in html
-    assert 'rel="apple-touch-icon"' in html and 'id="split"' in html
+    assert 'rel="apple-touch-icon"' in html and 'id="split"' in c.get("/day").data.decode()
     m = c.get("/manifest.webmanifest")
     assert m.status_code == 200 and m.json["short_name"] == "JobHub"
     anon = create_app(base(tmp_path, app_password="pw"), client=sample.ListRecorder([])).test_client()

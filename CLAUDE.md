@@ -395,8 +395,15 @@ stop departed 12:21, and listed billable parts with no cost.
   from the other two, `checks` = gallons x price within 2% of the total). The sheet shows "Receipt says …" with **Use these** (gas: PUT
   fuel) or **Add $x as an expense** (other stops: expense "Store purchase"), Ignore (`/dismiss-read`), Try again (`/read`). Never
   fills anything without a tap. An AI reader (option 3) is a future entry in `receipts.READERS` returning {text, fields}.
-- Not built yet: summary home page with time to the next appointment and ETA while driving (needs geocoding the event address;
-  free OSRM has no traffic, Google Routes costs money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
+- **Home page** (`/`, `app/summary.py`, `GET /api/summary`; the day view moved to `/day` and `/day/<date>`; menu: Home, Day,
+  Export, Places, Truck, Settings; the JobHub brand hides under 520 px). Cards: Now (the stop you are at with its needs, else
+  driving / place from the live status), Next appointment (first upcoming on-site calendar event, "in 45 min"; drive time from
+  the phone's position: a saved place with the event's name or address first, else OSM search near you; `routing.drive_eta`
+  (OSRM duration, rounded coords, cached 10 min in `route_cache.seconds`, else straight line x1.25 at 30 mph); driving = "Arriving
+  9:48 · x min early/late", parked = "Leave by" (5 min slack); within 150 m = "You are there"; only for events in the next 4 h;
+  Apple Maps directions link), Today (stops, finished, on site, driving, miles, unfinished stops linking to their sheet, the
+  day's appointments). The API strips coordinates from the live block. Refreshes every minute while visible. No traffic
+  (Google Routes would cost money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
   Drive); not built.
 
 ## Working agreements

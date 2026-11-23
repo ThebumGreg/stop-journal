@@ -6,7 +6,8 @@
 <div class="top">
   <a class="brand" href="/">JobHub</a>
   <nav>
-    {{ item('/', 'Day', ('index', 'day_page')) }}
+    {{ item('/', 'Home', ('index',)) }}
+    {{ item('/day', 'Day', ('day_today', 'day_page')) }}
     {{ item('/tools', 'Export', ('tools_page',), 'toolslink') }}
     {{ item('/places', 'Places', ('places_page',)) }}
     {{ item('/truck', 'Truck', ('truck_page',)) }}

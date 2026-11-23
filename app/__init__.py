@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import photos, receipts
+from . import photos, receipts, summary
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
@@ -104,6 +104,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
 
     @app.get("/")
     def index():
+        return render_template("home.html")
+
+    @app.get("/day")
+    def day_today():
         today = datetime.now(tz).date().isoformat()
         return render_template("day.html", date=today, tz=base.app_tz)
 
@@ -670,13 +674,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         except Exception:
             return ""
 
-    @app.get("/api/live")
-    def live_status():
-        """Where the phone last reported and how long it has been there."""
-        cfg = eff()
+    def live_now(cfg, now):
+        """(status dict, None, 200) or (None, error, http code): where the phone is and how long it has been there."""
         if not (cfg.recorder_url and cfg.recorder_user and cfg.recorder_device):
-            return jsonify(error="Set up the Recorder first: Settings → Recorder."), 400
-        now = int(time.time())
+            return None, "Set up the Recorder first: Settings → Recorder.", 400
         try:
             pts = client.fetch(datetime.fromtimestamp(now - live.LOOKBACK_S, timezone.utc),
                                datetime.fromtimestamp(now, timezone.utc))
@@ -684,10 +685,44 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                 lp = client.last_point()
                 pts = [lp] if lp else []
         except Exception as e:
-            return jsonify(error=f"Could not reach the Recorder ({type(e).__name__})."), 502
+            return None, f"Could not reach the Recorder ({type(e).__name__}).", 502
         st = live.status(pts, now, cfg.stop_radius_m, cfg.max_acc_m)
         if st is None:
-            return jsonify(error="No location data yet. Open OwnTracks on your phone."), 404
+            return None, "No location data yet. Open OwnTracks on your phone.", 404
+        return st, None, 200
+
+    @app.get("/api/summary")
+    def summary_api():
+        """The home page: next appointment with drive time / ETA, where you are, what is still open today."""
+        def go(conn, cfg):
+            now = int(time.time())
+            date = datetime.fromtimestamp(now, tz).date().isoformat()
+            if cfg.recorder_url and cfg.recorder_user and cfg.recorder_device:
+                try:
+                    ensure_day(conn, cfg, date)
+                    service.catch_up(conn, client, cfg, date)
+                except Exception:
+                    pass                       # show what is stored; the live box says if the Recorder is down
+            st, err, _ = live_now(cfg, now)
+            if st:
+                site = known.match_any(conn, st["lat"], st["lon"])
+                st["place"] = site["name"] if site else ""
+            osm = places.get_provider(cfg, "osm")
+            out = summary.build(conn, cfg, date, now, st, osm.search_text)
+            if out["live"]:                    # the page needs no coordinates
+                out["live"] = {k: v for k, v in out["live"].items() if k not in ("lat", "lon", "acc")}
+            out["live_error"] = err or ""
+            return jsonify(out)
+        return with_conn(go)
+
+    @app.get("/api/live")
+    def live_status():
+        """Where the phone last reported and how long it has been there."""
+        cfg = eff()
+        now = int(time.time())
+        st, err, code = live_now(cfg, now)
+        if st is None:
+            return jsonify(error=err), code
         conn = db.connect(base.data_dir)
         try:
             site = known.match_any(conn, st["lat"], st["lon"])
