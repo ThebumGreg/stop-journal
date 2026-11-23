@@ -13,13 +13,14 @@ A made-up day (all names, addresses and coordinates are invented) that uses ever
 
 ## The day in the sample
 1. Home (Personal) → Start day 07:38.
-2. **Sample Dental Office**: Time & Material, ticket 1042, Complete; 140 ft Cat 6 cable, 4 keystone jacks (billable parts),
+2. **Sample Dental Office** (HubSpot company 18200000001): Time & Material, HubSpot ticket 1042, Complete; 140 ft Cat 6 cable, 4 keystone jacks (billable parts),
    zip ties (non-billable material), $12 parking (expense) with its receipt, one photo.
 3. Fill-up at Sample Fuel Station (counted as drive time; fuel table).
 4. **Sample Supply House** (vendor stop: Internal operations, not billable).
 5. Lunch at Sample Deli (paid, not billed; listed by time only).
-6. **Sample Medical Clinic**: Quoted project, ticket PRJ-2210, Return visit needed; parts; two follow-ups (Office: send a
-   quote, due 11-20; Me: return visit, due 11-24).
+6. **Sample Medical Clinic** (HubSpot company 18200000002): Quoted project, HubSpot ticket 1057, QuickBooks estimate 2210,
+   Return visit needed; parts; two follow-ups (Office → office@work.example: send a quote, due 11-20; Me →
+   tech@work.example: return visit, due 11-24).
 7. End at home.
 
 ## Rules for the agent
@@ -30,10 +31,22 @@ A made-up day (all names, addresses and coordinates are invented) that uses ever
   (Personal, Lunch, fuel stops, End Day) and must not create records.
 - `records_to_update` is the one-row-per-stop list to act on: business name, address, arrival, departure, category,
   job reference, work performed, parts used.
-- `hubspot_company_id` is empty for now: match the company by business name and address.
+- **Identify each stop by `stop_uid`**, never by `stop_number` (numbers shift when stops are added, merged or split).
+  On an `(update N)` email: update what you wrote for each `stop_uid`; a `stop_uid` that is no longer in the update was
+  merged or deleted, so remove or mark what you created for it. Follow-ups carry `follow_up_id` for the same purpose.
+  `days[].report_key` is the date the day belongs to.
+- `technician` {name, email} is who did the work: use it as the owner of notes.
+- `hubspot_company_id`: use it when set. When blank, match the company by business name and address, and say so.
+- `hubspot_ticket` is the HubSpot service ticket number (digits); `qbo_estimate` is the QuickBooks estimate number
+  (quoted projects and migrations). `job_reference` is the raw text the technician typed (kept for compatibility).
+- Follow-ups have `owner` and `owner_email`: assign the HubSpot task to the user with that email; a blank email means
+  the owner is unknown, so ask instead of guessing.
 - Per stop: `work_performed` (the note), `category` + `billing` (hourly | project | non_billable), `job_reference`
   (ticket), `visit_result`, `time_on_site_minutes`, `parts_used` (billable flag, qty, unit, unit cost),
   `consumables_used` (never billed), `expenses`, `follow_ups`, `photos`.
 - Top-level `follow_ups` (owner, due) are natural HubSpot tasks.
 - `omitted` lists sections left out on purpose (for example GPS coordinates or costs); they are not missing data.
 - Times are local, in the report's `timezone`.
+- Time totals: `paid_minutes` = on-site + `drive_minutes` + lunch when `lunch_paid` is true. `drive_minutes` includes
+  `traffic_minutes` (time at fuel stops, short breaks and traffic: `fuel_stop_minutes` and `short_break_minutes` are part
+  of it). The `timesheet` rows with `paid: true` add up to `paid_minutes`.

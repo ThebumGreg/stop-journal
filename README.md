@@ -147,6 +147,17 @@ Settings → Email → "Put my stops on my work calendar": every stop today is s
 (type, customer name, address, ticket, times, finished; never notes or prices), updated every 10 minutes when it changes and
 cancelled if the stop is deleted. Use "Send test calendar invite" first. Coworkers see the events if they can see your calendar.
 
+## Report fields (for the work AI agent)
+
+The JSON report (schema version "1"; new fields are only ever added) is what the agent should read. A full made-up example
+and a guide for the agent are in `docs/sample-report/` (regenerate with `python scripts/make_sample_report.py`). Key points:
+- `technician` {name, email}; each stop has a stable `stop_uid` (use it, not `stop_number`, to update earlier records),
+  `hubspot_company_id` (from the saved place: Places → Edit place, or the places CSV), `hubspot_ticket` and `qbo_estimate`.
+- Follow-ups have `owner` and `owner_email` (Settings → General → Follow-up owners) and a `follow_up_id`.
+- `summary.paid_minutes` = on-site + drive + lunch (when `lunch_paid`; Settings → General → Pay rules). `drive_minutes`
+  includes `traffic_minutes` (time at fuel stops and short breaks: `fuel_stop_minutes`, `short_break_minutes`, plus traffic).
+  The `timesheet` rows marked paid add up to `paid_minutes`.
+
 ## Backup and restore
 
 The SQLite file in `/data` holds the state (stops, edits, parts, places, settings). Photos and receipts are files next to

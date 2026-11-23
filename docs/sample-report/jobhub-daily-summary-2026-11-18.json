@@ -1,22 +1,30 @@
 {
   "schema_version": "1",
   "report": "JobHub daily summary",
+  "technician": {
+    "name": "Sample Technician",
+    "email": "tech@work.example"
+  },
   "date_from": "2026-11-18",
   "date_to": "2026-11-18",
   "timezone": "America/Los_Angeles",
-  "generated_at": "2026-11-23T08:49:59-08:00",
+  "generated_at": "2026-11-23T10:42:25-08:00",
   "days": [
     {
       "date": "2026-11-18",
+      "report_key": "2026-11-18",
       "day_start": "07:38",
       "day_end": "15:06",
       "summary": {
         "on_site_minutes": 316,
-        "drive_minutes": 89,
+        "drive_minutes": 101,
         "traffic_minutes": 14,
+        "fuel_stop_minutes": 14,
+        "short_break_minutes": 0,
         "lunch_minutes": 30,
         "break_minutes_unpaid": 0,
-        "paid_minutes": 435,
+        "paid_minutes": 447,
+        "lunch_paid": true,
         "miles_approx": 20.2,
         "stops_confirmed": 3,
         "stops_excluded": 4,
@@ -206,6 +214,7 @@
       "stops": [
         {
           "stop_number": 1,
+          "stop_uid": "4555b0bf-cc3b-4baf-bcc6-8de2129753fe",
           "business_name": "Sample Dental Office",
           "address": "100 Example Ave, Los Angeles, CA 90012",
           "place_type": "",
@@ -227,10 +236,12 @@
             "estimated": false,
             "no_location_data": null
           },
-          "hubspot_company_id": "",
+          "hubspot_company_id": "18200000001",
           "category": "Time & Material",
           "billing": "hourly",
           "job_reference": "1042",
+          "hubspot_ticket": "1042",
+          "qbo_estimate": "",
           "visit_result": "Complete",
           "work_performed": "Ran two Cat 6 drops from the network rack to the front desk.\nTerminated both ends with keystone jacks and tested: both pass.\nRelabeled the patch panel ports 12 and 13.",
           "parts_used": [
@@ -283,6 +294,7 @@
         },
         {
           "stop_number": 2,
+          "stop_uid": "fc89543c-a4ab-4664-99dd-6d3739f335ae",
           "business_name": "Sample Supply House",
           "address": "200 Vendor Way, Los Angeles, CA 90012",
           "place_type": "vendor",
@@ -296,7 +308,7 @@
           "lunch_non_billable": [],
           "personal_breaks_unpaid": [],
           "drive_from_previous_stop": {
-            "minutes": 10,
+            "minutes": 22,
             "miles_approx": 3.6,
             "from": "Sample Dental Office",
             "from_type": "Client",
@@ -308,6 +320,8 @@
           "category": "Internal operations",
           "billing": "non_billable",
           "job_reference": "",
+          "hubspot_ticket": "",
+          "qbo_estimate": "",
           "visit_result": "",
           "work_performed": "Picked up a 1000 ft box of Cat 6 for the clinic job.",
           "parts_used": [],
@@ -318,6 +332,7 @@
         },
         {
           "stop_number": 3,
+          "stop_uid": "2d6fda75-515d-42d7-a9c8-e15c98e1126c",
           "business_name": "Sample Medical Clinic",
           "address": "300 Example Blvd, Los Angeles, CA 90013",
           "place_type": "",
@@ -339,10 +354,12 @@
             "estimated": false,
             "no_location_data": null
           },
-          "hubspot_company_id": "",
+          "hubspot_company_id": "18200000002",
           "category": "Quoted project",
           "billing": "project",
-          "job_reference": "PRJ-2210",
+          "job_reference": "1057",
+          "hubspot_ticket": "1057",
+          "qbo_estimate": "2210",
           "visit_result": "Return visit needed",
           "work_performed": "Mounted the new switch in the IT closet and patched 18 of 24 ports.\nSix ports wait on the customer's new patch cords.",
           "parts_used": [
@@ -371,12 +388,16 @@
             {
               "what": "Send the customer a quote for 6 patch cords",
               "owner": "Office",
-              "due": "2026-11-20"
+              "owner_email": "office@work.example",
+              "due": "2026-11-20",
+              "follow_up_id": 1
             },
             {
               "what": "Return visit",
               "owner": "Me",
-              "due": "2026-11-24"
+              "owner_email": "tech@work.example",
+              "due": "2026-11-24",
+              "follow_up_id": 2
             }
           ],
           "photos": []
@@ -410,28 +431,34 @@
     {
       "date": "2026-11-18",
       "stop_number": 1,
+      "stop_uid": "4555b0bf-cc3b-4baf-bcc6-8de2129753fe",
       "business_name": "Sample Dental Office",
       "address": "100 Example Ave, Los Angeles, CA 90012",
       "arrival": "08:00",
       "departure": "10:30",
       "category": "Time & Material",
       "job_reference": "1042",
+      "hubspot_ticket": "1042",
+      "qbo_estimate": "",
       "work_performed": "Ran two Cat 6 drops from the network rack to the front desk.\nTerminated both ends with keystone jacks and tested: both pass.\nRelabeled the patch panel ports 12 and 13.",
       "parts_used": [
         "140 x Cat 6 cable (C6-1000-BLU)",
         "4 x Keystone jack Cat 6 - white (KJ-C6-W)"
       ],
-      "hubspot_company_id": ""
+      "hubspot_company_id": "18200000001"
     },
     {
       "date": "2026-11-18",
       "stop_number": 2,
+      "stop_uid": "fc89543c-a4ab-4664-99dd-6d3739f335ae",
       "business_name": "Sample Supply House",
       "address": "200 Vendor Way, Los Angeles, CA 90012",
       "arrival": "11:06",
       "departure": "11:31",
       "category": "Internal operations",
       "job_reference": "",
+      "hubspot_ticket": "",
+      "qbo_estimate": "",
       "work_performed": "Picked up a 1000 ft box of Cat 6 for the clinic job.",
       "parts_used": [],
       "hubspot_company_id": ""
@@ -439,36 +466,45 @@
     {
       "date": "2026-11-18",
       "stop_number": 3,
+      "stop_uid": "2d6fda75-515d-42d7-a9c8-e15c98e1126c",
       "business_name": "Sample Medical Clinic",
       "address": "300 Example Blvd, Los Angeles, CA 90013",
       "arrival": "12:21",
       "departure": "14:41",
       "category": "Quoted project",
-      "job_reference": "PRJ-2210",
+      "job_reference": "1057",
+      "hubspot_ticket": "1057",
+      "qbo_estimate": "2210",
       "work_performed": "Mounted the new switch in the IT closet and patched 18 of 24 ports.\nSix ports wait on the customer's new patch cords.",
       "parts_used": [
         "60 x Cat 6 cable (C6-1000-BLU)",
         "6 x Keystone jack Cat 6 - white (KJ-C6-W)"
       ],
-      "hubspot_company_id": ""
+      "hubspot_company_id": "18200000002"
     }
   ],
   "follow_ups": [
     {
       "date": "2026-11-18",
       "stop_number": 3,
+      "stop_uid": "2d6fda75-515d-42d7-a9c8-e15c98e1126c",
       "business_name": "Sample Medical Clinic",
       "what": "Send the customer a quote for 6 patch cords",
       "owner": "Office",
-      "due": "2026-11-20"
+      "owner_email": "office@work.example",
+      "due": "2026-11-20",
+      "follow_up_id": 1
     },
     {
       "date": "2026-11-18",
       "stop_number": 3,
+      "stop_uid": "2d6fda75-515d-42d7-a9c8-e15c98e1126c",
       "business_name": "Sample Medical Clinic",
       "what": "Return visit",
       "owner": "Me",
-      "due": "2026-11-24"
+      "owner_email": "tech@work.example",
+      "due": "2026-11-24",
+      "follow_up_id": 2
     }
   ],
   "omitted": []

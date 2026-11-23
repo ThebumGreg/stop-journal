@@ -2,6 +2,7 @@ Subject: JobHub Daily Summary 2026-11-18
 
 JobHub Daily Summary
 Dates: 2026-11-18
+Technician: Sample Technician <tech@work.example>
 Version: 1
 Confirmed stops: 3
 Report schema version: 1

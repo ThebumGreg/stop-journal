@@ -62,11 +62,18 @@ def build(data_dir):
                  app_tz="America/Los_Angeles", places_provider="osm", google_places_key="", stop_min_minutes=10,
                  stop_radius_m=100, stop_max_gap_min=15, stop_merge_gap_min=60, max_acc_m=100, app_password="",
                  data_dir=data_dir, routing_url="", overpass_url="")
+    cfg = replace(cfg, tech_name="Sample Technician", tech_email="tech@work.example",
+                  followup_owners="Me\nOffice = office@work.example")
     c = create_app(cfg, client=sample.ListRecorder(d.points())).test_client()
 
     ok(c.post("/api/places", json={"name": "Home", "kind": "home", "lat": HOME[0], "lon": HOME[1]}))
     ok(c.post("/api/places", json={"name": "Sample Supply House", "kind": "vendor", "lat": SUPPLY[0], "lon": SUPPLY[1],
                                    "address": "200 Vendor Way, Los Angeles, CA 90012"}))
+    for name, ll, addr, hs in (("Sample Dental Office", DENTAL, "100 Example Ave, Los Angeles, CA 90012", "18200000001"),
+                               ("Sample Medical Clinic", CLINIC, "300 Example Blvd, Los Angeles, CA 90013", "18200000002")):
+        ok(c.post("/api/places", json={"name": name, "kind": "client", "lat": ll[0], "lon": ll[1], "address": addr}))
+        pid = next(p["id"] for p in ok(c.get("/api/places"))["places"] if p["name"] == name)
+        ok(c.patch(f"/api/places/{pid}", json={"hubspot_company_id": hs}))
     stops = [s for s in ok(c.get(f"/api/day/{D}"))["stops"] if s["kind"] == "stop"]
     assert len(stops) == 7, [(s["arrive"], s["depart"]) for s in stops]
     home1, dental, gas, supply, deli, clinic, home2 = stops
@@ -120,7 +127,7 @@ def build(data_dir):
     sid = clinic["id"]
     ok(c.patch(f"/api/stops/{sid}", json={
         "stop_type": "job", "business_name": "Sample Medical Clinic", "address": "300 Example Blvd, Los Angeles, CA 90013",
-        "work_category": "Quoted project", "ticket": "PRJ-2210",
+        "work_category": "Quoted project", "ticket": "1057", "qbo_estimate": "2210",
         "notes": "Mounted the new switch in the IT closet and patched 18 of 24 ports.\n"
                  "Six ports wait on the customer's new patch cords."}))
     ok(c.post(f"/api/stops/{sid}/parts", json={"name": "Cat 6 cable", "qty": 60}))
