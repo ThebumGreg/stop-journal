@@ -1,7 +1,10 @@
 // Home-screen (standalone) mode on iPhone: a file opened inside the app has no Back, Save or Share, so links
 // marked data-file="PDF" open a small panel instead:
-//   - "Open in Safari": opens the file in Safari, which has Share, Save to Files and a way back. Safari does not
-//     have this app's login, so the link carries a download token that works for 10 minutes (downloads only).
+//   - "Open in Safari": opens the file in the real Safari app, which has Share, Save to Files and a way back. A plain
+//     link or window.open stays inside the app (every page is in the app's scope), so the link uses iOS's
+//     x-safari-https:// form (iOS 17 and later). Safari does not have this app's login, so the link carries a
+//     download token that works for 10 minutes (downloads only).
+//   - "View here" (PDFs): an in-page viewer with a Close bar, for when Safari does not open.
 //   - "Share / Save to Files": the iOS share sheet. iOS only opens it from a fresh tap, so the file is fetched
 //     while the panel is open and the button turns on when it is ready.
 // Everywhere else (Safari, desktop) the link downloads as normal.
@@ -23,7 +26,11 @@
   css.textContent = '.fsheet{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-end}' +
     '.fsheet>div{background:var(--bg,#fff);color:inherit;width:100%;padding:16px 16px calc(16px + env(safe-area-inset-bottom));' +
     'border-radius:14px 14px 0 0;display:grid;gap:10px}.fsheet b{font-size:17px}.fsheet button{min-height:48px;font-size:16px}' +
-    '.fsheet .fmsg{font-size:14px;opacity:.75}';
+    '.fsheet .fmsg{font-size:14px;opacity:.75}' +
+    '.fview{position:fixed;inset:0;z-index:10000;background:#fff;display:flex;flex-direction:column}' +
+    '.fview>div{display:flex;gap:8px;align-items:center;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;' +
+    'border-bottom:1px solid #ccc}.fview>div b{flex:1;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.fview button{min-height:44px;font-size:16px}.fview iframe{flex:1;border:0;width:100%}';
   document.head.append(css);
 
   function withToken(href) {
@@ -31,6 +38,21 @@
     if (token) u.searchParams.set('ft', token);
     if (/\/api\/export\.pdf$/.test(u.pathname)) u.searchParams.set('inline', '1');   // Safari shows it, with Share
     return u.toString();
+  }
+
+  function inSafari(url) {                   // iOS 17+: x-safari-https://host/path opens the Safari app itself
+    return url.replace(/^(https?):\/\//, 'x-safari-$1://');
+  }
+
+  function viewer(url, label) {
+    const v = document.createElement('div'); v.className = 'fview';
+    const bar = document.createElement('div');
+    const t = document.createElement('b'); t.textContent = label;
+    const done = document.createElement('button'); done.type = 'button'; done.className = 'primary'; done.textContent = 'Close';
+    done.onclick = () => v.remove();
+    const f = document.createElement('iframe'); f.src = url; f.title = label;
+    bar.append(t, done); v.append(bar, f);
+    document.body.append(v);
   }
 
   function panel(a, href, label) {
@@ -42,14 +64,28 @@
     open.textContent = 'Open in Safari (view, save, share)';
     const share = document.createElement('button'); share.type = 'button'; share.textContent = 'Preparing…'; share.disabled = true;
     const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel';
-    box.append(title, msg, open, share, cancel); wrap.append(box);
+    const isPdf = /\/api\/export\.pdf$/.test(new URL(href, location.href).pathname);
+    const view = document.createElement('button'); view.type = 'button'; view.textContent = 'View here'; view.hidden = !isPdf;
+    box.append(title, msg, open, share, view, cancel); wrap.append(box);
+    view.onclick = () => {
+      const u = new URL(href, location.href); u.searchParams.set('inline', '1');
+      close(); viewer(u.toString(), title.textContent);
+    };
     const close = () => wrap.remove();
     cancel.onclick = close;
     wrap.onclick = e => { if (e.target === wrap) close(); };
     open.onclick = () => {
       if (!token) { msg.textContent = 'Could not make a Safari link. Use Share instead, or try again in a moment.'; getToken(); return; }
-      window.open(withToken(href), '_blank');
-      close();
+      let left = false;
+      const gone = () => { left = true; };
+      document.addEventListener('visibilitychange', gone, {once: true});
+      location.href = inSafari(withToken(href));          // stays on this page; iOS switches to Safari
+      setTimeout(() => {
+        document.removeEventListener('visibilitychange', gone);
+        if (left || document.hidden) { close(); return; }
+        msg.textContent = 'Safari did not open (it needs iOS 17 or later). Use Share / Save to Files' +
+          (isPdf ? ' or View here.' : '.');
+      }, 1500);
     };
     let file = null;
     share.onclick = async () => {

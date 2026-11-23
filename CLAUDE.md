@@ -370,9 +370,10 @@ stop departed 12:21, and listed billable parts with no cost.
   out on purpose, and notes for absent sections are dropped. `/api/export/check` ignores omit. Export page "Include" ticks
   are remembered per phone.
 - **Home Screen mode**: links with `data-file` (exports, debug, parts CSV, backups) go through `static/share.js`: a tap opens a
-  panel with **Open in Safari** (the URL carries `ft=`, a signed download token from `GET /api/file-token`, 10 min,
+  panel with **Open in Safari** (an `x-safari-https://` link, iOS 17+, because a normal link stays inside the app: the
+  manifest scope is `/`; the URL carries `ft=`, a signed download token from `GET /api/file-token`, 10 min,
   `FILE_TOKEN_S`, accepted by the login gate only on GET of `FILE_PATHS` download routes, because Safari has no login cookie;
-  PDFs open with `?inline=1`) and **Share / Save to Files** (the file is fetched while the panel is open; iOS needs a fresh tap).
+  PDFs open with `?inline=1`) and **Share / Save to Files** (the file is fetched while the panel is open; iOS needs a fresh tap), and for PDFs **View here** (an in-page iframe viewer with a Close bar).
 - **Gas station detection** (`service.check_fuel_stops`, `stops.fuel_check` NULL/0/1): on day load and when auto-sync adds data,
   up to 4 short (≤ 30 min), untyped, unnamed Draft stops not on a saved place get one OSM lookup each (60 m; `amenity=fuel` wins
   over a shop tag in `osm._category`). A hit sets `gas_hint`; the card asks "⛽ At a gas station. What was it?" with Fill-up
