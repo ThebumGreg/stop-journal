@@ -222,6 +222,11 @@ SPEC += [
                   "email above). The stop sheet offers these names, and the report gives the agent each owner's email "
                   "so HubSpot tasks go to the right person."),
     ]),
+    ("Pay rules", [
+        dict(key="lunch_paid", label="Lunch is paid", kind="choice", choices=["on", "off"],
+             help="on: lunch counts in total paid time (never billed to the customer). off: lunch is unpaid and left out "
+                  "of paid time. Mileage is the same either way."),
+    ]),
     ("Backups", [
         dict(key="backup_keep", label="Daily backups to keep", kind="int", lo=0, hi=365,
              help="One snapshot of the database is saved each day. 0 turns automatic backups off."),
@@ -238,7 +243,7 @@ TABS = [
     ("AI", ["AI (Claude)"]),
     ("Email", ["Email (Gmail)"]),
     ("Notes", ["Quick phrases", "Grammar check (LanguageTool)"]),
-    ("General", ["Technician", "Stop detection", "Backups"]),
+    ("General", ["Technician", "Pay rules", "Stop detection", "Backups"]),
 ]
 FIELDS = {f["key"]: f for _, fs in SPEC for f in fs}
 

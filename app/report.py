@@ -68,7 +68,7 @@ NO_CATEGORY = "No category"
 PLACE_TYPE = {"home": "Home", "office": "Office", "vendor": "Vendor", "client": "Client"}
 
 
-def _timesheet(stops, drives):
+def _timesheet(stops, drives, lunch_paid=True):
     """The day in time order, as paid and unpaid rows: on-site visits, counted drives, traffic (drive time), lunch
     (PAID, not billed to the customer) and personal breaks (unpaid: clocked out). Personal stops that are not between
     two work stops (home before and after the day) are not listed. A lunch or break with no counted drives around it
@@ -112,14 +112,14 @@ def _timesheet(stops, drives):
             g = gap[0]
             dp, dn = by_to.get(g["id"]), by_from.get(g["id"])
             if (dp and dp["counts"]) or (dn and dn["counts"]):      # lunch between jobs: the drives are listed
-                add(g["arrive_ts"], g["arrive"], g["depart"], "lunch", LUNCH, g["depart_ts"] - g["arrive_ts"], True)
+                add(g["arrive_ts"], g["arrive"], g["depart"], "lunch", LUNCH, g["depart_ts"] - g["arrive_ts"], lunch_paid)
             else:                                                   # back to the same site: the whole gap
-                add(x["depart_ts"], x["depart"], y["arrive"], "lunch", LUNCH, y["arrive_ts"] - x["depart_ts"], True)
+                add(x["depart_ts"], x["depart"], y["arrive"], "lunch", LUNCH, y["arrive_ts"] - x["depart_ts"], lunch_paid)
         else:                                        # lunch and a personal stop together: each by its own times
             for g in gap:
                 lunch = g["status"] == "Lunch"
                 add(g["arrive_ts"], g["arrive"], g["depart"], "lunch" if lunch else "break",
-                    LUNCH if lunch else BREAK, g["depart_ts"] - g["arrive_ts"], lunch)
+                    LUNCH if lunch else BREAK, g["depart_ts"] - g["arrive_ts"], lunch and lunch_paid)
     for d in drives:
         if d["counts"]:
             frm, to = by_id[d["from_stop_id"]], by_id[d["to_stop_id"]]
@@ -268,7 +268,8 @@ def build_day(payload, cfg):
         final = {"minutes": chain_minutes(fd), "miles_approx": fd["miles_approx"]}
         drive_min += final["minutes"]
         miles += final["miles_approx"]
-    sheet = _timesheet(stops, drives)
+    lunch_paid = getattr(cfg, "lunch_paid", "on") != "off"
+    sheet = _timesheet(stops, drives, lunch_paid)
     lunch_min = sum(r["minutes"] for r in sheet if r["type"] == "lunch")
     break_min = sum(r["minutes"] for r in sheet if r["type"] == "break")
     mil = payload.get("mileage")
@@ -303,7 +304,8 @@ def build_day(payload, cfg):
                         "drive_minutes": drive_min, "traffic_minutes": traffic,
                         "fuel_stop_minutes": fuel_stop_min, "short_break_minutes": short_break_min,
                         "lunch_minutes": lunch_min, "break_minutes_unpaid": break_min,
-                        "paid_minutes": sum(s["time_on_site_minutes"] for s in out_stops) + drive_min + lunch_min, "miles_approx": round(miles, 1),
+                        "paid_minutes": sum(s["time_on_site_minutes"] for s in out_stops) + drive_min + (lunch_min if lunch_paid else 0),
+                        "lunch_paid": lunch_paid, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded),
                         "hours_by_category": list(by_cat.values()), "expenses_total": expenses_total,
                         "fuel_total": round(sum(f["total"] or 0 for f in fuel), 2)},

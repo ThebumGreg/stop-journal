@@ -631,3 +631,6 @@ D. Later / parked
   records_to_update; PDF rows "HubSpot ticket #" and "QuickBooks estimate #", Records table column "Ticket / estimate".
   Warnings: Time & Material / Quoted project / White-label migration without a ticket, a ticket that is not digits, and Quoted /
   Migration without an estimate #. Calendar notes: `Estimate:` (or `Quote:`) line fills the estimate like `Ticket:`.
+- **Lunch is paid** setting: Settings → General → Pay rules (`LUNCH_PAID` on|off, default on = the rules above). Off: lunch
+  timesheet rows are `paid: false`, lunch leaves `paid_minutes`, the PDF says "Lunch (unpaid)" and the recap lists it in brackets.
+  `summary.lunch_paid` says which. Mileage is unchanged.
