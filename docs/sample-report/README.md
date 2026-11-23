@@ -13,12 +13,12 @@ A made-up day (all names, addresses and coordinates are invented) that uses ever
 
 ## The day in the sample
 1. Home (Personal) → Start day 07:38.
-2. **Sample Dental Office** (HubSpot company 18200000001): Time & Material, HubSpot ticket 1042, Complete; 140 ft Cat 6 cable, 4 keystone jacks (billable parts),
+2. **Sample Dental Office** (HubSpot company 18200000001): Time & Material, HubSpot ticket 24681357913 (pasted as a link), Complete; 140 ft Cat 6 cable, 4 keystone jacks (billable parts),
    zip ties (non-billable material), $12 parking (expense) with its receipt, one photo.
 3. Fill-up at Sample Fuel Station (counted as drive time; fuel table).
 4. **Sample Supply House** (vendor stop: Internal operations, not billable).
 5. Lunch at Sample Deli (paid, not billed; listed by time only).
-6. **Sample Medical Clinic** (HubSpot company 18200000002): Quoted project, HubSpot ticket 1057, QuickBooks estimate 2210,
+6. **Sample Medical Clinic** (HubSpot company 18200000002): Quoted project, no ticket given ("Continuing a job": `ticket_action` continue), QuickBooks estimate 2210,
    Return visit needed; parts; two follow-ups (Office → office@work.example: send a quote, due 11-20; Me →
    tech@work.example: return visit, due 11-24).
 7. End at home.

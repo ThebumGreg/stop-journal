@@ -95,7 +95,7 @@ def build(data_dir):
     sid = dental["id"]
     ok(c.patch(f"/api/stops/{sid}", json={
         "stop_type": "job", "business_name": "Sample Dental Office", "address": "100 Example Ave, Los Angeles, CA 90012",
-        "work_category": "Time & Material", "ticket": "1042",
+        "work_category": "Time & Material", "ticket": "https://app.hubspot.com/contacts/1234567/ticket/24681357913",
         "notes": "Ran two Cat 6 drops from the network rack to the front desk.\n"
                  "Terminated both ends with keystone jacks and tested: both pass.\n"
                  "Relabeled the patch panel ports 12 and 13."}))
@@ -127,7 +127,7 @@ def build(data_dir):
     sid = clinic["id"]
     ok(c.patch(f"/api/stops/{sid}", json={
         "stop_type": "job", "business_name": "Sample Medical Clinic", "address": "300 Example Blvd, Los Angeles, CA 90013",
-        "work_category": "Quoted project", "ticket": "1057", "qbo_estimate": "2210",
+        "work_category": "Quoted project", "ticket_action": "continue", "qbo_estimate": "2210",
         "notes": "Mounted the new switch in the IT closet and patched 18 of 24 ports.\n"
                  "Six ports wait on the customer's new patch cords."}))
     ok(c.post(f"/api/stops/{sid}/parts", json={"name": "Cat 6 cable", "qty": 60}))
