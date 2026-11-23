@@ -121,14 +121,35 @@ def check_stuck(now=None):
     return n
 
 
+FREEZE_S = 20      # the watchdog has not run for this long: the whole program is frozen
+
+
 def start_watchdog(interval=5):
+    """Two safety nets: (1) requests stuck > STUCK_S are logged with their stack; (2) a freeze detector: the loop re-arms
+    Python's faulthandler every few seconds; if the loop itself cannot run for FREEZE_S (every thread blocked: a C call
+    holding the interpreter, the process starved), faulthandler's own native thread writes the stack of EVERY thread to
+    stderr (the container log), so a site that stops answering for minutes shows where it is stuck.
+    `docker kill --signal=USR1 JobHub` prints the same on demand (gunicorn passes USR1 to the worker; its own log
+    reopening still runs, chain=True)."""
+    import faulthandler
+    import signal
     import time
+    try:
+        faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True, chain=True)
+    except (AttributeError, ValueError, RuntimeError):
+        pass                                        # not on this platform / not the main thread
 
     def loop():
         while True:
+            try:
+                faulthandler.cancel_dump_traceback_later()
+                faulthandler.dump_traceback_later(FREEZE_S, repeat=False, file=sys.stderr, exit=False)
+            except Exception:
+                pass
             time.sleep(interval)
             try:
                 check_stuck()
             except Exception as e:                  # never let the watchdog die
                 get("watchdog").warning("watchdog check failed: %s", type(e).__name__)
     threading.Thread(target=loop, daemon=True, name="jobhub-watchdog").start()
+    get("watchdog").info("watchdog on: stuck requests > %ds and freezes > %ds are logged with stacks", STUCK_S, FREEZE_S)

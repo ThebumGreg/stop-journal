@@ -708,3 +708,8 @@ D. Later / parked
   with the last 8 stack frames, repeated every 30 s while it lasts. Requests slower than 5 s log at WARNING. Gunicorn runs 8
   threads (was 4). Investigated 2026-11-23: the site stopped answering for ~5 min on desktop Firefox with no restart, no OOM,
   background sync still running, and no request finishing; idle pre-connected sockets were tested and do NOT block gthread.
+- **Freeze detector** (`logs.start_watchdog`): the watchdog loop re-arms `faulthandler.dump_traceback_later(FREEZE_S=20)` every 5 s;
+  if the whole process stops running Python for 20 s, faulthandler's native thread dumps every thread's stack to stderr (container
+  log). `faulthandler.register(SIGUSR1, chain=True)`: `docker kill --signal=USR1 JobHub` dumps on demand. Evidence 2026-11-23
+  14:52-14:55: DELETE /api/stop-parts/24 logged 200 in 58 ms, but the client got no answer for ~3 min and the phone's /api/live
+  polls stopped too: the whole worker stopped answering after the response was built (outside the request watchdog's view).
