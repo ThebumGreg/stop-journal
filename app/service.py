@@ -1445,10 +1445,15 @@ def place_history(conn, cfg, site_id, limit=200):
     return {"place": known.site_dict(site), "visits": visits, "totals": totals}
 
 
-def group_history(conn, cfg, name, limit=200):
-    """All places with this name (a vendor's branches, a customer's old and new address): every visit, newest first,
-    each with its address, plus the places themselves."""
-    sites = conn.execute("SELECT * FROM known_sites WHERE lower(trim(name))=lower(trim(?)) ORDER BY id", (name,)).fetchall()
+def group_history(conn, cfg, name="", group=None, limit=200):
+    """All places in a group: linked places (`group` = their link_id: a customer's old and new address) or, without a
+    link, places with the same name (a vendor's branches). Every visit, newest first, each with its address."""
+    if group:
+        sites = conn.execute("SELECT * FROM known_sites WHERE link_id=? ORDER BY COALESCE(old_address,0), id",
+                             (int(group),)).fetchall()
+    else:
+        sites = conn.execute("SELECT * FROM known_sites WHERE lower(trim(name))=lower(trim(?)) ORDER BY "
+                             "COALESCE(old_address,0), id", (name,)).fetchall()
     if not sites:
         raise EditError("No saved place has that name.")
     visits, totals = _history(conn, cfg, sites, limit)

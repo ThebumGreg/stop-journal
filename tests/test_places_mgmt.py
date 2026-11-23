@@ -284,3 +284,29 @@ def test_group_history_across_locations(tmp_path):
     assert g["totals"]["visits"] == 2 and len(g["places"]) == 2
     assert [v["address"] for v in g["visits"]] == ["9 New Ave", "1 Old Rd"]
     assert c.get("/api/places/group-history?name=nobody").status_code == 400
+
+
+def test_link_old_and_new_address(tmp_path):
+    from tests.test_export import D, make
+    c = make(tmp_path)
+    ss = c.get(f"/api/day/{D}").json["stops"]
+    a, b, d = ss[0], ss[1], ss[2]
+    c.patch(f"/api/stops/{a['id']}", json={"business_name": "Acme Dental", "address": "1 Old Rd", "status": "Confirmed"})
+    c.patch(f"/api/stops/{b['id']}", json={"business_name": "Acme Dental Group", "address": "9 New Ave", "status": "Confirmed"})
+    pl = {p["name"]: p for p in c.get("/api/places").json["places"]}
+    old, new = pl["Acme Dental"], pl["Acme Dental Group"]
+    assert c.patch(f"/api/places/{old['id']}", json={"link_to": new["id"], "old_address": True}).status_code == 200
+    pl = {p["name"]: p for p in c.get("/api/places").json["places"]}
+    assert pl["Acme Dental"]["link_id"] == pl["Acme Dental Group"]["link_id"] and pl["Acme Dental"]["old_address"]
+    g = c.get(f"/api/places/group-history?group={pl['Acme Dental']['link_id']}").json
+    assert [x["name"] for x in g["places"]] == ["Acme Dental Group", "Acme Dental"]      # current address first
+    assert g["totals"]["visits"] == 2
+    # a third place joins; unlinking leaves the other two linked; unlinking the last pair clears the group
+    c.patch(f"/api/stops/{d['id']}", json={"business_name": "Acme Warehouse", "status": "Confirmed"})
+    wh = next(p for p in c.get("/api/places").json["places"] if p["name"] == "Acme Warehouse")
+    c.patch(f"/api/places/{wh['id']}", json={"link_to": old["id"]})
+    assert len({p["link_id"] for p in c.get("/api/places").json["places"] if p["name"].startswith("Acme")}) == 1
+    c.patch(f"/api/places/{wh['id']}", json={"link_to": None})
+    c.patch(f"/api/places/{old['id']}", json={"link_to": ""})
+    assert all(p["link_id"] is None for p in c.get("/api/places").json["places"])
+    assert c.patch(f"/api/places/{old['id']}", json={"link_to": old["id"]}).status_code == 400

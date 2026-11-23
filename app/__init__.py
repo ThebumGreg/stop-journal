@@ -803,7 +803,9 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
 
     @app.get("/api/places/group-history")
     def places_group_history():
-        return with_conn(lambda conn, cfg: jsonify(service.group_history(conn, cfg, request.args.get("name", ""))))
+        a = request.args
+        return with_conn(lambda conn, cfg: jsonify(service.group_history(
+            conn, cfg, a.get("name", ""), int(a["group"]) if a.get("group", "").isdigit() else None)))
 
     @app.get("/api/gas-stations")
     def gas_stations():

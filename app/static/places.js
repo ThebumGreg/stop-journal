@@ -1,5 +1,5 @@
 'use strict';
-let PLACES = [];
+let PLACES = [], ALL = [];
 const listEl = document.getElementById('list');
 const open = new Set();
 const KIND = {client: 'Client', home: 'Home', office: 'Office', vendor: 'Vendor'};
@@ -32,7 +32,8 @@ async function load() {
     st.forEach(g => listEl.append(stationRow(g)));
     return;
   }
-  PLACES = (await api('GET', '/api/places' + (k ? '?kind=' + k : ''))).places;
+  [PLACES, ALL] = await Promise.all([api('GET', '/api/places' + (k ? '?kind=' + k : '')).then(d => d.places),
+                                     api('GET', '/api/places').then(d => d.places)]);
   render();
 }
 
@@ -43,7 +44,7 @@ function render() {
   if (!PLACES.length) listEl.append(el('div', 'hint', 'Nothing here yet. Add one above.'));
   const groups = new Map();
   PLACES.forEach(p => {
-    const k = p.name.trim().toLowerCase();
+    const k = p.link_id ? 'link:' + p.link_id : p.name.trim().toLowerCase();   // linked places, else the same name
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(p);
   });
@@ -52,12 +53,14 @@ function render() {
 
 const openGroups = new Set();
 function groupRow(ps) {
-  const key = ps[0].name.trim().toLowerCase();
+  ps = ps.slice().sort((a, b) => a.old_address - b.old_address);          // the current address first
+  const linked = ps[0].link_id;
+  const key = linked ? 'link:' + linked : ps[0].name.trim().toLowerCase();
   const wrap = el('div', 'place');
   const head = el('div', 'head'), body = el('div', 'body');
   const kinds = [...new Set(ps.map(p => p.kind))];
-  body.append(el('div', 'n', ps[0].name),
-              el('div', 'm', ps.length + ' locations · ' + ps.map(p => p.address || 'no address').join(' | ')));
+  body.append(el('div', 'n', ps[0].name + (linked ? ' 🔗' : '')),
+              el('div', 'm', ps.length + ' locations · ' + ps.map(p => (p.address || 'no address') + (p.old_address ? ' (old)' : '')).join(' | ')));
   head.append(body, el('span', 'chip ' + kinds[0], kinds.map(k => KIND[k] || k).join(' / ')));
   const inside = el('div', 'edit'); inside.hidden = !openGroups.has(key);
   const hist = el('div', 'hist');
@@ -65,7 +68,7 @@ function groupRow(ps) {
   const load_ = async () => {
     hist.replaceChildren(el('div', 'hint', 'Loading visits…'));
     try {
-      const d = await api('GET', '/api/places/group-history?name=' + encodeURIComponent(ps[0].name));
+      const d = await api('GET', '/api/places/group-history?' + (linked ? 'group=' + linked : 'name=' + encodeURIComponent(ps[0].name)));
       const t = d.totals;
       historyList(hist, d, t.visits ? t.visits + ' visit' + (t.visits === 1 ? '' : 's') + ' at ' + ps.length + ' locations' +
         (t.minutes ? ' · ' + dur(t.minutes) + ' on site' : '') + ' · last ' + niceDate(t.last) : 'No visits yet', true);
@@ -153,11 +156,14 @@ function stationRow(g) {
   return wrap;
 }
 
+// the group title is the current address's name; a location with another name shows it
+const ps0name = p => { const g = ALL.filter(x => x.link_id && x.link_id === p.link_id).sort((a, b) => a.old_address - b.old_address); return g.length ? g[0].name : p.name; };
 function row(p, inGroup) {
   const wrap = el('div', 'place');
   const head = el('div', 'head');
   const body = el('div', 'body');
-  body.append(el('div', 'n', inGroup ? '📍 ' + (p.address || 'No address saved') : p.name),
+  body.append(el('div', 'n', (inGroup ? '📍 ' + (p.address || 'No address saved') + (p.name !== ps0name(p) ? ' · ' + p.name : '') : p.name) +
+                              (p.old_address ? ' (old address)' : '')),
     el('div', 'm', [inGroup ? '' : p.address, p.kind === 'client' ? p.times_confirmed + ' visit' + (p.times_confirmed === 1 ? '' : 's') : '',
       p.default_status === 'Personal' ? 'pre-marked Personal' : ''].filter(Boolean).join(' · ')));
   head.append(body, el('span', 'chip ' + p.kind, KIND[p.kind] || p.kind));
@@ -177,13 +183,30 @@ function row(p, inGroup) {
   const radius = el('input'); radius.inputMode = 'numeric'; radius.value = Math.round(p.radius_m);
   const grid = el('div', 'grid');
   grid.append(lab('Name', name), lab('Type', kind), lab('Pre-mark stops here as', status), lab('Radius (m)', radius));
+  // link to another place (a customer's old and new address, or two names for one customer)
+  const linkSel = el('select');
+  const none = el('option', null, 'Not linked'); none.value = ''; linkSel.append(none);
+  const mates = ALL.filter(x => p.link_id && x.link_id === p.link_id && x.id !== p.id);
+  ALL.filter(x => x.id !== p.id).sort((a, b) => a.name.localeCompare(b.name)).forEach(x => {
+    const o = el('option', null, x.name + (x.address ? ' – ' + x.address : '') + (x.old_address ? ' (old)' : ''));
+    o.value = x.id; linkSel.append(o);
+  });
+  linkSel.value = mates.length ? String(mates[0].id) : '';
+  const oldBox = el('input'); oldBox.type = 'checkbox'; oldBox.checked = p.old_address;
+  const oldLab = el('label', 'chk'); oldLab.append(oldBox, ' Old address (the customer moved from here)');
+  const linkBox = el('div');
+  linkBox.append(lab('Linked to', linkSel), oldLab);
+  if (mates.length) linkBox.append(el('div', 'hint', 'Linked with: ' + mates.map(x => x.name + (x.address ? ' (' + x.address + ')' : '')).join(', ')));
+  linkBox.append(el('div', 'hint', 'Linked places show as one group with all their visits, even with different names.'));
   const err = el('div', 'err');
   const save = el('button', 'primary', 'Save');
   save.onclick = async () => {
     err.textContent = '';
     try {
-      await api('PATCH', '/api/places/' + p.id, {name: name.value, address: addr.value, kind: kind.value,
-        default_status: status.value, radius_m: radius.value});
+      const body = {name: name.value, address: addr.value, kind: kind.value, default_status: status.value,
+                    radius_m: radius.value, old_address: oldBox.checked};
+      if (linkSel.value !== (mates.length ? String(mates[0].id) : '')) body.link_to = linkSel.value || null;
+      await api('PATCH', '/api/places/' + p.id, body);
       await load();
     } catch (e) { err.textContent = e.message; }
   };
@@ -195,7 +218,7 @@ function row(p, inGroup) {
   };
   const acts = el('div', 'row'); acts.append(save, del);
   const form = el('details', 'editplace');
-  form.append(el('summary', null, 'Edit place'), grid, lab('Address', addr), acts, err);
+  form.append(el('summary', null, 'Edit place'), grid, lab('Address', addr), linkBox, acts, err);
   edit.append(hist, form);
   wrap.append(head, edit);
   if (!edit.hidden) loadHistory(hist, p);

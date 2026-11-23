@@ -557,7 +557,7 @@ function savedPicker(s, onPick) {
     first.value = ''; sel.append(first);
     list.forEach(([p, m]) => {
       const far = m === Infinity ? '' : m < 1000 ? ' · ' + Math.round(m) + ' m' : ' · ' + (m / 1609).toFixed(1) + ' mi';
-      const o = el('option', null, p.name + far); o.value = p.id; sel.append(o);
+      const o = el('option', null, p.name + (p.old_address ? ' (old address)' : '') + far); o.value = p.id; sel.append(o);
     });
     sel.onchange = () => {
       const hit = list.find(([p]) => String(p.id) === sel.value);

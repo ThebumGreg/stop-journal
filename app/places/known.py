@@ -94,7 +94,8 @@ def site_dict(r):
             "lat": r["lat"], "lon": r["lon"], "radius_m": r["radius_m"] or DEFAULT_SITE_RADIUS_M,
             "category": r["category"] or "", "kind": r["kind"] or "client",
             "default_status": r["default_status"] or "Draft",
-            "times_confirmed": r["times_confirmed"] or 0, "last_confirmed": r["last_confirmed"]}
+            "times_confirmed": r["times_confirmed"] or 0, "last_confirmed": r["last_confirmed"],
+            "link_id": r["link_id"], "old_address": bool(r["old_address"])}
 
 
 def list_sites(conn, kind="", q=""):
@@ -181,12 +182,40 @@ def update_site(conn, sid, f):
     v = _fields(f, partial=True)
     if "kind" in v and "default_status" not in v:
         v["default_status"] = DEFAULT_STATUS.get(v["kind"], "Draft")
+    if "old_address" in f:
+        v["old_address"] = 1 if f["old_address"] else 0
     if v:
         _update(conn, sid, v)
+    if "link_to" in f:
+        link(conn, sid, f["link_to"])
+
+
+# ---- linked places: one customer (or vendor) at several addresses, e.g. the old and new office after a move ----
+def link(conn, sid, other):
+    """Put place `sid` in the same group as place `other` (None/"" = take it out of its group). A group is the
+    places sharing `link_id` (the id of the group's first place). Linking two groups merges them."""
+    me = get_site(conn, sid)
+    if other in (None, "", 0, "0"):
+        conn.execute("UPDATE known_sites SET link_id=NULL WHERE id=?", (sid,))
+        if me["link_id"]:
+            left = conn.execute("SELECT id FROM known_sites WHERE link_id=?", (me["link_id"],)).fetchall()
+            if len(left) == 1:
+                conn.execute("UPDATE known_sites SET link_id=NULL WHERE id=?", (left[0]["id"],))
+        conn.commit()
+        return
+    them = get_site(conn, int(other))
+    if them["id"] == sid:
+        raise EditError("A place cannot be linked to itself.")
+    gid = them["link_id"] or me["link_id"] or min(sid, them["id"])
+    for g in {me["link_id"], them["link_id"]} - {None, gid}:
+        conn.execute("UPDATE known_sites SET link_id=? WHERE link_id=?", (gid, g))
+    conn.execute("UPDATE known_sites SET link_id=? WHERE id IN (?, ?)", (gid, sid, them["id"]))
+    conn.commit()
 
 
 def delete_site(conn, sid):
     get_site(conn, sid)
+    link(conn, sid, None)
     conn.execute("UPDATE stops SET known_site_id=NULL WHERE known_site_id=?", (sid,))
     conn.execute("DELETE FROM known_sites WHERE id=?", (sid,))
     conn.commit()

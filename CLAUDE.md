@@ -418,6 +418,11 @@ stop departed 12:21, and listed billable parts with no cost.
   fixed existing data once on connect (marker setting `_fix_vendor_branches`); customer places are never changed.
 - Places page groups same-name places: "Name · n locations" → all visits across them (`GET /api/places/group-history?name=`,
   each visit with its address), then each location (address as the title) with its own history and Edit place.
+- **Linked places** (`known_sites.link_id`, `old_address`): Edit place → "Linked to" another place (any name) and "Old address
+  (the customer moved from here)". A group is the places sharing link_id (`known.link`; linking two groups merges them,
+  unlinking the second-to-last member clears the group; delete unlinks). Places page groups by link first, else by same name;
+  the current address comes first and names the group; `group-history?group=<link_id>`. The stop sheet's saved-place list
+  labels old addresses.
 - Parts keep `vendor` as a name, so a vendor's branches are one vendor for shopping, choices and the coming Vendors tab.
 
 ## Truck page layout (redesign, 2026-11-22)

@@ -225,6 +225,8 @@ MIGRATIONS = [
     ("photos", "read_json", "TEXT"),
     ("route_cache", "seconds", "REAL"),
     ("parts", "bin", "TEXT"),
+    ("known_sites", "link_id", "INTEGER"),
+    ("known_sites", "old_address", "INTEGER"),
 ]
 
 
