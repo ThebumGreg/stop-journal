@@ -349,10 +349,27 @@ stop departed 12:21, and listed billable parts with no cost.
   follow_ups, mileage, recap) strips them from PDF and JSON; `omitted` [{key,label}] and a reading-note line say what was left
   out on purpose, and notes for absent sections are dropped. `/api/export/check` ignores omit. Export page "Include" ticks
   are remembered per phone.
-- **Home Screen mode**: links with `data-file` (exports, debug, parts CSV, backups) go through `static/share.js`: first tap
-  prepares the file, second opens the iOS share sheet (iOS needs a fresh tap). `?inline=1` serves an export inline.
+- **Home Screen mode**: links with `data-file` (exports, debug, parts CSV, backups) go through `static/share.js`: a tap opens a
+  panel with **Open in Safari** (the URL carries `ft=`, a signed download token from `GET /api/file-token`, 10 min,
+  `FILE_TOKEN_S`, accepted by the login gate only on GET of `FILE_PATHS` download routes, because Safari has no login cookie;
+  PDFs open with `?inline=1`) and **Share / Save to Files** (the file is fetched while the panel is open; iOS needs a fresh tap).
 - Not built: OCR of receipts; auto-detecting gas stations for stops that have no place category yet (only `gas_hint` from a
   picked fuel place); cleanup of orphaned photos.
+
+## Alerts, find, parts, backups (built 2026-11-22, later)
+- **Unfinished stop alert** (`ALERT_LEFT_STOP` / Settings → Alerts, default on): during the work day (work hours or after Start
+  day, until End day) the alert thread runs `service.catch_up` (the same incremental sync as the page, behind a lock) every
+  AUTO_SYNC_MIN minutes (5 if that is 0), then `service.left_unfinished`: a work stop (job/vendor/office/gas or untyped, not
+  Personal/Lunch/Traffic) with newer points 5+ min after its departure, left in the last 4 h, arrived after Start day, with
+  `needs` or not Confirmed. One Pushover per stop (`left_stop:<id>`, never repeated), generic text (arrival time and what is
+  missing, no names or places); the tap opens `/day/<date>?stop=<id>`, which opens that stop's sheet.
+- **Find business** searches for what is typed in the name field (else the address) near the stop; empty = nearby. No second
+  search box; "Show what is nearby instead" is offered.
+- **New-part prompt**: adding a part name that is not in the catalog opens a small form (counted in, unit cost, part/consumable,
+  part #); a billable part needs a cost. The part is added to the catalog (untracked) with that unit and cost.
+- **Backups**: database snapshots keep 7 by default (`BACKUP_KEEP`). Settings → Backups → **Download everything** streams
+  `/settings/backup-full.zip` (a consistent DB copy + `photos/`, built in an unlinked temp file). Photos are not copied anywhere
+  automatically; off-site (S3 / Linode Object Storage / Google Drive) is not built (costs money: ask first).
 
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.

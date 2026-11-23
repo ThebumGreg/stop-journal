@@ -27,7 +27,8 @@ Single user. Your location data stays on your own server.
   the report says what was left out. **Zip: PDF + photos** downloads the PDF, the JSON and every receipt and photo in the
   report, filed as `photos/YYYY/MM/DD/stop-1-acme-receipt-1.jpg` (the PDF prints each picture's file name).
   From the Home Screen app the files open the share sheet (Save to Files, Mail).
-- **Alerts** to your phone through Pushover (for example: no location data during work hours).
+- **Alerts** to your phone through Pushover (for example: no location data during work hours, or you drove away from a stop
+  you had not finished; tapping that one opens the stop).
 - A **live status** box: where the phone is now and how long it has been there.
 - Sync, Confirm all known and Undo are under **Export & tools**. Once the day is ended, no more stops are added to it.
 - Tag a stop **Lunch** (left out, by time only) or **Traffic** (a slow-down: its minutes count as drive time). Export is blocked until no stop is left in Draft.
@@ -106,11 +107,11 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `PUSHOVER_TOKEN`, `PUSHOVER_USER` | | notifications; see Settings |
 | `APP_URL` | | address that notification taps open, e.g. `http://192.168.x.x:8000` |
 | `ALERT_NO_DATA`, `ALERT_NO_DATA_MIN`, `WORK_DAYS`, `WORK_START`, `WORK_END`, `ALERT_REPEAT_MIN` | on, 60, Mon-Fri, 07:00, 17:00, 0 | the no-data alert (tapping Start/End day overrides the work hours for that day) |
-| `ALERT_DRAFTS`, `ALERT_LOW_STOCK` | on, on | end-of-day "stops still in Draft" reminder, low truck stock alert (generic text only) |
+| `ALERT_DRAFTS`, `ALERT_LOW_STOCK`, `ALERT_LEFT_STOP` | on, on, on | end-of-day "stops still in Draft" reminder, low truck stock alert, "you left a stop that isn't finished" (generic text only) |
 | `AUTO_SYNC_MIN` | `2` | while today's day page is open, pick up new points and stops every this many minutes (0 = off); also a Settings value |
 | `LANGUAGETOOL_URL` | blank (off) | your own LanguageTool server, e.g. `http://192.168.1.10:8010`; adds a **Check grammar** button to the notes sheet. Only the note text is sent, to that address. Also a Settings value |
 | `ROUTING_URL` | public OSRM server | road distance used only to document miles from where the day ended to Home; coordinates are rounded to ~100 m; blank = off (estimate) |
-| `BACKUP_KEEP` | 14 | daily database snapshots to keep (0 = off) |
+| `BACKUP_KEEP` | 7 | daily database snapshots to keep (0 = off) |
 | `PUID`, `PGID` | 1000 | compose only: the user the container runs as |
 
 ## Backup and restore
@@ -120,7 +121,8 @@ it in `/data/photos/YYYY/MM/DD/` (by the stop's day, shrunk to 1600 px, location
 do not contain them, so back up the whole `/data` folder (at least `backups/` and `photos/`).
 
 - **Automatic**: once a day JobHub saves a consistent snapshot to `/data/backups/` (`jobhub-YYYY-MM-DD.db`) and
-  keeps the newest 14 (Settings → Backups; `BACKUP_KEEP`). Settings also has **Back up now** and download links.
+  keeps the newest 7 (Settings → Backups; `BACKUP_KEEP`). Settings also has **Back up now** and download links.
+- **Database and photos together**: Settings → Backups → **Download everything (database + photos)** gives one zip. Keep it off the server.
 - **Off the server**: these snapshots sit on the same disk, so copy `/data/backups/` elsewhere on a schedule
   (Unraid appdata backup, rsync, cron).
 - **Restore**: stop the container, copy a snapshot over `data/stop_journal.db` (renaming it), start it.

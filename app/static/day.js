@@ -113,7 +113,7 @@ async function loadCands(s, box, q, pick, google) {
   catch (e) { box.replaceChildren(el('div', 'err', 'Lookup failed (' + e.message + ').')); return; }
   box.replaceChildren();
   if (d.error) box.append(el('div', 'err', d.error));
-  if (!d.candidates.length) box.append(el('div', 'hint', 'No matches. Try the search box, or type a name above.'));
+  if (!d.candidates.length) box.append(el('div', 'hint', 'No matches. Change the name above and tap Find again, or show what is nearby.'));
   d.candidates.forEach(c => {
     const row = el('div', 'cand');
     row.append(el('div', 'n', c.name + (c.source === 'known' ? '  ★ ' + (c.kind && c.kind !== 'client' ? c.kind : 'known') : c.source === 'google' ? '  (Google)' : '')),
@@ -183,17 +183,48 @@ function partsBlock(s, err) {
   const name = el('input'); name.setAttribute('list', 'partlist'); name.placeholder = 'Add part (name or part #)';
   const qty = el('input'); qty.type = 'number'; qty.step = 'any'; qty.min = '0'; qty.value = '1'; qty.title = 'Quantity';
   const go = el('button', null, 'Add'); go.type = 'button';
+  const fresh = el('div', 'newpart'); fresh.hidden = true;
   go.onclick = () => {
     const v = name.value.trim();
     if (!v) { err.textContent = 'Enter a part name.'; return; }
     const m = S.parts.find(p => p.name.toLowerCase() === v.toLowerCase() || (p.sku && p.sku.toLowerCase() === v.toLowerCase()));
-    const body = {qty: qty.value, name: v};
-    if (m) body.part_id = m.id;
-    run(() => api('POST', '/api/stops/' + s.id + '/parts', body), err, () => { loadParts(); });
+    if (m) { run(() => api('POST', '/api/stops/' + s.id + '/parts', {qty: qty.value, part_id: m.id}), err, () => { loadParts(); }); return; }
+    newPartForm(fresh, v, () => qty.value, s, err);       // not in the catalog: ask for unit and cost first
   };
+  name.addEventListener('input', () => { fresh.hidden = true; });
   add.append(name, qty, go);
-  box.append(add);
+  box.append(add, fresh);
   return box;
+}
+
+// A part that is not in the catalog yet: ask what it is counted in and what it costs, so the report is never blank.
+const UNITS = [['ea', 'Each'], ['pair', 'Pair'], ['pack', 'Pack'], ['box', 'Box'], ['bag', 'Bag'], ['case', 'Case'],
+               ['roll', 'Roll'], ['ft', 'Foot'], ['gal', 'Gallon'], ['lb', 'Pound']];
+function newPartForm(box, name, qty, s, err) {
+  box.replaceChildren(el('div', 'hint', '“' + name + '” is not in your parts list yet. It is added there too.'));
+  const sku = el('input'); sku.placeholder = 'Part # (optional)';
+  const unit = el('select');
+  UNITS.forEach(([k, t]) => { const o = el('option', null, t); o.value = k; unit.append(o); });
+  const cost = el('input'); cost.setAttribute('inputmode', 'decimal'); cost.placeholder = '0.00';
+  const kind = el('select');
+  [['part', 'Part (billable)'], ['consumable', 'Consumable (not billed)']].forEach(([k, t]) => { const o = el('option', null, t); o.value = k; kind.append(o); });
+  const g = el('div', 'two');
+  g.append(labeled('Counted in', unit), labeled('Unit cost', cost), labeled('Type', kind), labeled('Part #', sku));
+  const ok = el('button', 'primary', 'Add to this stop'); ok.type = 'button';
+  const no = el('button', null, 'Cancel'); no.type = 'button';
+  no.onclick = () => { box.hidden = true; };
+  ok.onclick = () => {
+    const c = cost.value.trim().replace(/^\$/, '');
+    if (kind.value === 'part' && !c) { err.textContent = 'Enter the unit cost (what you charge per ' + unit.selectedOptions[0].textContent.toLowerCase() + '), or choose Consumable.'; cost.focus(); return; }
+    err.textContent = '';
+    const body = {name, qty: qty(), unit: unit.value, unit_cost: c || null, type: kind.value,
+                  billable: kind.value === 'part', sku: sku.value.trim() || null};
+    run(() => api('POST', '/api/stops/' + s.id + '/parts', body), err, () => { box.hidden = true; loadParts(); });
+  };
+  const acts = el('div', 'cardacts'); acts.append(ok, no);
+  box.append(g, acts);
+  box.hidden = false;
+  cost.focus();
 }
 
 // ---- the stop sheet (slides up over the day) ------------------------------------
@@ -466,24 +497,33 @@ function toolsBlock(s, err, inSheet) {
   return w;
 }
 
+// Find searches for what is typed in the name field (or the address, if no name), near the stop.
+// With both empty it lists what is nearby. No second search box: fix the name above and tap Find again.
 function businessFinder(s, nameIn, addrIn, onPick) {
-  const find = el('button', null, s.stop_type === 'gas' ? 'Find station' : 'Find business'); find.type = 'button';
+  const word = s.stop_type === 'gas' ? 'station' : 'business';
+  const find = el('button', null, 'Find ' + word); find.type = 'button';
   let panel = null;
+  const shut = () => { if (panel) panel.remove(); panel = null; candLayer.clearLayers(); find.textContent = 'Find ' + word; };
   find.onclick = () => {
-    if (panel) { panel.remove(); panel = null; candLayer.clearLayers(); return; }
+    if (panel) { shut(); return; }
     panel = el('div', 'panel');
-    const form = el('form'), inp = el('input'), go = el('button', null, 'Search');
-    inp.placeholder = 'Search by name or address'; go.type = 'submit';
+    const q = nameIn.value.trim() || addrIn.value.trim();
+    const head = el('div', 'hint', q ? 'Matches for “' + q + '” near this stop:' : 'Places near this stop:');
     const box = el('div');
-    form.append(inp, go); panel.append(form, box);
+    panel.append(head, box);
+    if (q) {
+      const near = el('button', null, 'Show what is nearby instead'); near.type = 'button';
+      near.onclick = () => { head.textContent = 'Places near this stop:'; near.remove(); loadCands(s, box, '', pick); };
+      panel.append(near);
+    }
     const pick = c => {     // choosing a business closes the list and saves it
-      panel.remove(); panel = null; candLayer.clearLayers();
+      shut();
       nameIn.value = c.name; addrIn.value = c.address;
       onPick(c);
     };
-    form.onsubmit = e => { e.preventDefault(); loadCands(s, box, inp.value.trim(), pick); };
     find.after(panel);
-    loadCands(s, box, '', pick);
+    find.textContent = 'Close the list';
+    loadCands(s, box, q, pick);
   };
   return find;
 }
@@ -1138,6 +1178,8 @@ function render(fit) {
   if (sheet.id) refreshSheet();
 }
 
+// /day/<date>?stop=<id> (alerts, Places history) opens that stop once the day is loaded
+let wantStop = +new URLSearchParams(location.search).get('stop') || null;
 async function load() {
   S.date = dateEl.value;
   document.getElementById('toolslink').href = '/tools?date=' + S.date;
@@ -1150,6 +1192,10 @@ async function load() {
     applyDay(await api('GET', '/api/day/' + S.date));
   } catch (e) { m.textContent = 'Could not load this day (' + e.message + ').'; return; }
   render(true);
+  if (wantStop) {
+    const id = wantStop; wantStop = null;
+    if (S.stops.some(x => x.id === id)) openSheet(id);
+  }
 }
 
 function shift(n) {

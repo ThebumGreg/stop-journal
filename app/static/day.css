@@ -226,3 +226,5 @@ body.sheet-open { overflow:hidden; }
 .cardacts button { min-height:36px; padding:4px 12px; font-size:14px; }
 .cardacts .primary { background:var(--acc); color:#fff; border-color:var(--acc); }
 .cardacts .quick { margin-top:0; }
+
+.newpart { border:1px solid var(--acc); border-radius:8px; padding:8px; margin-top:6px; display:grid; gap:8px; }

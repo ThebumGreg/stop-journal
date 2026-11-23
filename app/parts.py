@@ -421,7 +421,7 @@ def add_to_stop(conn, stop_id, f):
         part = find_part(conn, name, f.get("sku"))
         if part is None:  # ad-hoc: remember it in the catalog, but don't track stock
             part = get_part(conn, create_part(conn, {"name": name, "sku": f.get("sku"),
-                                                      "unit_cost": f.get("unit_cost"), "type": f.get("type"),
+                                                      "unit_cost": f.get("unit_cost"), "type": f.get("type"), "unit": f.get("unit"),
                                                       "billable": f.get("billable")}))
     expense = part["kind"] == "expense"
     cost = part["unit_cost"]

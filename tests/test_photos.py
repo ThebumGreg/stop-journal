@@ -129,3 +129,20 @@ def test_zip_has_pdf_json_and_dated_photos(tmp_path):
     assert Image.open(io.BytesIO(z.read(pics[0]))).format == "JPEG"
     z2 = zipfile.ZipFile(io.BytesIO(c.get(f"/api/export.zip?from={D}&omit=photos").data))
     assert not [n for n in z2.namelist() if n.startswith("photos/")]
+
+
+def test_full_backup_has_database_and_photos(tmp_path):
+    import os, sqlite3, zipfile
+    c = make(tmp_path)
+    sid = c.get(f"/api/day/{D}").json["stops"][0]["id"]
+    upload(c, sid, jpeg_with_gps(80, 60))
+    r = c.get("/settings/backup-full.zip")
+    assert r.mimetype == "application/zip" and "jobhub-full-" in r.headers["Content-Disposition"]
+    z = zipfile.ZipFile(io.BytesIO(r.data))
+    names = z.namelist()
+    assert "stop_journal.db" in names
+    assert any(n.startswith("photos/2026/11/18/") and n.endswith("-receipt.jpg") for n in names)
+    out = tmp_path / "restored.db"
+    out.write_bytes(z.read("stop_journal.db"))
+    assert sqlite3.connect(out).execute("SELECT COUNT(*) FROM photos").fetchone()[0] == 1
+    assert not [n for n in os.listdir(tmp_path) if n.startswith(".full-")]     # nothing left on the server

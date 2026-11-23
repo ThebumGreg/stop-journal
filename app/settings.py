@@ -111,6 +111,9 @@ SPEC += [
              help="Notify me (30 min after the work day ends, or after you tap End day) if stops are still in Draft."),
         dict(key="alert_low_stock", label="Low truck stock alert", kind="choice", choices=["on", "off"],
              help="Notify me when a tracked part drops to its reorder level."),
+        dict(key="alert_left_stop", label="Unfinished stop alert", kind="choice", choices=["on", "off"],
+             help="Notify me a few minutes after I drive away from a stop that isn't finished (work type, notes, "
+                  "visit result...). JobHub then checks the Recorder in the background during the work day."),
         dict(key="work_days", label="Work days", kind="days", help="For example Mon-Fri or Mon,Tue,Thu."),
         dict(key="work_start", label="Work day starts", kind="time", help="24-hour time, local."),
         dict(key="work_end", label="Work day ends", kind="time", help="24-hour time, local."),

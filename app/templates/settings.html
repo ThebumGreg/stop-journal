@@ -80,7 +80,9 @@
             {% if backups | length > 5 %}<div class="help">…and {{ backups | length - 5 }} older.</div>{% endif %}
           {% else %}<div class="help">No backups yet.</div>{% endif %}
           <div class="row" style="margin-top:8px"><button type="button" id="backupnow">Back up now</button><span id="backupmsg"></span></div>
-          <div class="help">Saved in the data folder under <code>backups/</code>. Tap a file to download it. Also copy that folder off the server, since a disk failure would take the backups too.</div>
+          <div class="help">The database is saved every day in the data folder under <code>backups/</code> (Daily backups to keep, default 7). Those copies do not include photos.</div>
+          <div class="row" style="margin-top:8px"><a class="btn" href="/settings/backup-full.zip" data-file="full backup">Download everything (database + photos)</a></div>
+          <div class="help">One zip with the database and every photo and receipt. Keep it somewhere other than the server (Files, iCloud, a PC); a disk failure would take the server's copies too. To restore, put <code>stop_journal.db</code> and the <code>photos</code> folder back in the data folder.</div>
         </div>
       {% endif %}
       {% if group == 'Business suggestions' %}

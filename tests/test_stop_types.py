@@ -119,3 +119,14 @@ def test_office_and_home_fill_from_saved_places(tmp_path):
     assert next(x for x in r if x["id"] == a["id"])["business_name"] == "Acme"
     r = c.patch(f"/api/stops/{a['id']}", json={"stop_type": "personal"}).json["stops"]
     assert next(x for x in r if x["id"] == a["id"])["business_name"] == "Acme"
+
+
+def test_new_part_from_the_sheet_keeps_unit_and_cost(tmp_path):
+    c = make(tmp_path)
+    sid = stops(c)[0]["id"]
+    r = c.post(f"/api/stops/{sid}/parts", json={"name": "Copper pipe 1/2", "qty": 6, "unit": "ft",
+                                                "unit_cost": "3.10", "type": "part", "billable": True}).json
+    p = next(x for x in r["stops"] if x["id"] == sid)["parts"][0]
+    assert (p["unit"], p["unit_cost"], p["billable"]) == ("ft", 3.1, True)
+    cat = c.get("/api/parts?q=Copper").json["parts"][0]
+    assert cat["unit"] == "ft" and cat["unit_cost"] == 3.1

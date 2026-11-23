@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 from flask import (Flask, Response, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
 
+from itsdangerous import BadSignature, URLSafeTimedSerializer
+
 from . import alerts, backup, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
 from . import photos
 from . import report as reports
@@ -22,6 +24,11 @@ from .recorder import RecorderClient
 
 TEXT_SEARCH_FALLOFF_M = 50000  # free-text hits: nearer-to-stop still ranks first
 
+
+
+FILE_TOKEN_S = 600       # a download link made for Safari works for 10 minutes
+FILE_PATHS = ("/api/export.", "/api/debug/", "/api/parts/template.csv", "/api/parts/export.csv",
+              "/settings/backup")
 
 def create_app(cfg=None, client=None, provider=None, start_background=None):
     base = cfg or Config.from_env()
@@ -56,9 +63,20 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return None
         if session.get("auth") == 1:
             return None
+        if request.method == "GET" and request.args.get("ft") and request.path.startswith(FILE_PATHS):
+            try:                     # a short-lived download link (Home Screen app -> Safari, which has no login cookie)
+                URLSafeTimedSerializer(app.secret_key, salt="file").loads(request.args["ft"], max_age=FILE_TOKEN_S)
+                return None
+            except BadSignature:
+                pass
         if request.path.startswith("/api/") or request.method != "GET":
             return jsonify(error="login required"), 401
         return redirect(url_for("login", next=request.path))
+
+    @app.get("/api/file-token")
+    def file_token():
+        """For share.js: lets a download open in Safari for a few minutes (downloads only, nothing else)."""
+        return jsonify(token=URLSafeTimedSerializer(app.secret_key, salt="file").dumps("dl"), ttl=FILE_TOKEN_S)
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -210,12 +228,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             ensure_day(conn, cfg, date)
             if cfg.recorder_url and cfg.recorder_user and cfg.recorder_device:
                 try:
-                    last = client.last_tst()
-                    stored = conn.execute("SELECT MAX(tst_utc) FROM points WHERE device=?",
-                                          (cfg.recorder_device,)).fetchone()[0] or 0
-                    if last and last > stored:
-                        points.load_day(conn, client, cfg, date, refresh=True, incremental=True)
-                        service.sync_new(conn, cfg, date, service.kept_points(conn, cfg, date), cfg)
+                    service.catch_up(conn, client, cfg, date)
                 except Exception:
                     return jsonify(error="Recorder not reachable"), 502
             return jsonify(service.day_payload(conn, cfg, date))
@@ -816,10 +829,17 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def settings_backup_now():
         cfg = eff()
         try:
-            name = backup.snapshot(cfg.data_dir, cfg.app_tz, cfg.backup_keep or 14, stamp_time=True)
+            name = backup.snapshot(cfg.data_dir, cfg.app_tz, cfg.backup_keep or 7, stamp_time=True)
             return jsonify(ok=True, message=f"Saved {name}. Reload to see it in the list.")
         except Exception as e:
             return jsonify(ok=False, message=f"Backup failed ({type(e).__name__}).")
+
+    @app.get("/settings/backup-full.zip")
+    def settings_backup_full():
+        """Everything to keep off the server: the database and the photos folder, in one download."""
+        cfg = eff()
+        f, name = backup.full_zip(cfg.data_dir, cfg.app_tz)
+        return send_file(f, as_attachment=True, download_name=name, mimetype="application/zip")
 
     @app.get("/settings/backup/<name>")
     def settings_backup_download(name):

@@ -215,3 +215,31 @@ def test_branding_ios_meta_and_manifest(tmp_path):
     assert anon.get("/manifest.webmanifest").status_code == 200       # reachable before login
     assert anon.get("/static/icon-180.png").status_code == 200
     assert anon.get("/").status_code == 302
+
+
+# ---- unfinished stop -----------------------------------------------------
+def test_left_stop_alert_once_generic_and_clears_when_finished(tmp_path):
+    pts = sample.normal_day()
+    rec = sample.ListRecorder(pts)
+    cfg = base(tmp_path, recorder_url="http://rec", recorder_user="u", recorder_device="d",
+               app_url="http://jobhub.local", alert_no_data="off", alert_drafts="off")
+    now = max(p["tst"] for p in pts) + 60
+    alerts._last_sync.clear()
+    s = Sender()
+    run(cfg, rec, now, s)                              # nobody opened the page: the thread syncs the day itself
+    left = [c for c in s.calls if c[0] == "JobHub – stop not finished"]
+    assert left, "expected an alert for a stop driven away from"
+    conn = db.connect(str(tmp_path))
+    names = [r["business_name"] for r in conn.execute("SELECT business_name FROM stops") if r["business_name"]]
+    for title, msg, url in left:
+        assert "stop type" in msg and "/day/2026-11-18?stop=" in url
+        assert not any(n in msg for n in names)                    # no names or places in Pushover text
+    run(cfg, rec, now + 60, s)                         # same stops: no repeat
+    assert len([c for c in s.calls if c[0] == "JobHub – stop not finished"]) == len(left)
+    # finish them (Lunch is never 'unfinished'): the alerts re-arm quietly
+    conn.execute("UPDATE stops SET stop_type='lunch', status='Lunch'")
+    conn.commit()
+    run(cfg, rec, now + 120, s)
+    assert conn.execute("SELECT COUNT(*) FROM alert_state WHERE key LIKE 'left_stop:%' AND active=1").fetchone()[0] == 0
+    run(replace(cfg, alert_left_stop="off"), rec, now + 180, s)
+    conn.close()

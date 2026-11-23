@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 from . import db, notify, settings
 
 log = logging.getLogger("jobhub.alerts")
-Condition = namedtuple("Condition", "key active title message priority")
+Condition = namedtuple("Condition", "key active title message priority url once", defaults=(None, False))
 RETRY_S = 600  # after a failed delivery, wait this long before trying again
 
 
@@ -104,6 +104,40 @@ def low_stock_conditions(conn, cfg):
                       "Open the Truck page to review.", 0)]
 
 
+_last_sync = {}     # date -> when the alert thread last pulled new points
+
+
+def left_stop_conditions(conn, cfg, client, now, marks, in_window, sync=True):
+    """You drove away from a work stop that isn't finished: one alert per stop (generic text: no names or places).
+    Stops only exist once someone syncs, so during the work day this pulls new points every few minutes."""
+    from . import service
+    if cfg.alert_left_stop != "on" or marks["end"] or not (in_window or marks["start"]):
+        return []
+    if not (cfg.recorder_url and cfg.recorder_user and cfg.recorder_device):
+        return []
+    date = marks["date"]
+    every = max(cfg.auto_sync_min or 5, 2) * 60
+    if sync and now - _last_sync.get(date, 0) >= every:
+        _last_sync[date] = now
+        try:
+            service.catch_up(conn, client, cfg, date)
+        except Exception as e:
+            log.warning("background sync failed: %s", type(e).__name__)
+    out = []
+    for r, needs in service.left_unfinished(conn, cfg, date, now, since=marks["start"]):
+        what = "" if needs == ["finish"] else " (still needs " + ", ".join(needs) + ")"
+        url = (cfg.app_url.rstrip("/") + "/day/" + date + "?stop=" + str(r["id"])) if cfg.app_url else None
+        out.append(Condition(f"left_stop:{r['id']}", True, "JobHub – stop not finished",
+                             f"You left the stop you arrived at {_clock(cfg, r['arrive_utc'])} without finishing it"
+                             f"{what}. Open JobHub to finish it.", 0, url, True))
+    # finished (or gone) stops re-arm quietly
+    active = {c.key for c in out}
+    for row in conn.execute("SELECT key FROM alert_state WHERE key LIKE 'left_stop:%' AND active=1"):
+        if row["key"] not in active:
+            out.append(Condition(row["key"], False, "", "", 0))
+    return out
+
+
 def apply(conn, cfg, cond, now, send):
     """Send/re-arm for one condition. Returns True if a notification was delivered."""
     conn.execute("BEGIN IMMEDIATE")
@@ -112,7 +146,7 @@ def apply(conn, cfg, cond, now, send):
     if cond.active:
         if st is None or not st["active"]:
             do_send = st is None or now - (st["last_attempt"] or 0) >= RETRY_S
-        elif cfg.alert_repeat_min > 0 and now - (st["last_sent"] or 0) >= cfg.alert_repeat_min * 60:
+        elif not cond.once and cfg.alert_repeat_min > 0 and now - (st["last_sent"] or 0) >= cfg.alert_repeat_min * 60:
             do_send = True
     elif st is not None and st["active"]:
         conn.execute("UPDATE alert_state SET active=0 WHERE key=?", (cond.key,))
@@ -123,7 +157,7 @@ def apply(conn, cfg, cond, now, send):
                  "ON CONFLICT(key) DO UPDATE SET last_attempt=excluded.last_attempt", (cond.key, now))
     conn.commit()  # claimed: other workers now see a fresh attempt
     try:
-        send(cfg, cond.title, cond.message, cond.priority, cfg.app_url or None)
+        send(cfg, cond.title, cond.message, cond.priority, cond.url or cfg.app_url or None)
         ok, err = True, None
     except notify.NotifyError as e:
         ok, err = False, str(e)
@@ -157,6 +191,7 @@ def run_once(base, client, now=None, send=notify.send):
         if notify.configured(cfg):
             conds += draft_conditions(conn, cfg, now, marks, in_work_day)
             conds += low_stock_conditions(conn, cfg)
+            conds += left_stop_conditions(conn, cfg, client, now, marks, in_window)
         for cond in conds:
             apply(conn, cfg, cond, now, send)
     finally:

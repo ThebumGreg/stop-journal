@@ -224,3 +224,18 @@ def test_omit_rejects_unknown_and_check_ignores_it(tmp_path):
     r = c.get(f"/api/export.pdf?from={D}&inline=1")
     assert r.headers["Content-Disposition"].startswith("inline")
     assert c.get(f"/api/export/check?from={D}&omit=costs").status_code == 200
+
+
+def test_download_token_opens_files_only_for_a_while(tmp_path, monkeypatch):
+    c = make(tmp_path, app_password="pw")
+    assert c.get(f"/api/export.json?from={D}").status_code == 401
+    c.post("/login", data={"password": "pw"})
+    tok = c.get("/api/file-token").json["token"]
+    c.post("/logout")
+    assert c.get(f"/api/export.json?from={D}&ft={tok}").status_code == 200     # Safari: no cookie, token works
+    assert c.get(f"/api/export.pdf?from={D}&inline=1&ft={tok}").mimetype == "application/pdf"
+    assert c.get(f"/api/day/{D}?ft={tok}").status_code == 401                 # downloads only
+    assert c.get(f"/api/export.json?from={D}&ft=junk").status_code == 401
+    import app as appmod
+    monkeypatch.setattr(appmod, "FILE_TOKEN_S", -1)                          # expired
+    assert c.get(f"/api/export.json?from={D}&ft={tok}").status_code == 401

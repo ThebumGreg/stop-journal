@@ -14,11 +14,12 @@ Totals rules (documented here because the UI and PDF rely on them):
     are counted separately).
 """
 import json
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import detect, parts, photos as photo_store, routing
+from . import detect, parts, photos as photo_store, points as point_store, routing
 from .errors import EditError
 from .geo import haversine_m
 from .places import known
@@ -1321,3 +1322,58 @@ def finish_stop(conn, cfg, sid, f):
     if stype != "gas" and s["status"] != "Confirmed":
         patch_stop(conn, cfg, sid, {"status": "Confirmed"})
     return s["date"]
+
+
+# ---- catching up without the page open, and stops left unfinished --------
+_catch_up_lock = threading.Lock()     # the page's auto-sync and the alert thread never add the same stop twice
+
+
+def catch_up(conn, client, cfg, date):
+    """Fetch what is new on the Recorder for a day and add it (the page's auto-sync, and the alert thread's).
+    Returns True when new points came in."""
+    with _catch_up_lock:
+        return _catch_up(conn, client, cfg, date)
+
+
+def _catch_up(conn, client, cfg, date):
+    if not is_processed(conn, date):
+        point_store.load_day(conn, client, cfg, date)
+        materialize(conn, cfg, date, kept_points(conn, cfg, date), cfg)
+        return True
+    last = client.last_tst()
+    stored = conn.execute("SELECT MAX(tst_utc) FROM points WHERE device=?", (cfg.recorder_device,)).fetchone()[0] or 0
+    if not (last and last > stored):
+        return False
+    point_store.load_day(conn, client, cfg, date, refresh=True, incremental=True)
+    sync_new(conn, cfg, date, kept_points(conn, cfg, date), cfg)
+    return True
+
+
+LEFT_AFTER_S = 300        # gone from a stop this long (newer points elsewhere) = you drove away
+LEFT_WINDOW_S = 4 * 3600  # only stops you left in the last few hours (no flood of old ones)
+
+
+def left_unfinished(conn, cfg, date, now, since=None):
+    """Work stops (Job, Vendor, Office, Gas, or no type yet) you have driven away from that are not finished.
+    [(stop row, needs)]. Lunch, Personal and Traffic are never 'unfinished'."""
+    pts = kept_points(conn, cfg, date)
+    if not pts:
+        return []
+    last = pts[-1]["tst"]
+    site_kind = {r["id"]: r["kind"] for r in conn.execute("SELECT id, kind FROM known_sites")}
+    fuel = fuel_for_day(conn, date)
+    out = []
+    for r in _ordered(conn, date):
+        if (r["kind"] or "stop") != "stop" or r["status"] in ("Personal", "Lunch") or \
+                (r["status"] == "Traffic" and r["stop_type"] != "gas"):
+            continue
+        if since and r["arrive_utc"] < since:
+            continue
+        if last - r["depart_utc"] < LEFT_AFTER_S or now - r["depart_utc"] > LEFT_WINDOW_S:
+            continue
+        t = stop_type(r, site_kind.get(r["known_site_id"]) or "")
+        hint = "" if r["work_category"] else last_category(conn, r["id"], r["business_name"], r["known_site_id"])
+        needs = stop_needs(r, t, hint, fuel.get(r["id"]))
+        if needs or (t != "gas" and r["status"] != "Confirmed"):
+            out.append((r, needs or ["finish"]))
+    return out

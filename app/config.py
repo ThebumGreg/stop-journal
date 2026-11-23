@@ -35,10 +35,11 @@ class Config:
     work_start: str = "07:00"
     work_end: str = "17:00"
     alert_repeat_min: int = 0
-    backup_keep: int = 14
+    backup_keep: int = 7
     alert_drafts: str = "on"
     stop_short_min_s: int = 180
     alert_low_stock: str = "on"
+    alert_left_stop: str = "on"
     routing_url: str = ""    # "" = off; from_env defaults to the public OSRM server
     languagetool_url: str = ""   # "" = grammar check off
     auto_sync_min: int = 2       # day page for today syncs this often while open; 0 = off
@@ -74,10 +75,11 @@ class Config:
             work_start=e("WORK_START", "07:00"),
             work_end=e("WORK_END", "17:00"),
             alert_repeat_min=_int("ALERT_REPEAT_MIN", 0),
-            backup_keep=_int("BACKUP_KEEP", 14),
+            backup_keep=_int("BACKUP_KEEP", 7),
             alert_drafts=e("ALERT_DRAFTS", "on"),
             stop_short_min_s=_int("STOP_SHORT_MIN_S", 180),
             alert_low_stock=e("ALERT_LOW_STOCK", "on"),
+            alert_left_stop=e("ALERT_LEFT_STOP", "on"),
             routing_url=e("ROUTING_URL", "https://router.project-osrm.org").strip().rstrip("/"),
             languagetool_url=e("LANGUAGETOOL_URL", "").strip().rstrip("/"),
             auto_sync_min=_int("AUTO_SYNC_MIN", 2),

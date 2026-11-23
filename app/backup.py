@@ -53,6 +53,39 @@ def snapshot(data_dir, tz_name, keep, stamp_time=False, now=None):
     return name
 
 
+def full_zip(data_dir, tz_name):
+    """Database (a consistent copy) plus every photo and receipt, as one zip in an already-unlinked temp file.
+    Returns (open file positioned at 0, download name). Nothing is left behind on the server."""
+    import tempfile
+    import zipfile
+    stamp = datetime.now(ZoneInfo(tz_name)).strftime("%Y-%m-%d-%H%M")
+    fd, path = tempfile.mkstemp(prefix=".full-", suffix=".zip", dir=data_dir)
+    dbtmp = path + ".db"
+    try:
+        src, dst = sqlite3.connect(os.path.join(data_dir, "stop_journal.db")), sqlite3.connect(dbtmp)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        with os.fdopen(fd, "w+b") as raw, zipfile.ZipFile(raw, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(dbtmp, "stop_journal.db")
+            pics = os.path.join(data_dir, "photos")
+            for root, _dirs, files in os.walk(pics):
+                for n in sorted(files):
+                    if n.endswith(".jpg"):
+                        full = os.path.join(root, n)
+                        z.write(full, os.path.relpath(full, data_dir), compress_type=zipfile.ZIP_STORED)
+        f = open(path, "rb")
+        return f, f"jobhub-full-{stamp}.zip"
+    finally:
+        for p in (path, dbtmp):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+
 def prune(data_dir, keep):
     for b in list_backups(data_dir)[max(keep, 1):]:
         os.remove(os.path.join(folder(data_dir), b["name"]))
