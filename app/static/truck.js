@@ -70,6 +70,13 @@ async function loadParts() {
     api('GET', '/api/parts/choices')]);
 }
 
+// where it lives on the truck: "Shelf 2 · bin 12"
+const locText = p => [p.shelf, p.bin ? 'bin ' + p.bin : ''].filter(Boolean).join(' · ');
+function shelfList() {           // a datalist of the shelves already used, so they are typed the same way
+  let dl = document.getElementById('shelves');
+  if (!dl) { dl = el('datalist'); dl.id = 'shelves'; document.body.append(dl); }
+  dl.replaceChildren(...[...new Set(PARTS.map(p => p.shelf).filter(Boolean))].sort().map(v => { const o = el('option'); o.value = v; return o; }));
+}
 function qtyText(p) {
   if (!p.tracked) return {t: 'not tracked', c: 'hint'};
   return {t: p.on_hand + ' ' + p.unit, c: 'qty ' + (p.negative ? 'neg' : p.low ? 'low' : '')};
@@ -94,7 +101,7 @@ let FILTER = '';
 async function partsView() {
   await loadParts();
   const bar = el('div', 'bar');
-  const q = el('input'); q.placeholder = 'Search name, part #, category or vendor'; q.value = FILTER; q.type = 'search';
+  const q = el('input'); q.placeholder = 'Search name, part #, vendor, shelf…'; q.value = FILTER; q.type = 'search';
   const add = el('button', 'primary', '+ New part'); add.type = 'button';
   add.onclick = () => newPartSheet();
   bar.append(q, add);
@@ -112,7 +119,8 @@ async function partsView() {
   function draw() {
     const f = FILTER.trim().toLowerCase();
     const shown = PARTS.filter(p => (!KIND || (KIND === 'low' ? p.low : p.kind === KIND)) && (!f || p.name.toLowerCase().includes(f) ||
-      p.sku.toLowerCase().includes(f) || p.category.toLowerCase().includes(f) || (p.vendor || '').toLowerCase().includes(f)));
+      p.sku.toLowerCase().includes(f) || p.category.toLowerCase().includes(f) || (p.vendor || '').toLowerCase().includes(f) ||
+      locText(p).toLowerCase().includes(f)));
     count.textContent = shown.length + (shown.length !== PARTS.length ? ' of ' + PARTS.length : '') + ' item' + (PARTS.length === 1 ? '' : 's');
     list.replaceChildren();
     if (!shown.length) list.append(el('div', 'hint', PARTS.length ? 'No matches.' : 'No parts yet. Tap + New part, or import a CSV (Import / export).'));
@@ -120,7 +128,7 @@ async function partsView() {
       const a = el('a', 'part'); a.href = '#part-' + p.id;
       const body = el('div', 'body');
       body.append(el('div', 'n', p.name),
-        el('div', 'm', [p.active ? '' : 'REMOVED', p.kind !== 'part' ? p.kind : '', p.sku, p.bin ? '📍 ' + p.bin : '', p.vendor, money(p.unit_cost),
+        el('div', 'm', [p.active ? '' : 'REMOVED', p.kind !== 'part' ? p.kind : '', p.sku, locText(p) ? '📍 ' + locText(p) : '', p.vendor, money(p.unit_cost),
           p.low ? 'LOW (reorder at ' + p.reorder_at + ')' : ''].filter(Boolean).join(' · ')));
       const qt = qtyText(p);
       a.append(body, el('div', qt.c, qt.t));
@@ -147,7 +155,9 @@ function newPartSheet() {
   F.kind.onchange = () => { bill.checked = F.kind.value === 'part'; };
   money_.append(lab('Counted in (unit)', F.unit = unitSel('ea')), lab('Unit cost', inp('unit_cost', '0.00', 'decimal')), bl);
   const stock = el('fieldset'); stock.append(el('legend', null, 'Truck stock (optional)'));
-  stock.append(lab('Shelf / bin', inp('bin', 'e.g. Shelf 2')), lab('On the truck now', inp('on_hand', 'blank = do not track stock', 'decimal')),
+  shelfList();
+  const shelfIn = inp('shelf', 'e.g. Shelf 2'); shelfIn.setAttribute('list', 'shelves');
+  stock.append(lab('Shelf', shelfIn), lab('Bin', inp('bin', 'e.g. 12')), lab('On the truck now', inp('on_hand', 'blank = do not track stock', 'decimal')),
                lab('Reorder at', inp('reorder_at', '', 'decimal')),
                lab('Comes in packs of', inp('pack_size', 'e.g. 25', 'decimal')), lab('Pack is a', F.pack_unit = packUnitSel('')));
   const err = el('div', 'err');
@@ -159,7 +169,7 @@ function newPartSheet() {
   save.onclick = async () => {
     err.textContent = '';
     const b = {billable: bill.checked, type: F.kind.value};
-    ['name', 'sku', 'vendor', 'category', 'unit', 'unit_cost', 'on_hand', 'reorder_at', 'pack_size', 'pack_unit', 'bin'].forEach(k => { b[k] = F[k].value; });
+    ['name', 'sku', 'vendor', 'category', 'unit', 'unit_cost', 'on_hand', 'reorder_at', 'pack_size', 'pack_unit', 'shelf', 'bin'].forEach(k => { b[k] = F[k].value; });
     try {
       const p = await api('POST', '/api/parts', b);
       close();
@@ -199,7 +209,7 @@ async function partPage(id) {
   const back = el('a', 'back', '‹ All parts'); back.href = '#parts';
   const head = el('div');
   head.append(el('h1', 'page-title', p.name),
-              el('div', 'hint', [p.active ? '' : 'REMOVED', KINDS.find(k => k[0] === p.kind)[1], p.sku ? 'Part # ' + p.sku : '', p.bin ? '📍 ' + p.bin : '',
+              el('div', 'hint', [p.active ? '' : 'REMOVED', KINDS.find(k => k[0] === p.kind)[1], p.sku ? 'Part # ' + p.sku : '', locText(p) ? '📍 ' + locText(p) : '',
                                  p.vendor, money(p.unit_cost) + (p.unit_cost != null ? ' / ' + p.unit : '')].filter(Boolean).join(' · ')));
   if (p.vendor) { const va = el('a', 'back', 'Vendor: ' + p.vendor + ' ›'); va.href = vendorHref(p.vendor); head.append(va); }
   const err = el('div', 'err');
@@ -256,8 +266,9 @@ async function partPage(id) {
   const kind = kindSel(p.kind);
   grid.append(mk('name', 'Name', p.name), lab('Type', kind), mk('sku', 'Part #', p.sku), pick('unit', 'Unit', unitSel(p.unit)),
     mk('unit_cost', 'Unit cost', p.unit_cost, 'decimal'), pick('vendor', 'Vendor', vendorSel(p.vendor)),
-    mk('bin', 'Shelf / bin', p.bin), pick('category', 'Category', categorySel(p.category)), mk('reorder_at', 'Reorder at', p.reorder_at, 'decimal'),
+    mk('shelf', 'Shelf', p.shelf), mk('bin', 'Bin', p.bin), pick('category', 'Category', categorySel(p.category)), mk('reorder_at', 'Reorder at', p.reorder_at, 'decimal'),
     mk('pack_size', 'Comes in packs of', p.pack_size, 'decimal'), pick('pack_unit', 'Pack is a', packUnitSel(p.pack_unit)));
+  shelfList(); F.shelf.setAttribute('list', 'shelves');
   const bill = el('input'); bill.type = 'checkbox'; bill.checked = p.billable;
   const trk = el('input'); trk.type = 'checkbox'; trk.checked = p.tracked;
   kind.onchange = () => { bill.checked = kind.value === 'part'; };
@@ -302,21 +313,44 @@ async function stockView() {
   out.append(await (STOCK === 'count' ? countBox() : shoppingBox()));
 }
 
+// Count the truck: shelf by shelf, bin by bin. Buttons along the top show one shelf at a time; what you type on
+// one shelf is kept while you move to the next, and Save count saves every line you changed.
+let COUNT_SHELF = null;           // null = all shelves
 async function countBox() {
   const rows = (await api('GET', '/api/parts/count-sheet')).parts;
   const box = el('div', 'box');
-  box.append(el('div', 'hint', 'Enter what is really on the truck, shelf by shelf. Only the lines you change are saved. “Used” is what stops logged since the last count.'));
+  box.append(el('div', 'hint', 'Enter what is really on the truck. Only the lines you change are saved. “Used” is what stops logged since the last count.'));
+  if (!rows.length) { box.append(el('div', 'hint', 'No tracked items yet. Give items an “on truck” quantity or turn on tracking first.')); return box; }
+  const shelves = [...new Set(rows.map(p => p.shelf))];
+  if (COUNT_SHELF !== null && !shelves.includes(COUNT_SHELF)) COUNT_SHELF = null;
+  const chips = el('div', 'chips');
+  const sections = [];
+  const pick = v => {
+    COUNT_SHELF = v;
+    chips.querySelectorAll('button').forEach(b => b.classList.toggle('on', b._v === v));
+    sections.forEach(([sh, sec]) => { sec.hidden = v !== null && sh !== v; });
+  };
+  const chip = (v, t) => { const b = el('button', null, t); b.type = 'button'; b._v = v; b.onclick = () => pick(v); chips.append(b); };
+  chip(null, 'All shelves');
+  shelves.forEach(sh => chip(sh, sh || 'No shelf'));
+  box.append(chips);
   const inputs = {};
-  if (!rows.length) box.append(el('div', 'hint', 'No tracked items yet. Give items an “on truck” quantity or turn on tracking first.'));
-  let shelf = null;
-  rows.forEach(p => {
-    if (p.bin !== shelf) { shelf = p.bin; box.append(el('h3', null, shelf ? '📍 ' + shelf : 'No shelf set')); }
-    const r = el('div', 'crow');
-    const l = el('div'); l.append(el('div', 'n', p.name),
-      el('div', 'hint', ['expected ' + p.on_hand + ' ' + p.unit, 'used ' + p.used_since, 'counted ' + when(p.last_counted)].join(' · ')));
-    const i = el('input'); i.inputMode = 'decimal'; i.placeholder = String(p.on_hand); inputs[p.id] = i;
-    r.append(l, i); box.append(r);
+  shelves.forEach(sh => {
+    const sec = el('div');
+    const mine = rows.filter(p => p.shelf === sh);
+    sec.append(el('h3', null, (sh ? '📍 ' + sh : 'No shelf set') + ' (' + mine.length + ')'));
+    mine.forEach(p => {
+      const r = el('div', 'crow');
+      const l = el('div');
+      l.append(el('div', 'n', (p.bin ? 'Bin ' + p.bin + ' · ' : '') + p.name),
+        el('div', 'hint', ['expected ' + p.on_hand + ' ' + p.unit, 'used ' + p.used_since, 'counted ' + when(p.last_counted)].join(' · ')));
+      const i = el('input'); i.inputMode = 'decimal'; i.placeholder = String(p.on_hand); inputs[p.id] = i;
+      r.append(l, i); sec.append(r);
+    });
+    sections.push([sh, sec]);
+    box.append(sec);
   });
+  pick(COUNT_SHELF);
   const err = el('div', 'err'), res = el('div');
   const save = el('button', 'primary', 'Save count');
   save.onclick = async () => {
@@ -464,7 +498,7 @@ async function vendorPage(name) {
   d.parts.forEach(p => {
     const a = el('a', 'hrow'); a.href = '#part-' + p.id;
     const q = qtyText(p);
-    a.append(el('div', null, p.name + (p.sku ? ' · ' + p.sku : '')), el('div', 'm', [money(p.unit_cost), q.t, p.bin ? '📍 ' + p.bin : ''].filter(Boolean).join(' · ')));
+    a.append(el('div', null, p.name + (p.sku ? ' · ' + p.sku : '')), el('div', 'm', [money(p.unit_cost), q.t, locText(p) ? '📍 ' + locText(p) : ''].filter(Boolean).join(' · ')));
     ps.append(a);
   });
 
@@ -596,7 +630,7 @@ function dataView() {
   const cols = [['name', 'required'], ['sku', 'part number'], ['type', 'part, consumable or expense'],
     ['unit', 'each, pair, pack, box, bag, case, roll, foot, gallon or pound (any other unit rejects the row)'],
     ['unit_cost', ''], ['billable', 'yes / no'], ['category', ''], ['vendor', ''], ['on_hand', 'sets the truck count'],
-    ['reorder_at', ''], ['pack_size', 'e.g. 25'], ['pack_unit', 'bag, box…'], ['bin', 'shelf or bin on the truck, e.g. Shelf 2']];
+    ['reorder_at', ''], ['pack_size', 'e.g. 25'], ['pack_unit', 'bag, box…'], ['shelf', 'where on the truck, e.g. Shelf 2 or Door'], ['bin', 'bin or drawer on that shelf, e.g. 12']];
   cols.forEach(([c, h]) => { const d = el('div', 'hint'); d.append(el('code', null, c), h ? ' – ' + h : ''); fmt.append(d); });
   box.append(imp, exp, fmt);
   view.replaceChildren(box);

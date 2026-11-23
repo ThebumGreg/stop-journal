@@ -260,8 +260,11 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Action plan for parts, in the order to build (1 and 2 built, 3-7 not yet):
   1. (built) New-part prompt on the job sheet: typing a part that is not in the catalog asks for unit and cost, so the PDF is never blank there.
   2. (built) Export warning for billable parts with no unit cost (same list as the other export warnings).
-  3. (built) Bin / location field ("Shelf 2", `parts.bin`, CSV column `bin`, aliases location/shelf); Count the truck sorts by it
-     (natural order, blank last) with a heading per shelf.
+  3. (built) Location is two fields: `parts.shelf` ("Shelf 2", "Door"; a datalist of shelves already used) and `parts.bin` ("12").
+     CSV columns `shelf`, `bin` (aliases location/rack → shelf, drawer → bin). Count the truck sorts shelf, then bin (natural
+     order, blanks last), one section per shelf with shelf buttons on top (typed counts are kept across shelves). The first
+     single field was split once on connect (`parts.split_shelf_bin`, marker `_split_shelf_bin`: "Bin…"/numbers stay bins,
+     anything else becomes the shelf).
   4. (built) Shopping list: per line an editable amount (packs for pack items) and ✓, "✓ All bought" per vendor
      (`POST /api/parts/bought {vendor, items:[{id, packs|qty}]}`, one transaction, logged as reason "bought" with "Bought at
      <vendor>"), an Undo that removes it again, and **Share list** (iOS share sheet, else copy): a ☐ checklist by vendor.

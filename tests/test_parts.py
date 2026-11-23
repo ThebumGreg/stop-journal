@@ -222,15 +222,30 @@ def test_part_page_history_and_truck_tabs(tmp_path):
 def test_bin_location_sorts_count_and_similar_parts(tmp_path):
     from tests.test_export import make
     c = make(tmp_path)
-    for name, b in [("Zip ties", "Shelf 10"), ("Ball valve 1/2 in.", "Shelf 2"), ("Wire nuts", "")]:
-        c.post("/api/parts", json={"name": name, "on_hand": "5", "bin": b, "sku": name[:3].upper() + "-1"})
-    assert [p["bin"] for p in c.get("/api/parts/count-sheet").json["parts"]] == ["Shelf 2", "Shelf 10", ""]
+    for name, sh, b in [("Zip ties", "Shelf 10", "1"), ("Ball valve 1/2 in.", "Shelf 2", "12"), ("Wire nuts", "", ""),
+                        ("Tape", "Shelf 2", "3")]:
+        c.post("/api/parts", json={"name": name, "on_hand": "5", "shelf": sh, "bin": b, "sku": name[:3].upper() + "-1"})
+    rows = c.get("/api/parts/count-sheet").json["parts"]
+    assert [(p["shelf"], p["bin"]) for p in rows] == [("Shelf 2", "3"), ("Shelf 2", "12"), ("Shelf 10", "1"), ("", "")]
     sim = c.get("/api/parts/similar?name=1/2 ball valve").json["parts"]
     assert sim[0]["name"] == "Ball valve 1/2 in." and sim[0]["why"] == "similar name"
     assert c.get("/api/parts/similar?sku=zip 1").json["parts"][0]["why"] == "same part #"
     assert c.get("/api/parts/similar?name=Hammer").json["parts"] == []
     csv = c.get("/api/parts/export.csv").data.decode()
-    assert csv.splitlines()[0].endswith(",bin") and "Shelf 10" in csv
+    assert csv.splitlines()[0].endswith(",shelf,bin") and "Shelf 10,1" in csv
+
+
+def test_old_single_location_field_splits_once(tmp_path):
+    from app import db
+    conn = db.connect(str(tmp_path))
+    for n, v in [("a", "Shelf 2"), ("b", "Bin 14"), ("c", "Door"), ("d", "7")]:
+        conn.execute("INSERT INTO parts(name, bin, active, tracked, billable) VALUES (?,?,1,0,1)", (n, v))
+    conn.execute("DELETE FROM settings WHERE key='_split_shelf_bin'")
+    conn.commit(); conn.close()
+    conn = db.connect(str(tmp_path))
+    got = {r["name"]: (r["shelf"], r["bin"]) for r in conn.execute("SELECT name, shelf, bin FROM parts")}
+    assert got == {"a": ("Shelf 2", None), "b": (None, "Bin 14"), "c": ("Door", None), "d": (None, "7")}
+    conn.close()
 
 
 def test_mark_bought_from_shopping_list(tmp_path):

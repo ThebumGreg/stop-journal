@@ -227,6 +227,7 @@ MIGRATIONS = [
     ("parts", "bin", "TEXT"),
     ("known_sites", "link_id", "INTEGER"),
     ("known_sites", "old_address", "INTEGER"),
+    ("parts", "shelf", "TEXT"),
 ]
 
 
@@ -248,4 +249,6 @@ def connect(data_dir):
     photos.move_to_files(conn, data_dir)
     from .places import known       # one-time data repair: vendor branches saved as clients
     known.repair_vendor_branches(conn)
+    from . import parts as parts_mod  # one-time: the first "Shelf / bin" field splits into Shelf and Bin
+    parts_mod.split_shelf_bin(conn)
     return conn
