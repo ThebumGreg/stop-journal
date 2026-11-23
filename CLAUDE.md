@@ -599,3 +599,12 @@ D. Later / parked
     invites (needs IT approval).
   - Cross-check Auris clock-in/out and QuickBooks time entries.
   - Off-site photo backup (costs money: ask); cleanup of photos from deleted stops (kept for now); Google Drive backup (skipped).
+
+## Hand-off review changes (2026-11-23, from the work-agent review of 98b2577)
+- **Drive through fuel / break / traffic stops** (report.build_day `chain_minutes`): a work stop's `drive_from_previous_stop.minutes`
+  (and the drive into the End Day stop) add every counted drive back through Lunch and Traffic-status stops to the previous
+  work stop; time AT those stops stays in `traffic_minutes`. Before, the drive into a fuel stop between jobs was lost from
+  drive and paid time. `service.drive_counts.lunch_between_jobs` looks past Traffic stops for the jobs on either side (fuel
+  next to lunch made lunch swallow the whole gap). Summary adds `fuel_stop_minutes` and `short_break_minutes` (both included
+  in `traffic_minutes`). Invariant test (`tests/test_paid_invariant.py`): paid_minutes = paid timesheet rows; drive_minutes =
+  drive rows.

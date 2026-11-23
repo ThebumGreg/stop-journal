@@ -1061,9 +1061,14 @@ def drive_counts(stops, drives, marks=None):
         """Lunch between two different work stops is part of the trip: the drives before and after it count
         (together they are one drive). Lunch next to home, or a lunch trip back to the same site, does not."""
         k = idx[lid]
-        if k == 0 or k + 1 >= len(stops):
+        a, b = k - 1, k + 1
+        while a >= 0 and stops[a]["status"] == "Traffic":          # a fuel stop / short break next to lunch is on
+            a -= 1                                                  # the road: look past it for the jobs
+        while b < len(stops) and stops[b]["status"] == "Traffic":
+            b += 1
+        if a < 0 or b >= len(stops):
             return False
-        x, y = stops[k - 1], stops[k + 1]
+        x, y = stops[a], stops[b]
         return _counts_as_work(x) and _counts_as_work(y) and not same_site(x, y)
 
     out = {}

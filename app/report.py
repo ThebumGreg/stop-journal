@@ -139,6 +139,20 @@ def build_day(payload, cfg):
     def iso(ts):
         return datetime.fromtimestamp(ts, tz).isoformat(timespec="seconds")
 
+    def chain_minutes(d):
+        """Minutes of a counted drive plus every counted drive before it through Lunch and Traffic-status stops
+        (gas, short break, traffic): a work stop's drive covers the whole trip from the previous work stop. The time
+        spent AT those stops is not included (traffic time is added separately; lunch is lunch)."""
+        minutes, prev, seen = d["minutes"], d["from_stop_id"], set()
+        while status.get(prev) in ("Lunch", "Traffic") and prev not in seen:
+            seen.add(prev)
+            d0 = drive_into.get(prev)
+            if not d0 or not d0.get("counts"):
+                break
+            minutes += d0["minutes"]
+            prev = d0["from_stop_id"]
+        return minutes
+
     end_day = payload.get("end_day")
     end_id = end_day["stop_id"] if end_day else None
     leg_into = {lg["to_id"]: lg for lg in ((payload.get("mileage") or {}).get("legs") or []) if lg.get("to_id")}
@@ -197,16 +211,12 @@ def build_day(payload, cfg):
         leg = leg_into.get(s["id"])
         drive = None
         if leg:      # the Home-to-Home mileage leg that ends at this stop; minutes only when it counts as work time
-            minutes = d["minutes"] if counted else None
-            if counted and status.get(d["from_stop_id"]) == "Lunch":      # lunch between jobs: one drive before and after it
-                d0 = drive_into.get(d["from_stop_id"])
-                if d0 and d0.get("counts"):
-                    minutes += d0["minutes"]
+            minutes = chain_minutes(d) if counted else None    # lunch / fuel / break between jobs: the whole trip
             drive = {"minutes": minutes, "miles_approx": leg["miles"],
                      "from": leg["from"], "from_type": "Home" if leg["from"] == "Home" else prev_type,
                      "notes": d["notes"] if d else "", **_gap_fields(d, counted)}
         elif counted:
-            drive = {"minutes": d["minutes"], "miles_approx": d["miles_approx"], "from": "", "from_type": "",
+            drive = {"minutes": chain_minutes(d), "miles_approx": d["miles_approx"], "from": "", "from_type": "",
                      "notes": d["notes"], **_gap_fields(d, counted)}
         used, consumed, spent = _split_parts(s["parts"])
         cat = s["work_category"]
@@ -239,11 +249,13 @@ def build_day(payload, cfg):
     drive_min = sum(s["drive_from_previous_stop"]["minutes"] or 0 for s in out_stops if s["drive_from_previous_stop"])
     miles = sum(s["drive_from_previous_stop"]["miles_approx"] for s in out_stops if s["drive_from_previous_stop"])
     traffic = sum(s["minutes"] for s in stops if s["status"] == "Traffic")
+    fuel_stop_min = sum(s["minutes"] for s in stops if s["status"] == "Traffic" and s.get("stop_type") == "gas")
+    short_break_min = sum(s["minutes"] for s in stops if s["status"] == "Traffic" and s.get("stop_type") == "break")
     drive_min += traffic
     final = None   # the drive into the Personal stop where the day ended (home), counted when the day ends there
     fd = drive_into.get(end_id) if end_id else None
     if fd and fd.get("counts") and status.get(fd["to_stop_id"]) == "Personal":
-        final = {"minutes": fd["minutes"], "miles_approx": fd["miles_approx"]}
+        final = {"minutes": chain_minutes(fd), "miles_approx": fd["miles_approx"]}
         drive_min += final["minutes"]
         miles += final["miles_approx"]
     sheet = _timesheet(stops, drives)
@@ -279,6 +291,7 @@ def build_day(payload, cfg):
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
                         "drive_minutes": drive_min, "traffic_minutes": traffic,
+                        "fuel_stop_minutes": fuel_stop_min, "short_break_minutes": short_break_min,
                         "lunch_minutes": lunch_min, "break_minutes_unpaid": break_min,
                         "paid_minutes": sum(s["time_on_site_minutes"] for s in out_stops) + drive_min + lunch_min, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded),
