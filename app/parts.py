@@ -535,7 +535,8 @@ def stop_part_dict(r):
             "line_cost": None if cost is None else round(cost * r["qty"], 2),
             "billable": bool(r["billable"]), "notes": r["notes"] or "",
             "kind": r["kind"] or "part", "consumable": (r["kind"] or "part") == "consumable",
-            "expense": (r["kind"] or "part") == "expense"}
+            "expense": (r["kind"] or "part") == "expense",
+            "qbo_item": (r["qbo_item"] if "qbo_item" in r.keys() else None) or ""}
 
 
 def _qty(v):
@@ -620,8 +621,8 @@ def release_stops(conn, stop_ids):
 
 
 def for_day(conn, date):
-    rows = conn.execute("SELECT sp.* FROM stop_parts sp JOIN stops s ON s.id=sp.stop_id "
-                        "WHERE s.date=? ORDER BY sp.id", (date,)).fetchall()
+    rows = conn.execute("SELECT sp.*, p.qbo_item AS qbo_item FROM stop_parts sp JOIN stops s ON s.id=sp.stop_id "
+                        "LEFT JOIN parts p ON p.id=sp.part_id WHERE s.date=? ORDER BY sp.id", (date,)).fetchall()
     out = {}
     for r in rows:
         out.setdefault(r["stop_id"], []).append(stop_part_dict(r))

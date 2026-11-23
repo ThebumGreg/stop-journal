@@ -650,3 +650,7 @@ D. Later / parked
   `below_cost`; Truck list shows margin and a "Below cost" chip; part page "Our cost … · margin/LOSS"; shopping list shows the vendor #.
 - **QuickBooks Service items** (A1): `QBO_IMPORT_SERVICE_ITEMS_WITH_SKU` (Settings → General → Parts import, default on):
   Service rows with a SKU import as parts; without a SKU, Bundles and anything named/SKU'd Labor are skipped.
+- **Report (B1-B3)**: `summary.billable_on_site_minutes` (on-site minutes of stops whose billing is not non_billable); PDF top
+  shows "On-site time" and "Billable on-site time". Each `days[].photos[]` has `attachment` (the exact email attachment name,
+  `report.attachment_name`, also used by the mailer). `records_to_update[]` adds billing, visit_result, time_on_site_minutes,
+  technician_email, consumables_used and expenses (short strings), photo_attachments. Parts carry `qbo_item` (from the catalog).

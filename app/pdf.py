@@ -30,7 +30,8 @@ def _fonts():
 INSTRUCTIONS = [
     "This report lists the jobs worked on for the period above. Use it to update HubSpot.",
     "Top section: the report date or period and the day's totals. All times are 24-hour local time ({tz}). Totals cover "
-    "only the confirmed stops listed below. On-site time is what is billable to customers. Lunch is never billable; it "
+    "only the confirmed stops listed below. On-site time is all time at the confirmed stops; Billable on-site time leaves "
+    "out stops whose category is non-billable (internal operations, administrative, outreach, training). Lunch is never billable; it "
     "is paid to the technician unless the top section says Lunch (unpaid). Total paid time is on-site time plus drive "
     "time, plus lunch when lunch is paid. End Day is when the "
     "work day ended. If it ended at home, the drive home counts as work time; otherwise work time stopped there and the "
@@ -387,7 +388,8 @@ def render(report, load_photo=None):
 
     def summary_rows(day):
         sm = day["summary"]
-        rows = [("On-site time (billable)", _hm(sm["on_site_minutes"]))]
+        rows = [("On-site time", _hm(sm["on_site_minutes"])),
+                ("Billable on-site time", _hm(sm.get("billable_on_site_minutes", sm["on_site_minutes"])))]
         if sm.get("lunch_minutes"):
             rows.append(("Lunch (paid, not billed)" if sm.get("lunch_paid", True) else "Lunch (unpaid)",
                          _hm(sm["lunch_minutes"])))

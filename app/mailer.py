@@ -20,6 +20,8 @@ import time
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 
+from .report import attachment_name
+
 MAX_ATTACH_BYTES = 17 * 1024 * 1024      # Gmail allows 25 MB per message; base64 adds about a third
 TIMEOUT_S = 30
 
@@ -147,7 +149,7 @@ def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo):
                 if total + len(img) > MAX_ATTACH_BYTES:
                     skipped += 1
                     continue
-                files.append((p["file"].replace("/", "_"), "image", "jpeg", img))
+                files.append((p.get("attachment") or attachment_name(p["file"]), "image", "jpeg", img))
                 total += len(img); n_photos += 1
         if n_photos:
             attached.append(f"{n_photos} receipt/photo picture{'s' if n_photos != 1 else ''}")

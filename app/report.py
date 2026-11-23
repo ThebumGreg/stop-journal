@@ -42,7 +42,14 @@ def _place_type(category):
 
 def _part(p):
     return {"name": p["name"], "part_number": p["sku"], "quantity": p["qty"], "unit": p["unit"],
-            "unit_cost": p["unit_cost"], "line_cost": p["line_cost"], "billable": p["billable"]}
+            "unit_cost": p["unit_cost"], "line_cost": p["line_cost"], "billable": p["billable"],
+            "qbo_item": p.get("qbo_item") or ""}
+
+
+def attachment_name(file):
+    """The file name a report picture gets as an email attachment (its zip path with / turned into _). The JSON's
+    photos[].attachment and the mailer both use this, so they cannot drift apart."""
+    return file.replace("/", "_")
 
 
 def _split_parts(lines):
@@ -291,8 +298,9 @@ def build_day(payload, cfg):
     for where, stem, ps in pic_from:
         for k, p in enumerate(ps, 1):
             # the same name the picture has in the zip export: photos/YYYY/MM/DD/stop-1-acme-receipt-1.jpg
+            f = f"photos/{y}/{mo}/{dd}/{stem.strip('-')}-{p['kind']}-{k}.jpg"
             pics.append({"id": p["id"], "kind": p["kind"], "caption": p["caption"],
-                         "file": f"photos/{y}/{mo}/{dd}/{stem.strip('-')}-{p['kind']}-{k}.jpg",
+                         "file": f, "attachment": attachment_name(f),
                          "label": f"{'Receipt' if p['kind'] == 'receipt' else 'Photo'}: {where}" +
                                   (f". {p['caption']}" if p["caption"] else "")})
     fuel = [{"arrival": s["arrive"], "departure": s["depart"], "station": s["business_name"] or "",
@@ -301,6 +309,8 @@ def build_day(payload, cfg):
     return {"date": payload["date"], "report_key": payload["date"],
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
+                        "billable_on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops
+                                                        if s["billing"] != "non_billable"),
                         "drive_minutes": drive_min, "traffic_minutes": traffic,
                         "fuel_stop_minutes": fuel_stop_min, "short_break_minutes": short_break_min,
                         "lunch_minutes": lunch_min, "break_minutes_unpaid": break_min,
@@ -318,9 +328,14 @@ def build_day(payload, cfg):
             "stops": out_stops, "excluded": excluded}
 
 
-def records_to_update(days):
+def _line_text(p):
+    return f"{p['quantity']:g} x {p['name']}" + (f" ({p['part_number']})" if p["part_number"] else "")
+
+
+def records_to_update(days, technician=None):
     rows = []
     for day in days:
+        att = {p["id"]: p["attachment"] for p in day.get("photos") or []}
         for s in day["stops"]:
             rows.append({"date": day["date"], "stop_number": s["stop_number"], "stop_uid": s["stop_uid"],
                          "business_name": s["business_name"], "address": s["address"],
@@ -328,9 +343,15 @@ def records_to_update(days):
                          "category": s["category"], "job_reference": s["job_reference"],
                          "hubspot_ticket": s["hubspot_ticket"], "qbo_estimate": s["qbo_estimate"],
                          "work_performed": s["work_performed"],
-                         "parts_used": [f"{p['quantity']:g} x {p['name']}" + (f" ({p['part_number']})" if p["part_number"] else "")
-                                        for p in s["parts_used"]],
-                         "hubspot_company_id": s["hubspot_company_id"]})
+                         "parts_used": [_line_text(p) for p in s["parts_used"]],
+                         "hubspot_company_id": s["hubspot_company_id"],
+                         "billing": s["billing"], "visit_result": s["visit_result"],
+                         "time_on_site_minutes": s["time_on_site_minutes"],
+                         "technician_email": (technician or {}).get("email", ""),
+                         "consumables_used": [_line_text(p) for p in s.get("consumables_used") or []],
+                         "expenses": [p["name"] + (f" ${p['line_cost']:.2f}" if p["line_cost"] is not None else "")
+                                      for p in s.get("expenses") or []],
+                         "photo_attachments": [att[i] for i in s.get("photos") or [] if i in att]})
     return rows
 
 
@@ -425,7 +446,8 @@ def build(conn, cfg, dates, ensure, now=None):
             "technician": {"name": cfg.tech_name, "email": cfg.tech_email},
             "date_from": dates[0], "date_to": dates[-1], "timezone": cfg.app_tz,
             "generated_at": now.isoformat(timespec="seconds"),
-            "days": days, "records_to_update": records_to_update(days), "follow_ups": follow_ups(days)}
+            "days": days, "records_to_update": records_to_update(days, {"name": cfg.tech_name, "email": cfg.tech_email}),
+            "follow_ups": follow_ups(days)}
 
 
 # Sections the user can leave out of an export (Export page "Include" ticks). The report says which were
