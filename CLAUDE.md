@@ -562,19 +562,40 @@ stop departed 12:21, and listed billable parts with no cost.
   when finished, `· Return visit needed`; Personal / Lunch are bare blocks. UIDs `stop-<id>-<ts>@jobhub`; `calendar_feed`
   skips our events. `cal_sync_log`, max 150 per day. Settings: "Send test calendar invite" (`/settings/test-invite`).
 
-## Action plan: estimates, calendar, late notices (agreed 2026-11-23)
+## Action plan (master list, updated 2026-11-23)
 The work AI agent is the bridge between HubSpot / QuickBooks and JobHub, by email; no direct connection for now.
 QuickBooks makes the estimate (its number); a HubSpot service ticket holds the job and the estimate data. Match on the
 HubSpot ticket number (the calendar event's `Ticket:` line, then the stop's ticket); keep the QuickBooks estimate number as info.
-1. (built) Calendar invites: every stop on the Outlook calendar, updated every 5-10 min (above).
-2. Estimates in: JobHub reads the Gmail inbox (IMAP, same App password; only subject `JobHub Estimate <ticket>` from allowed
-   senders) for a JSON attachment: ticket, QuickBooks estimate number, customer, quoted hours, quoted parts (name, part #, qty,
-   price). Stored per ticket. Provide a sample estimate email for the agent first.
-3. Stop sheet: Estimate box (quoted hours and parts, "on site 4 h 40 of 6 h quoted") and an **Add quoted parts** button
-   (never automatic). Jobs can take several visits: actual = all stops with the same ticket.
-4. Report (additive, schema "1"): per job quoted vs actual hours and parts, differences; the agent writes them to the ticket.
-5. Late alerts: from the Home page ETA (built), a Pushover alert when you will be late for an on-site appointment, with a
-   "Tell the customer" action that emails the agent a structured `JobHub Late Notice` (ticket, appointment, new ETA); the agent
-   notifies the customer. Never sent without a tap.
-6. Later: read the HubSpot ticket directly with a read-only private-app token instead of estimate emails; Microsoft Graph
-   instead of invites (needs IT approval).
+
+A. Waiting on the user (setup and testing)
+  1. Rebuild the Docker image (`pypdfium2` added) and test the Home Screen PDF viewer (all pages) and Copy link for Safari.
+  2. Gmail App password in Settings → Email; Send test email; Send test calendar invite (does Outlook ask to accept?).
+  3. Turn on calendar invites and check the stops on the Outlook calendar for a day.
+  4. Have the work agent review `docs/sample-report/` and describe what it would write to HubSpot (no writes yet).
+  5. Outlook ICS link (Settings → Calendar) and the address format for on-site events.
+  6. Anthropic API key (AI notes, AI receipt reader).
+  7. https for JobHub (Tailscale serve or a reverse proxy): needed for Share in the Home Screen app.
+  8. Optional: LanguageTool container.
+
+B. Next to build, in order
+  1. (built, testing) Calendar invites: every stop on the Outlook calendar, updated every 5-10 min.
+  2. Sample estimate email for the agent: subject `JobHub Estimate <ticket>`, JSON attachment: ticket, QuickBooks estimate
+     number, customer, quoted hours, quoted parts (name, part #, qty, price).
+  3. Estimates in: JobHub reads the Gmail inbox (IMAP, same App password; only that subject, only allowed senders), stored per ticket.
+  4. Stop sheet: Estimate box (quoted hours and parts, "on site 4 h 40 of 6 h quoted") and an **Add quoted parts** button
+     (never automatic). Jobs can take several visits: actual = all stops with the same ticket.
+  5. Report (additive, schema "1"): per job quoted vs actual hours and parts, and the differences; the agent writes them back.
+  6. Late alerts: from the Home page ETA, a Pushover alert when you will be late for an on-site appointment, with "Tell the
+     customer" that emails the agent a structured `JobHub Late Notice` (ticket, appointment, new ETA). Never sent without a tap.
+  7. After https: offline app shell (the app opens with no signal).
+
+C. Suggested, not chosen yet
+  - Weekly / monthly summary; yearly mileage log and year-end accountant package; invoice-ready export.
+  - Arrival prompt ("You're at a stop: what is it?"); missing-receipt reminders.
+  - Security check before any outside access; code review.
+
+D. Later / parked
+  - Read the HubSpot ticket directly (read-only private-app token) instead of estimate emails; Microsoft Graph instead of
+    invites (needs IT approval).
+  - Cross-check Auris clock-in/out and QuickBooks time entries.
+  - Off-site photo backup (costs money: ask); cleanup of photos from deleted stops (kept for now); Google Drive backup (skipped).
