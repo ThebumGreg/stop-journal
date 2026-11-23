@@ -62,3 +62,22 @@ def test_records_to_update_has_everything(sample):
     assert d["technician_email"] == "tech@work.example"
     assert d["consumables_used"] == ["1 x Zip ties 8 in"] and d["expenses"] == ["Parking $12.00"]
     assert rec["Sample Supply House"]["billing"] == "non_billable"
+
+
+def test_mileage_legs_carry_stop_uids_and_drive_field_names(sample):
+    d = sample.get(f"/api/export.json?from={D}").json["days"][0]
+    uids = {s["stop_uid"] for s in d["stops"]}
+    legs = d["mileage"]["legs"]
+    assert all((l["to_stop_uid"] in uids) if l["to"] != "Home" else l["to_stop_uid"] is None for l in legs)
+    for s in d["stops"]:
+        dv = s["drive_from_previous_stop"]
+        assert dv["miles_method"] in ("gps", "routed", "estimate") and dv["minutes_estimated"] == dv["estimated"]
+    clinic = next(s for s in d["stops"] if s["business_name"] == "Sample Medical Clinic")
+    leg = next(l for l in legs if l["to_stop_uid"] == clinic["stop_uid"])
+    assert clinic["drive_from_previous_stop"]["miles_method"] == leg["method"]
+
+
+def test_end_day_shows_only_its_time(sample):
+    d = sample.get(f"/api/export.json?from={D}").json["days"][0]
+    end = next(e for e in d["excluded"] if e["reason"] == "End Day")
+    assert end["departure"] == "" and end["arrival"]

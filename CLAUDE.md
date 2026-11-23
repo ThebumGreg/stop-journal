@@ -660,3 +660,9 @@ D. Later / parked
   buttons; payload `ticket_action_default` = continue when the last finished visit to the same place ended return/waiting.
   Report `ticket_action` on stops and records_to_update: use (ticket given) | continue | create | find (default). Warning only
   when a typed ticket is not digits. PDF "HubSpot ticket" row explains a blank one.
+- **C2 signature**: `REPORT_SIGNING_KEY` (secret, Settings → Email). With it, the report email body has
+  `Signature: hmac-sha256=<hex> (of the attached JSON file)` = HMAC-SHA256 of the exact attached JSON bytes (`mailer.signature`).
+- **B4-B6**: mileage legs add `to_stop_uid` (None for Home; `to_id` kept). Each `drive_from_previous_stop` adds `miles_method`
+  (gps | routed | estimate: how the MILES were found) and `minutes_estimated` (= `estimated`: the MINUTES are a distance
+  guess because the phone sent no points). The End Day entry in `excluded` has an empty departure.
+- C3 (lunch default): not changed; the user keeps Lunch is paid = on until management decides.

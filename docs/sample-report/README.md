@@ -36,6 +36,25 @@ A made-up day (all names, addresses and coordinates are invented) that uses ever
   merged or deleted, so remove or mark what you created for it. Follow-ups carry `follow_up_id` for the same purpose.
   `days[].report_key` is the date the day belongs to.
 - `technician` {name, email} is who did the work: use it as the owner of notes.
+- **The HubSpot ticket is optional.** Use `ticket_action` on each stop / record:
+  - `use`: `hubspot_ticket` holds the ticket ID: update that ticket.
+  - `continue`: the technician says this continues an open job: find the open ticket for this company; if there are
+    several, ask instead of guessing.
+  - `create`: a new job: create a ticket.
+  - `find`: not said: if the company has exactly one open ticket use it, otherwise create one and flag it for the office.
+  Keep your own record of which `stop_uid` went to which ticket, so an `(update N)` email updates the same ticket.
+- `records_to_update[]` has everything needed per stop (billing, visit_result, time_on_site_minutes, technician_email,
+  parts/consumables/expenses as text, photo_attachments, ticket_action). `photo_attachments` and `days[].photos[].attachment`
+  are the exact attachment file names in the email.
+- Billing: `summary.billable_on_site_minutes` leaves out non-billable stops; `on_site_minutes` is all on-site time.
+  "Ready for invoicing" only when `visit_result` is Complete AND `billing` is not `non_billable`.
+- Drives: `miles_method` says how the MILES were found (gps = recorded drive, routed = road route, estimate = straight
+  line x1.25); `minutes_estimated` says the MINUTES are a guess because the phone sent no location for part of the trip.
+  They measure different things, so one can be an estimate while the other is not. Mileage legs link to stops by
+  `to_stop_uid` (null = Home).
+- **Signature** (when the office set a signing key): the email body has `Signature: hmac-sha256=<hex>`. Compute
+  HMAC-SHA256 of the attached JSON file's bytes, exactly as received, with the shared key; reject the email if it differs.
+  Also accept reports only from the JobHub Gmail address.
 - `hubspot_company_id`: use it when set. When blank, match the company by business name and address, and say so.
 - `hubspot_ticket` is the HubSpot service ticket number (digits); `qbo_estimate` is the QuickBooks estimate number
   (quoted projects and migrations). `job_reference` is the raw text the technician typed (kept for compatibility).

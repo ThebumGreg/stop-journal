@@ -1185,8 +1185,12 @@ def mileage(conn, cfg, stops, drives):
     hpt = (home["lat"], home["lon"])
     legs = []
 
+    uid_of = {x["id"]: (x["uid"] if "uid" in x.keys() else None) for x in stops}
+
     def add(a, b, m, how, to_id=None):
-        legs.append({"from": a, "to": b, "to_id": to_id, "miles": round(m / 1609.344, 1), "method": how})
+        # to_id is the internal row id (kept for compatibility); to_stop_uid matches stops[].stop_uid (None = Home)
+        legs.append({"from": a, "to": b, "to_id": to_id, "to_stop_uid": uid_of.get(to_id),
+                     "miles": round(m / 1609.344, 1), "method": how})
 
     first, last = work[0], work[-1]
     prev = next((k for k in range(first - 1, -1, -1) if stops[k]["status"] != "Traffic"), None)

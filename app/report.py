@@ -227,7 +227,9 @@ def build_day(payload, cfg):
                       else "Short break (paid, counted as drive time)" if s.get("stop_type") == "break"
                       else "Traffic (counted as drive time)"}.get(s["status"]) or \
                 "Not confirmed" + (" (short stop)" if s["kind"] == "short" else "")
-            excluded.append({"arrival": s["arrive"], "departure": s["depart"], "reason": reason})
+            # End Day: only when the day ended matters (the time spent at home afterwards means nothing)
+            excluded.append({"arrival": s["arrive"], "departure": "" if reason == "End Day" else s["depart"],
+                             "reason": reason})
             continue
         d = drive_into.get(s["id"])
         counted = bool(d and d.get("counts", status.get(d["from_stop_id"]) not in ("Personal", "Lunch")))
@@ -235,11 +237,12 @@ def build_day(payload, cfg):
         drive = None
         if leg:      # the Home-to-Home mileage leg that ends at this stop; minutes only when it counts as work time
             minutes = chain_minutes(d) if counted else None    # lunch / fuel / break between jobs: the whole trip
-            drive = {"minutes": minutes, "miles_approx": leg["miles"],
+            drive = {"minutes": minutes, "miles_approx": leg["miles"], "miles_method": leg.get("method", ""),
                      "from": leg["from"], "from_type": "Home" if leg["from"] == "Home" else prev_type,
                      "notes": d["notes"] if d else "", **_gap_fields(d, counted)}
         elif counted:
-            drive = {"minutes": chain_minutes(d), "miles_approx": d["miles_approx"], "from": "", "from_type": "",
+            drive = {"minutes": chain_minutes(d), "miles_approx": d["miles_approx"], "miles_method": "gps",
+                     "from": "", "from_type": "",
                      "notes": d["notes"], **_gap_fields(d, counted)}
         used, consumed, spent = _split_parts(s["parts"])
         cat = s["work_category"]
@@ -383,7 +386,10 @@ def _gap_fields(d, counted):
     """Additive drive fields: `estimated` when the phone recorded nothing for part of the trip and the minutes are
     distance-based, and the stretch with no data."""
     gap = d and d.get("gap")
-    return {"estimated": bool(counted and gap and d.get("estimated")),
+    est = bool(counted and gap and d.get("estimated"))
+    # minutes_estimated is the same as estimated, under a name that says it is about the MINUTES (the miles have their
+    # own miles_method: gps = recorded drive, routed = road route, estimate = straight line x1.25)
+    return {"estimated": est, "minutes_estimated": est,
             "no_location_data": {"from": gap["from"], "to": gap["to"]} if gap else None}
 
 
