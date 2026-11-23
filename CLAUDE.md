@@ -640,3 +640,13 @@ D. Later / parked
   names keep the child; Service / Bundle rows skipped (`services_skipped`); Quantity on hand and Reorder point NOT imported
   (company stock, not the truck); an existing part keeps its kind (QBO has no consumables). Export warns on a billable part
   with no part number.
+
+## Round 2 review (2026-11-23)
+- **Parts columns** (A2/A3, user naming): `parts.vendor_item` (supplier part #), `parts.qbo_item` (QuickBooks product/service
+  name) and `vendor_unit_cost` = `last_cost` ("Our cost": what you pay per JobHub unit). CSV aliases: `cost`, `our_cost`,
+  `purchase_cost`, `vendor_cost`, `dlv_unit_cost`, `last_cost` → vendor_unit_cost (a bare "cost" is NEVER the sell price);
+  `dlv_item`, `vendor_sku`… → vendor_item; `qbo_name`… → qbo_item. Import `notes` say how a cost column was read. Export and
+  template carry the three columns. Blank cells keep values. `part_dict` adds `margin`, `margin_pct` (of the sell price),
+  `below_cost`; Truck list shows margin and a "Below cost" chip; part page "Our cost … · margin/LOSS"; shopping list shows the vendor #.
+- **QuickBooks Service items** (A1): `QBO_IMPORT_SERVICE_ITEMS_WITH_SKU` (Settings → General → Parts import, default on):
+  Service rows with a SKU import as parts; without a SKU, Bundles and anything named/SKU'd Labor are skipped.

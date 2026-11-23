@@ -308,6 +308,8 @@ MIGRATIONS = [
     ("tool_files", "read_json", "TEXT"),
     ("stops", "uid", "TEXT"),
     ("stops", "qbo_estimate", "TEXT"),
+    ("parts", "vendor_item", "TEXT"),
+    ("parts", "qbo_item", "TEXT"),
 ]
 
 

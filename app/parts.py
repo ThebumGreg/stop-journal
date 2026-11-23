@@ -7,7 +7,11 @@
 * Stock may go negative (the truck count is often behind reality); the UI flags it.
 
 CSV import format (header row required, order free, extra columns ignored):
-  name (required), sku, type, unit, unit_cost, billable, category, vendor, on_hand, reorder_at, pack_size, pack_unit, shelf, bin
+  name (required), sku, type, unit, unit_cost, billable, category, vendor, on_hand, reorder_at, pack_size, pack_unit, shelf, bin,
+  vendor_item, vendor_unit_cost, qbo_item
+  unit_cost is the price CHARGED to the customer (the price in reports). vendor_unit_cost is what you PAY per JobHub unit
+  (per ft for cable, each for jacks); it is the part's last_cost ("Our cost"). A column called just "cost" means what
+  you pay, never the sell price. vendor_item is the supplier's part number; qbo_item the QuickBooks product/service name.
   shelf and bin say where it lives on the truck ("Shelf 2", bin "14"); Count the truck goes shelf by shelf, bin by bin.
   type is "part" (default), "consumable" (tape, gloves, solvent: used up, normally not billed;
   consumables default to not billable) or "expense" (parking, tolls, a purchase: money, not stock;
@@ -29,7 +33,7 @@ import time
 from .errors import EditError
 
 COLUMNS = ["sku", "name", "type", "unit", "unit_cost", "billable", "category", "vendor", "on_hand",
-           "reorder_at", "pack_size", "pack_unit", "shelf", "bin"]
+           "reorder_at", "pack_size", "pack_unit", "shelf", "bin", "vendor_item", "vendor_unit_cost", "qbo_item"]
 UNITS = {"ea": "Each", "pair": "Pair", "pack": "Pack", "box": "Box", "bag": "Bag", "case": "Case",
          "roll": "Roll", "ft": "Foot", "gal": "Gallon", "lb": "Pound"}
 UNIT_WORDS = {"each": "ea", "pc": "ea", "pcs": "ea", "piece": "ea", "pieces": "ea", "feet": "ft", "foot": "ft",
@@ -44,7 +48,13 @@ ALIASES = {
     "item_number": "sku", "item_no": "sku", "item_#": "sku",
     "description": "name", "part_name": "name", "item_name": "name", "item": "name", "part": "name",
     "uom": "unit", "units": "unit",
-    "cost": "unit_cost", "price": "unit_cost", "unit_price": "unit_cost", "unitcost": "unit_cost",
+    "price": "unit_cost", "unit_price": "unit_cost", "unitcost": "unit_cost", "sell_price": "unit_cost",
+    # what you PAY (never the sell price): "cost" alone is a purchase cost on a supplier's price list
+    "cost": "vendor_unit_cost", "last_cost": "vendor_unit_cost", "purchase_cost": "vendor_unit_cost",
+    "our_cost": "vendor_unit_cost", "vendor_cost": "vendor_unit_cost", "dlv_unit_cost": "vendor_unit_cost",
+    "vendor_item": "vendor_item", "dlv_item": "vendor_item", "vendor_part": "vendor_item", "vendor_sku": "vendor_item",
+    "vendor_part_number": "vendor_item", "vendor_item_number": "vendor_item", "supplier_item": "vendor_item",
+    "qbo_item": "qbo_item", "qbo_name": "qbo_item", "quickbooks_item": "qbo_item", "qbo_product": "qbo_item",
     "qty": "on_hand", "quantity": "on_hand", "onhand": "on_hand", "stock": "on_hand",
     "in_stock": "on_hand", "truck_qty": "on_hand", "qty_on_hand": "on_hand",
     "reorder": "reorder_at", "reorder_point": "reorder_at", "min": "reorder_at",
@@ -143,8 +153,17 @@ def part_dict(r):
             "reorder_at": r["reorder_at"], "tracked": tracked, "active": bool(r["active"]),
             "kind": r["kind"] or "part", "vendor": r["vendor"] or "",
             "pack_size": r["pack_size"], "pack_unit": r["pack_unit"] or "", "shelf": r["shelf"] or "", "bin": r["bin"] or "",
-            "last_cost": r["last_cost"],
+            "last_cost": r["last_cost"], "vendor_item": r["vendor_item"] or "", "qbo_item": r["qbo_item"] or "",
+            **_margin(r["unit_cost"], r["last_cost"]),
             "low": bool(low), "negative": bool(tracked and (r["on_hand"] or 0) < 0)}
+
+
+def _margin(sell, cost):
+    """What you make on one unit: sell (unit_cost) minus what you pay (last_cost), and as % of the sell price."""
+    if sell is None or cost is None:
+        return {"margin": None, "margin_pct": None, "below_cost": False}
+    m = round(sell - cost, 4)
+    return {"margin": m, "margin_pct": round(m / sell * 100, 1) if sell else None, "below_cost": sell < cost}
 
 
 # ---- catalog -----------------------------------------------------------
@@ -212,14 +231,31 @@ def create_part(conn, f, tracked=False):
          0 if on_hand is None else on_hand, reorder, 1 if tracked else 0, kind,
          _text(f.get("vendor"), "Vendor", 80) or None, *_pack(f), _text(f.get("shelf"), "Shelf", 40) or None,
          _text(f.get("bin"), "Bin", 40) or None))
+    extra = {k: v for k, v in _extras(f).items() if v is not None}
+    if extra:
+        conn.execute(f"UPDATE parts SET {', '.join(k + '=?' for k in extra)} WHERE id=?", (*extra.values(), cur.lastrowid))
     if on_hand:
         _log(conn, cur.lastrowid, on_hand, "initial")
     return cur.lastrowid
 
 
+def _extras(f):
+    """vendor_item, qbo_item and what you pay (vendor_unit_cost / last_cost) from a form or CSV row."""
+    out = {}
+    if "vendor_item" in f:
+        out["vendor_item"] = _text(f["vendor_item"], "Vendor item", 80) or None
+    if "qbo_item" in f:
+        out["qbo_item"] = _text(f["qbo_item"], "QuickBooks item", 120) or None
+    for k in ("vendor_unit_cost", "last_cost"):
+        if k in f and str(f[k] if f[k] is not None else "").strip() != "":
+            out["last_cost"] = _num(str(f[k]).replace("$", "").replace(",", ""), "Our cost", 0)
+    return out
+
+
 def update_part(conn, pid, f):
     p = get_part(conn, pid)
     upd = {}
+    upd.update(_extras(f))
     if "name" in f:
         upd["name"] = _text(f["name"], "Name", required=True)
     if "sku" in f:
@@ -330,15 +366,17 @@ def _norm_header(h):
 # QuickBooks Online "Products and Services" export (Sales → Products and services → Export). Recognised by its
 # "Product/Service Name" header. Sales price is what the customer is charged, which is JobHub's unit_cost (the price in
 # reports); Purchase cost is what you pay, which is last_cost ("Last paid"). Quantity on hand and Reorder point are the
-# company's stock, not the truck's, so they are NOT imported. Service and Bundle rows (labor, fees) are not parts and
-# are skipped. Rows match existing parts by SKU, then by name, so the QuickBooks SKU becomes the part number.
+# company's stock, not the truck's, so they are NOT imported. Service rows WITH a SKU are imported as parts (some
+# QuickBooks companies keep inventory tracking off, so every item is a Service; QBO_SERVICE_WITH_SKU, default on);
+# Service rows without a SKU (labor, fees), Bundles, and anything named or SKU'd "Labor" are skipped. Rows match existing parts by SKU, then by name, so the QuickBooks SKU becomes the part number.
 QBO_COLUMNS = {"product_service_name": "name", "product_service": "name", "sku": "sku",
                "sales_price_rate": "unit_cost", "sales_price": "unit_cost", "purchase_cost": "last_cost",
                "type": "type", "preferred_vendor": "vendor", "category": "category"}
+LABOR = re.compile(r"^\s*labou?r\b", re.I)
 QBO_TYPES = {"inventory": "part", "non_inventory": "part", "noninventory": "part"}
 
 
-def _qbo_import(conn, header, reader):
+def _qbo_import(conn, header, reader, service_with_sku=True):
     cols = [QBO_COLUMNS.get(_raw_header(h)) for h in header]
     ignored = sorted({h for h, c in zip(header, cols) if not c and h.strip()})
     res = {"created": 0, "updated": 0, "skipped": 0, "errors": [], "ignored_columns": ignored,
@@ -351,12 +389,15 @@ def _qbo_import(conn, header, reader):
             continue
         rec = {c: _unsafe(row[i].strip() if i < len(row) else "") for i, c in enumerate(cols) if c}
         qtype = _raw_header(rec.pop("type", "") or "inventory")
-        if qtype not in QBO_TYPES:
+        is_labor = bool(LABOR.match(rec.get("name", "").rsplit(":", 1)[-1]) or LABOR.match(rec.get("sku", "")))
+        if is_labor or (qtype not in QBO_TYPES and not (qtype == "service" and service_with_sku and rec.get("sku"))):
             res["services_skipped"] += 1
             continue
-        rec["type"] = QBO_TYPES[qtype]
+        rec["type"] = QBO_TYPES.get(qtype, "part")
         if rec.get("name", "").count(":"):          # QuickBooks sub-items: "Cable:Cat 6" -> "Cat 6"
             rec["name"] = rec["name"].rsplit(":", 1)[1].strip()
+        if not rec.get("unit_cost"):
+            rec.pop("unit_cost", None)
         for k in ("unit_cost", "last_cost"):
             if rec.get(k):
                 rec[k] = rec[k].replace("$", "").replace(",", "")
@@ -382,7 +423,7 @@ def _qbo_import(conn, header, reader):
     return res
 
 
-def import_csv(conn, text):
+def import_csv(conn, text, service_with_sku=True):
     text = text.lstrip("﻿")
     reader = csv.reader(io.StringIO(text))
     try:
@@ -390,12 +431,16 @@ def import_csv(conn, text):
     except StopIteration:
         raise EditError("The file is empty.")
     if any(_raw_header(h) in ("product_service_name", "product_service") for h in header):
-        return _qbo_import(conn, header, reader)
+        return _qbo_import(conn, header, reader, service_with_sku)
     cols = [_norm_header(h) for h in header]
     if "name" not in cols:
         raise EditError("No name column found. The first row must be headers, including “name”.")
     ignored = sorted({h for h, c in zip(header, cols) if c not in COLUMNS and h.strip()})
-    res = {"created": 0, "updated": 0, "skipped": 0, "errors": [], "ignored_columns": ignored}
+    res = {"created": 0, "updated": 0, "skipped": 0, "errors": [], "ignored_columns": ignored, "notes": []}
+    for h, c in zip(header, cols):
+        if c == "vendor_unit_cost" and _raw_header(h) in ("cost", "purchase_cost", "dlv_unit_cost", "our_cost", "vendor_cost"):
+            res["notes"].append(f"“{h.strip()}” was read as what you pay (Our cost), not the price you charge"
+                                + (" (that is the unit_cost column)." if "unit_cost" in cols else "."))
     for n, row in enumerate(reader, 2):
         if n - 1 > MAX_ROWS:
             res["errors"].append(f"Stopped at {MAX_ROWS} rows.")
@@ -422,14 +467,14 @@ def import_csv(conn, text):
     return res
 
 
-def preview_csv(conn, text):
+def preview_csv(conn, text, service_with_sku=True):
     """Run the import on a throw-away in-memory copy of the database: the same counts and errors,
     nothing saved."""
     mem = sqlite3.connect(":memory:")
     mem.row_factory = sqlite3.Row
     try:
         conn.backup(mem)
-        res = import_csv(mem, text)
+        res = import_csv(mem, text, service_with_sku)
     finally:
         mem.close()
     res["dry_run"] = True
@@ -469,15 +514,17 @@ def export_csv(conn):
                     _g(p["unit_cost"]), "yes" if p["billable"] else "no",
                     _safe(p["category"]), _safe(p["vendor"]),
                     _g(p["on_hand"]) if p["tracked"] else "", _g(p["reorder_at"]),
-                    _g(p["pack_size"]), p["pack_unit"], _safe(p["shelf"]), _safe(p["bin"])])
+                    _g(p["pack_size"]), p["pack_unit"], _safe(p["shelf"]), _safe(p["bin"]),
+                    _safe(p["vendor_item"]), _g(p["last_cost"]), _safe(p["qbo_item"])])
     return out.getvalue()
 
 
 def template_csv():
-    return ("sku,name,type,unit,unit_cost,billable,category,vendor,on_hand,reorder_at,pack_size,pack_unit,shelf,bin\r\n"
-            "BV-050,1/2 in. brass ball valve,part,ea,8.75,yes,Plumbing,Ferguson,12,4,,,Shelf 2,3\r\n"
-            "JACK-1,Telephone jack,part,ea,1.10,yes,Cabling,Graybar,40,10,25,bag,Shelf 1,12\r\n"
-            "TAPE-PTFE,PTFE thread tape,consumable,roll,1.20,no,Plumbing,Home Depot,30,10,,,Door,\r\n")
+    return ("sku,name,type,unit,unit_cost,billable,category,vendor,on_hand,reorder_at,pack_size,pack_unit,shelf,bin,"
+            "vendor_item,vendor_unit_cost,qbo_item\r\n"
+            "BV-050,1/2 in. brass ball valve,part,ea,8.75,yes,Plumbing,Ferguson,12,4,,,Shelf 2,3,FBV-050,4.10,Ball valve 1/2\r\n"
+            "JACK-1,Telephone jack,part,ea,1.10,yes,Cabling,Graybar,40,10,25,bag,Shelf 1,12,GB-J1,0.42,\r\n"
+            "TAPE-PTFE,PTFE thread tape,consumable,roll,1.20,no,Plumbing,Home Depot,30,10,,,Door,,0.89,\r\n")
 
 
 # ---- per-stop usage ----------------------------------------------------
@@ -678,6 +725,7 @@ def shopping_list(conn):
             need = round(packs * p["pack_size"], 4)
         groups.setdefault(p["vendor"] or "No vendor set", []).append({
             "id": p["id"], "name": p["name"], "sku": p["sku"], "unit": p["unit"], "kind": p["kind"],
+            "vendor_item": p["vendor_item"] or "",
             "on_hand": p["on_hand"], "reorder_at": p["reorder_at"], "suggest": need,
             "packs": packs, "pack_unit": p["pack_unit"] if packs else "", "pack_size": p["pack_size"],
             "unit_cost": p["unit_cost"]})

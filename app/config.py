@@ -61,6 +61,7 @@ class Config:
     mail_to: str = ""            # where reports go; blank = email off
     tech_name: str = ""          # who did the work (report `technician`)
     tech_email: str = ""
+    qbo_service_with_sku: str = "on"   # QuickBooks import: Service items with a SKU are parts
     lunch_paid: str = "on"         # off: lunch is unpaid (left out of paid time)
     followup_owners: str = "Me"     # one per line: "Label = email" (Me = the technician email)
     calendar_invites: str = "off"   # today's stops as invites to mail_to (Settings → Email)
@@ -121,6 +122,7 @@ class Config:
             mail_from=e("MAIL_FROM", "").strip(),
             mail_to=e("MAIL_TO", "").strip(),
             tech_name=e("TECH_NAME", "").strip(),
+            qbo_service_with_sku=e("QBO_IMPORT_SERVICE_ITEMS_WITH_SKU", "on").strip() or "on",
             lunch_paid=e("LUNCH_PAID", "on").strip() or "on",
             tech_email=e("TECH_EMAIL", "").strip(),
             **({"followup_owners": e("FOLLOWUP_OWNERS", "").replace("|", "\n")} if e("FOLLOWUP_OWNERS", "") else {}),

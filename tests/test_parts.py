@@ -232,7 +232,7 @@ def test_bin_location_sorts_count_and_similar_parts(tmp_path):
     assert c.get("/api/parts/similar?sku=zip 1").json["parts"][0]["why"] == "same part #"
     assert c.get("/api/parts/similar?name=Hammer").json["parts"] == []
     csv = c.get("/api/parts/export.csv").data.decode()
-    assert csv.splitlines()[0].endswith(",shelf,bin") and "Shelf 10,1" in csv
+    assert csv.splitlines()[0].endswith(",shelf,bin,vendor_item,vendor_unit_cost,qbo_item") and "Shelf 10,1," in csv
 
 
 def test_old_single_location_field_splits_once(tmp_path):

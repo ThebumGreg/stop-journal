@@ -776,7 +776,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         except UnicodeDecodeError:
             text = raw.decode("latin-1")  # Excel "CSV" exports are often not UTF-8
         dry = request.args.get("dry") == "1"
-        return catalog(lambda conn: parts.preview_csv(conn, text) if dry else parts.import_csv(conn, text))
+        swk = eff().qbo_service_with_sku != "off"
+        return catalog(lambda conn: parts.preview_csv(conn, text, swk) if dry else parts.import_csv(conn, text, swk))
 
     def csv_response(body, name):
         return Response(body, mimetype="text/csv",

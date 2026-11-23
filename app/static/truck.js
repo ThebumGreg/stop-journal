@@ -94,6 +94,8 @@ async function loadParts() {
 }
 
 // where it lives on the truck: "Shelf 2 · bin 12"
+// what you make per unit: sell price (unit_cost) minus what you pay (last_cost, "Our cost")
+const marginText = p => p.margin_pct == null ? '' : 'margin ' + (p.margin_pct >= 0 ? '' : '−') + Math.abs(p.margin_pct) + '%';
 const locText = p => [p.shelf, p.bin ? 'bin ' + p.bin : ''].filter(Boolean).join(' · ');
 function shelfList() {           // a datalist of the shelves already used, so they are typed the same way
   let dl = document.getElementById('shelves');
@@ -131,7 +133,7 @@ async function partsView() {
   add.onclick = () => newPartSheet();
   bar.append(q, add);
   const chips = el('div', 'chips');
-  [['', 'All'], ['part', 'Parts'], ['consumable', 'Consumables'], ['expense', 'Expenses'], ['low', 'Low stock']].forEach(([k, t]) => {
+  [['', 'All'], ['part', 'Parts'], ['consumable', 'Consumables'], ['expense', 'Expenses'], ['low', 'Low stock'], ['below', 'Below cost']].forEach(([k, t]) => {
     const b = el('button', KIND === k ? 'on' : null, t); b.type = 'button';
     b.onclick = () => { KIND = k; chips.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); draw(); };
     chips.append(b);
@@ -143,7 +145,7 @@ async function partsView() {
   const list = el('div');
   function draw() {
     const f = FILTER.trim().toLowerCase();
-    const shown = PARTS.filter(p => (!KIND || (KIND === 'low' ? p.low : p.kind === KIND)) && (!f || p.name.toLowerCase().includes(f) ||
+    const shown = PARTS.filter(p => (!KIND || (KIND === 'low' ? p.low : KIND === 'below' ? p.below_cost : p.kind === KIND)) && (!f || p.name.toLowerCase().includes(f) ||
       p.sku.toLowerCase().includes(f) || p.category.toLowerCase().includes(f) || (p.vendor || '').toLowerCase().includes(f) ||
       locText(p).toLowerCase().includes(f)));
     count.textContent = shown.length + (shown.length !== PARTS.length ? ' of ' + PARTS.length : '') + ' item' + (PARTS.length === 1 ? '' : 's');
@@ -154,7 +156,8 @@ async function partsView() {
       const body = el('div', 'body');
       body.append(el('div', 'n', p.name),
         el('div', 'm', [p.active ? '' : 'REMOVED', p.kind !== 'part' ? p.kind : '', p.sku, locText(p) ? '📍 ' + locText(p) : '', p.vendor, money(p.unit_cost),
-          p.low ? 'LOW (reorder at ' + p.reorder_at + ')' : ''].filter(Boolean).join(' · ')));
+          marginText(p), p.low ? 'LOW (reorder at ' + p.reorder_at + ')' : ''].filter(Boolean).join(' · ')));
+      if (p.below_cost) body.append(el('div', 'err', 'Below cost: you charge ' + money(p.unit_cost) + ', you pay ' + money(p.last_cost)));
       const qt = qtyText(p);
       a.append(body, el('div', qt.c, qt.t));
       list.append(a);
@@ -178,7 +181,9 @@ function newPartSheet() {
   const bill = el('input'); bill.type = 'checkbox'; bill.checked = true;
   const bl = el('label', 'chk'); bl.append(bill, ' Billable to the customer');
   F.kind.onchange = () => { bill.checked = F.kind.value === 'part'; };
-  money_.append(lab('Counted in (unit)', F.unit = unitSel('ea')), lab('Unit cost', inp('unit_cost', '0.00', 'decimal')), bl);
+  money_.append(lab('Counted in (unit)', F.unit = unitSel('ea')), lab('Unit cost (you charge)', inp('unit_cost', '0.00', 'decimal')),
+                lab('Our cost (you pay, per unit)', inp('vendor_unit_cost', 'optional', 'decimal')),
+                lab('Vendor item #', inp('vendor_item', 'optional')), lab('QuickBooks item', inp('qbo_item', 'optional')), bl);
   const stock = el('fieldset'); stock.append(el('legend', null, 'Truck stock (optional)'));
   shelfList();
   const shelfIn = inp('shelf', 'e.g. Shelf 2'); shelfIn.setAttribute('list', 'shelves');
@@ -194,7 +199,8 @@ function newPartSheet() {
   save.onclick = async () => {
     err.textContent = '';
     const b = {billable: bill.checked, type: F.kind.value};
-    ['name', 'sku', 'vendor', 'category', 'unit', 'unit_cost', 'on_hand', 'reorder_at', 'pack_size', 'pack_unit', 'shelf', 'bin'].forEach(k => { b[k] = F[k].value; });
+    ['name', 'sku', 'vendor', 'category', 'unit', 'unit_cost', 'vendor_unit_cost', 'vendor_item', 'qbo_item', 'on_hand', 'reorder_at',
+     'pack_size', 'pack_unit', 'shelf', 'bin'].forEach(k => { b[k] = F[k].value; });
     try {
       const p = await api('POST', '/api/parts', b);
       close();
@@ -235,7 +241,8 @@ async function partPage(id) {
   const head = el('div');
   head.append(el('h1', 'page-title', p.name),
               el('div', 'hint', [p.active ? '' : 'REMOVED', KINDS.find(k => k[0] === p.kind)[1], p.sku ? 'Part # ' + p.sku : '', locText(p) ? '📍 ' + locText(p) : '',
-                                 p.vendor, money(p.unit_cost) + (p.unit_cost != null ? ' / ' + p.unit : '')].filter(Boolean).join(' · ')));
+                                 p.vendor, p.vendor_item ? 'vendor # ' + p.vendor_item : '',
+                                 money(p.unit_cost) + (p.unit_cost != null ? ' / ' + p.unit : '')].filter(Boolean).join(' · ')));
   if (p.vendor) { const va = el('a', 'back', 'Vendor: ' + p.vendor + ' ›'); va.href = vendorHref(p.vendor); head.append(va); }
   const err = el('div', 'err');
 
@@ -248,9 +255,9 @@ async function partPage(id) {
     stockCard.append(el('div', 'stocknow ' + q.c, p.tracked ? p.on_hand + ' ' + p.unit : 'Not tracked'));
     if (p.tracked && p.reorder_at != null) stockCard.append(el('div', 'hint', 'Reorder at ' + p.reorder_at + (p.low ? ' (low now)' : '')));
     if (p.last_cost != null) {
-      const margin = p.unit_cost != null && p.last_cost ? Math.round((p.unit_cost / p.last_cost - 1) * 100) : null;
-      stockCard.append(el('div', margin != null && margin < 0 ? 'err' : 'hint', 'Last paid ' + money(p.last_cost) + ' / ' + p.unit +
-        (p.unit_cost != null ? ' · you charge ' + money(p.unit_cost) + (margin != null ? ' (' + (margin >= 0 ? '+' : '') + margin + '%)' : '') : '')));
+      stockCard.append(el('div', p.below_cost ? 'err' : 'hint', 'Our cost ' + money(p.last_cost) + ' / ' + p.unit +
+        (p.unit_cost != null ? ' · you charge ' + money(p.unit_cost) + (p.margin != null ? ' · ' + (p.below_cost ? 'LOSS ' : 'margin ') +
+          money(Math.abs(p.margin)) + ' (' + p.margin_pct + '%)' : '') : '')));
     }
     const amt = el('input'); amt.inputMode = 'decimal'; amt.placeholder = 'amount';
     const note = el('input'); note.placeholder = 'note (optional)';
@@ -300,7 +307,8 @@ async function partPage(id) {
   const grid = el('div', 'grid');
   const kind = kindSel(p.kind);
   grid.append(mk('name', 'Name', p.name), lab('Type', kind), mk('sku', 'Part #', p.sku), pick('unit', 'Unit', unitSel(p.unit)),
-    mk('unit_cost', 'Unit cost', p.unit_cost, 'decimal'), pick('vendor', 'Vendor', vendorSel(p.vendor)),
+    mk('unit_cost', 'Unit cost (you charge)', p.unit_cost, 'decimal'), mk('vendor_unit_cost', 'Our cost (you pay)', p.last_cost, 'decimal'),
+    pick('vendor', 'Vendor', vendorSel(p.vendor)), mk('vendor_item', 'Vendor item #', p.vendor_item), mk('qbo_item', 'QuickBooks item', p.qbo_item),
     mk('shelf', 'Shelf', p.shelf), mk('bin', 'Bin', p.bin), pick('category', 'Category', categorySel(p.category)), mk('reorder_at', 'Reorder at', p.reorder_at, 'decimal'),
     mk('pack_size', 'Comes in packs of', p.pack_size, 'decimal'), pick('pack_unit', 'Pack is a', packUnitSel(p.pack_unit)));
   shelfList(); F.shelf.setAttribute('list', 'shelves');
@@ -411,7 +419,8 @@ async function shoppingBox() {
   const msg = el('div');
   if (!groups.length) { box.append(el('div', 'box ok', 'Nothing is at or below its reorder level.')); return box; }
   const lineText = it => (it.packs ? it.packs + ' ' + (it.pack_unit || 'pack') + (it.packs > 1 ? 's' : '') + ' of ' + it.pack_size
-                                   : it.suggest + ' ' + it.unit) + ' ' + it.name + (it.sku ? ' (#' + it.sku + ')' : '');
+                                   : it.suggest + ' ' + it.unit) + ' ' + it.name +
+                       (it.vendor_item ? ' (vendor #' + it.vendor_item + ')' : it.sku ? ' (#' + it.sku + ')' : '');
   const share = el('button', 'primary', 'Share list'); share.type = 'button';
   share.onclick = async () => {
     const text = 'Shopping list ' + new Date().toLocaleDateString() + '\n\n' +
@@ -964,6 +973,7 @@ function dataView() {
         (r.format ? r.format + ': ' : '') + r.created + ' new, ' + r.updated + ' updated, ' + r.skipped + ' skipped' +
         (r.services_skipped ? ', ' + r.services_skipped + ' service item' + (r.services_skipped === 1 ? '' : 's') + ' left out' : '') + '.'));
       if (r.ignored_columns.length) out.append(el('div', 'hint', 'Ignored columns: ' + r.ignored_columns.join(', ')));
+      (r.notes || []).forEach(n => out.append(el('div', 'hint', n)));
       r.errors.slice(0, 20).forEach(m => out.append(el('div', 'err', m)));
       if (r.errors.length > 20) out.append(el('div', 'hint', '…and ' + (r.errors.length - 20) + ' more.'));
     } catch (e) { out.append(el('div', 'err', e.message)); }
@@ -982,8 +992,11 @@ function dataView() {
   fmt.append(el('summary', null, 'CSV columns'));
   const cols = [['name', 'required'], ['sku', 'part number'], ['type', 'part, consumable or expense'],
     ['unit', 'each, pair, pack, box, bag, case, roll, foot, gallon or pound (any other unit rejects the row)'],
-    ['unit_cost', ''], ['billable', 'yes / no'], ['category', ''], ['vendor', ''], ['on_hand', 'sets the truck count'],
-    ['reorder_at', ''], ['pack_size', 'e.g. 25'], ['pack_unit', 'bag, box…'], ['shelf', 'where on the truck, e.g. Shelf 2 or Door'], ['bin', 'bin or drawer on that shelf, e.g. 12']];
+    ['unit_cost', 'the price you CHARGE the customer (the price in reports)'], ['billable', 'yes / no'], ['category', ''], ['vendor', ''], ['on_hand', 'sets the truck count'],
+    ['reorder_at', ''], ['pack_size', 'e.g. 25'], ['pack_unit', 'bag, box…'], ['shelf', 'where on the truck, e.g. Shelf 2 or Door'], ['bin', 'bin or drawer on that shelf, e.g. 12'],
+    ['vendor_item', 'the supplier’s part number (also accepted: dlv_item, vendor_sku)'],
+    ['vendor_unit_cost', 'what you PAY per unit (per ft, each); also accepted: cost, our_cost, purchase_cost, dlv_unit_cost'],
+    ['qbo_item', 'the QuickBooks product/service name']];
   cols.forEach(([c, h]) => { const d = el('div', 'hint'); d.append(el('code', null, c), h ? ' – ' + h : ''); fmt.append(d); });
   // tools: same idea, its own file
   const timp = el('section', 'card');

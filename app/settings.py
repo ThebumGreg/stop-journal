@@ -227,6 +227,12 @@ SPEC += [
              help="on: lunch counts in total paid time (never billed to the customer). off: lunch is unpaid and left out "
                   "of paid time. Mileage is the same either way."),
     ]),
+    ("Parts import", [
+        dict(key="qbo_service_with_sku", label="QuickBooks: import Service items that have a SKU", kind="choice",
+             choices=["on", "off"],
+             help="When QuickBooks inventory tracking is off, every item is a Service. on: a Service item with a SKU is "
+                  "imported as a part. Items without a SKU, and anything called Labor, are always skipped."),
+    ]),
     ("Backups", [
         dict(key="backup_keep", label="Daily backups to keep", kind="int", lo=0, hi=365,
              help="One snapshot of the database is saved each day. 0 turns automatic backups off."),
@@ -243,7 +249,7 @@ TABS = [
     ("AI", ["AI (Claude)"]),
     ("Email", ["Email (Gmail)"]),
     ("Notes", ["Quick phrases", "Grammar check (LanguageTool)"]),
-    ("General", ["Technician", "Pay rules", "Stop detection", "Backups"]),
+    ("General", ["Technician", "Pay rules", "Parts import", "Stop detection", "Backups"]),
 ]
 FIELDS = {f["key"]: f for _, fs in SPEC for f in fs}
 
