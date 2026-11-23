@@ -411,6 +411,15 @@ stop departed 12:21, and listed billable parts with no cost.
   (Google Routes would cost money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
   Drive); not built.
 
+## Branches and relocations (2026-11-23)
+- A place is one spot. Several places can share a name: a vendor's branches, or a customer's old and new address (relocation
+  jobs). `known.learn` gives a NEW place the stop's type (vendor/office) or the kind of a same-name vendor/office place
+  (`branch_kind`); before this, a new branch of a vendor was saved as a client ("from Client" in the PDF). `repair_vendor_branches`
+  fixed existing data once on connect (marker setting `_fix_vendor_branches`); customer places are never changed.
+- Places page groups same-name places: "Name · n locations" → all visits across them (`GET /api/places/group-history?name=`,
+  each visit with its address), then each location (address as the title) with its own history and Edit place.
+- Parts keep `vendor` as a name, so a vendor's branches are one vendor for shopping, choices and the coming Vendors tab.
+
 ## Truck page layout (redesign, 2026-11-22)
 - Menu: Home, Day, **Reports** (was Export; `/tools`), Places, Truck, Settings.
 - Truck has tabs in the URL hash: **Parts** (#parts: search, filter chips, Show removed, list; **+ New part** opens a sheet with

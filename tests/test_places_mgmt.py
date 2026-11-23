@@ -269,3 +269,18 @@ def test_new_vendor_branch_stays_a_vendor_and_old_ones_are_repaired(tmp_path):
     conn = db.connect(str(tmp_path))
     assert conn.execute("SELECT COUNT(*) FROM known_sites WHERE kind='vendor'").fetchone()[0] == 0
     conn.close()
+
+
+def test_group_history_across_locations(tmp_path):
+    from tests.test_export import D, make
+    c = make(tmp_path)
+    ss = c.get(f"/api/day/{D}").json["stops"]
+    a, b = ss[0], ss[1]
+    c.patch(f"/api/stops/{a['id']}", json={"business_name": "Acme Dental", "address": "1 Old Rd", "status": "Confirmed", "notes": "Packed up"})
+    c.patch(f"/api/stops/{b['id']}", json={"business_name": "Acme Dental", "address": "9 New Ave", "status": "Confirmed", "notes": "Set up"})
+    places = [p for p in c.get("/api/places").json["places"] if p["name"] == "Acme Dental"]
+    assert len(places) == 2                                           # old and new address
+    g = c.get("/api/places/group-history?name=acme dental").json
+    assert g["totals"]["visits"] == 2 and len(g["places"]) == 2
+    assert [v["address"] for v in g["visits"]] == ["9 New Ave", "1 Old Rd"]
+    assert c.get("/api/places/group-history?name=nobody").status_code == 400

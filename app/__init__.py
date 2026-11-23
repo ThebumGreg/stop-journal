@@ -788,6 +788,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def places_history(sid):
         return with_conn(lambda conn, cfg: jsonify(service.place_history(conn, cfg, sid)))
 
+    @app.get("/api/places/group-history")
+    def places_group_history():
+        return with_conn(lambda conn, cfg: jsonify(service.group_history(conn, cfg, request.args.get("name", ""))))
+
     @app.get("/api/gas-stations")
     def gas_stations():
         return with_conn(lambda conn, cfg: jsonify(stations=service.gas_stations(conn, cfg)))

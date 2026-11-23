@@ -36,11 +36,52 @@ async function load() {
   render();
 }
 
+// Places with the same name are one row: a vendor's branches, or a customer's old and new address after a move.
 function render() {
   document.getElementById('count').textContent = '(' + PLACES.length + ')';
   listEl.replaceChildren();
   if (!PLACES.length) listEl.append(el('div', 'hint', 'Nothing here yet. Add one above.'));
-  PLACES.forEach(p => listEl.append(row(p)));
+  const groups = new Map();
+  PLACES.forEach(p => {
+    const k = p.name.trim().toLowerCase();
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  });
+  groups.forEach(ps => listEl.append(ps.length > 1 ? groupRow(ps) : row(ps[0])));
+}
+
+const openGroups = new Set();
+function groupRow(ps) {
+  const key = ps[0].name.trim().toLowerCase();
+  const wrap = el('div', 'place');
+  const head = el('div', 'head'), body = el('div', 'body');
+  const kinds = [...new Set(ps.map(p => p.kind))];
+  body.append(el('div', 'n', ps[0].name),
+              el('div', 'm', ps.length + ' locations · ' + ps.map(p => p.address || 'no address').join(' | ')));
+  head.append(body, el('span', 'chip ' + kinds[0], kinds.map(k => KIND[k] || k).join(' / ')));
+  const inside = el('div', 'edit'); inside.hidden = !openGroups.has(key);
+  const hist = el('div', 'hist');
+  const locs = el('div');
+  const load_ = async () => {
+    hist.replaceChildren(el('div', 'hint', 'Loading visits…'));
+    try {
+      const d = await api('GET', '/api/places/group-history?name=' + encodeURIComponent(ps[0].name));
+      const t = d.totals;
+      historyList(hist, d, t.visits ? t.visits + ' visit' + (t.visits === 1 ? '' : 's') + ' at ' + ps.length + ' locations' +
+        (t.minutes ? ' · ' + dur(t.minutes) + ' on site' : '') + ' · last ' + niceDate(t.last) : 'No visits yet', true);
+    } catch (e) { hist.replaceChildren(el('div', 'err', e.message)); }
+  };
+  head.onclick = () => {
+    if (openGroups.has(key)) openGroups.delete(key); else openGroups.add(key);
+    inside.hidden = !openGroups.has(key);
+    if (!inside.hidden) load_();
+  };
+  locs.append(el('div', 'tot', 'Locations'));
+  ps.forEach(p => locs.append(row(p, true)));
+  inside.append(hist, locs);
+  wrap.append(head, inside);
+  if (!inside.hidden) load_();
+  return wrap;
 }
 
 // ---- history: past visits, each opens that stop on its day ---------------------------
@@ -52,7 +93,7 @@ function dur(min) {
 function niceDate(d) {
   return new Date(d + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'});
 }
-function visitRow(v) {
+function visitRow(v, withAddress) {
   const a = el('a', 'visit'); a.href = v.url;
   const bits = [v.type_label, v.work_category, v.visit_result].filter(Boolean);
   if (v.status !== 'Confirmed' && v.stop_type !== 'gas' && !['Lunch', 'Personal', 'Traffic'].includes(v.status)) bits.push('not finished');
@@ -60,17 +101,18 @@ function visitRow(v) {
            el('div', 'm', bits.join(' · ')));
   if (v.fuel) a.append(el('div', 'm', [v.fuel.gallons != null ? v.fuel.gallons + ' gal' : '', v.fuel.total != null ? money(v.fuel.total) : '',
                                        v.fuel.price_per_gallon ? '$' + v.fuel.price_per_gallon.toFixed(3) + '/gal' : ''].filter(Boolean).join(' · ')));
+  if (withAddress && v.address) a.append(el('div', 'm', '📍 ' + v.address));
   if (v.summary) a.append(el('div', 's', v.summary));
   const extra = [v.ticket ? 'Ticket ' + v.ticket : '', v.parts ? v.parts + ' part' + (v.parts === 1 ? '' : 's') : '',
                  v.photos ? v.photos + ' photo' + (v.photos === 1 ? '' : 's') : ''].filter(Boolean);
   if (extra.length) a.append(el('div', 'm', extra.join(' · ')));
   return a;
 }
-function historyList(box, d, line) {
+function historyList(box, d, line, withAddress) {
   box.replaceChildren(el('div', 'tot', line));
   if (!d.visits.length) { box.append(el('div', 'hint', 'No visits recorded here yet.')); return; }
   const list = el('div');
-  const show = n => { list.replaceChildren(...d.visits.slice(0, n).map(visitRow)); };
+  const show = n => { list.replaceChildren(...d.visits.slice(0, n).map(v => visitRow(v, withAddress))); };
   show(10);
   box.append(list);
   if (d.visits.length > 10) {
@@ -111,12 +153,12 @@ function stationRow(g) {
   return wrap;
 }
 
-function row(p) {
+function row(p, inGroup) {
   const wrap = el('div', 'place');
   const head = el('div', 'head');
   const body = el('div', 'body');
-  body.append(el('div', 'n', p.name),
-    el('div', 'm', [p.address, p.kind === 'client' ? p.times_confirmed + ' visit' + (p.times_confirmed === 1 ? '' : 's') : '',
+  body.append(el('div', 'n', inGroup ? '📍 ' + (p.address || 'No address saved') : p.name),
+    el('div', 'm', [inGroup ? '' : p.address, p.kind === 'client' ? p.times_confirmed + ' visit' + (p.times_confirmed === 1 ? '' : 's') : '',
       p.default_status === 'Personal' ? 'pre-marked Personal' : ''].filter(Boolean).join(' · ')));
   head.append(body, el('span', 'chip ' + p.kind, KIND[p.kind] || p.kind));
   const edit = el('div', 'edit'); edit.hidden = !open.has(p.id);

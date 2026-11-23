@@ -1403,26 +1403,56 @@ def _visit(conn, cfg, r, site_kind=""):
             "url": f"/day/{r['date']}?stop={r['id']}"}
 
 
-def place_history(conn, cfg, site_id, limit=200):
-    """Every stop at a saved place, newest first, with totals. Linked stops, plus same-name stops nearby."""
-    site = known.get_site(conn, site_id)
-    name = (site["name"] or "").strip().lower()
-    rows = []
-    for r in conn.execute("SELECT * FROM stops WHERE COALESCE(kind,'stop')='stop' AND "
-                          "(known_site_id=? OR lower(trim(COALESCE(business_name,'')))=?) "
-                          "ORDER BY date DESC, arrive_utc DESC", (site_id, name)):
-        if r["known_site_id"] != site_id:
-            if r["known_site_id"] or site["lat"] is None or r["lat"] is None or \
-                    haversine_m(r["lat"], r["lon"], site["lat"], site["lon"]) > SAME_NAME_NEAR_M:
+def _site_rows(conn, sites):
+    """Stops at any of these saved places: linked ones, plus unlinked stops with the same name within 300 m."""
+    ids = {x["id"] for x in sites}
+    names = {(x["name"] or "").strip().lower() for x in sites}
+    rows, seen = [], set()
+    q = ("SELECT * FROM stops WHERE COALESCE(kind,'stop')='stop' AND (known_site_id IN (%s) OR "
+         "lower(trim(COALESCE(business_name,''))) IN (%s)) ORDER BY date DESC, arrive_utc DESC"
+         % (",".join("?" * len(ids)), ",".join("?" * len(names))))
+    for r in conn.execute(q, (*ids, *names)):
+        if r["id"] in seen:
+            continue
+        if r["known_site_id"] not in ids:
+            if r["known_site_id"] or r["lat"] is None or not any(
+                    x["lat"] is not None and haversine_m(r["lat"], r["lon"], x["lat"], x["lon"]) <= SAME_NAME_NEAR_M
+                    for x in sites):
                 continue
+        seen.add(r["id"])
         rows.append(r)
-    visits = [_visit(conn, cfg, r, site["kind"] or "") for r in rows[:limit]]
+    return rows
+
+
+def _history(conn, cfg, sites, limit):
+    by_id = {x["id"]: x for x in sites}
+    rows = _site_rows(conn, sites)
+    visits = []
+    for r in rows[:limit]:
+        site = by_id.get(r["known_site_id"])
+        v = _visit(conn, cfg, r, (site["kind"] if site else sites[0]["kind"]) or "")
+        v["address"] = (r["address"] or (site["address"] if site else "") or "").strip()
+        visits.append(v)
     work = [v for v in visits if v["status"] == "Confirmed" or v["stop_type"] == "gas"]
-    return {"place": known.site_dict(site), "visits": visits,
-            "totals": {"visits": len(rows), "finished": len(work),
-                       "minutes": sum(v["minutes"] for v in work),
-                       "last": visits[0]["date"] if visits else None,
-                       "first": visits[-1]["date"] if visits else None}}
+    return visits, {"visits": len(rows), "finished": len(work), "minutes": sum(v["minutes"] for v in work),
+                    "last": visits[0]["date"] if visits else None, "first": visits[-1]["date"] if visits else None}
+
+
+def place_history(conn, cfg, site_id, limit=200):
+    """Every stop at one saved place, newest first, with totals."""
+    site = known.get_site(conn, site_id)
+    visits, totals = _history(conn, cfg, [site], limit)
+    return {"place": known.site_dict(site), "visits": visits, "totals": totals}
+
+
+def group_history(conn, cfg, name, limit=200):
+    """All places with this name (a vendor's branches, a customer's old and new address): every visit, newest first,
+    each with its address, plus the places themselves."""
+    sites = conn.execute("SELECT * FROM known_sites WHERE lower(trim(name))=lower(trim(?)) ORDER BY id", (name,)).fetchall()
+    if not sites:
+        raise EditError("No saved place has that name.")
+    visits, totals = _history(conn, cfg, sites, limit)
+    return {"name": sites[0]["name"], "places": [known.site_dict(x) for x in sites], "visits": visits, "totals": totals}
 
 
 def _gas_rows(conn):

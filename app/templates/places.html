@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
 <style>
   .place { border-bottom:1px solid var(--line); }
+  .place .place { margin-left:10px; border-bottom:none; border-top:1px solid var(--line); }
   .head { display:flex; gap:10px; align-items:center; padding:12px 4px; min-height:56px; cursor:pointer; }
   .head .body { flex:1; min-width:0; }
   .head .n { font-weight:600; }
