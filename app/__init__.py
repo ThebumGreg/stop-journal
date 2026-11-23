@@ -204,6 +204,21 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return download(pdf.render(rep, lambda pid: photos.get(conn, cfg.data_dir, pid)), "application/pdf", rep, "pdf")
         return with_conn(go)
 
+    @app.get("/api/export.view")
+    def export_view():
+        """The PDF's pages as pictures in one HTML page (the iPhone Home Screen viewer: iOS shows only page 1 of a PDF there)."""
+        def go(conn, cfg):
+            from . import pdfview
+            rep = build_report(conn, cfg)
+            body = pdf.render(rep, lambda pid: photos.get(conn, cfg.data_dir, pid))
+            a, b = rep["date_from"], rep["date_to"]
+            try:
+                page = pdfview.html_page(body, f"JobHub Daily Summary {a}" + ("" if a == b else f" to {b}"))
+            except pdfview.ViewError as e:
+                return Response(f"<p style='font:16px sans-serif;padding:16px'>{e}</p>", mimetype="text/html", status=500)
+            return Response(page, mimetype="text/html")
+        return with_conn(go)
+
     @app.get("/api/export.zip")
     def export_zip():
         """The PDF, its JSON twin and every picture in the report, filed as photos/YYYY/MM/DD/<name>.jpg

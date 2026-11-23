@@ -370,10 +370,12 @@ stop departed 12:21, and listed billable parts with no cost.
   out on purpose, and notes for absent sections are dropped. `/api/export/check` ignores omit. Export page "Include" ticks
   are remembered per phone.
 - **Home Screen mode**: links with `data-file` (exports, debug, parts CSV, backups) go through `static/share.js`: a tap opens a
-  panel with **View here** (PDFs: an in-page iframe viewer with Share and Close; iOS draws only the PDF's first page
-  in an iframe) and **Share / Save to Files** (the file is fetched while the panel is open; iOS needs a fresh tap). There is no
-  Open in Safari: window.open stays inside the app (manifest scope `/`) and iOS rejects `x-safari-https://` from a Home Screen
-  app. `/api/file-token` and the `ft=` gate remain but the page no longer uses them.
+  panel with **View here** (PDFs: an in-page viewer with Share and Close showing `/api/export.view`: every PDF page
+  rendered to a PNG by `app/pdfview.py` with `pypdfium2`, stacked in one HTML page, max 60 pages; iOS draws only page 1 of a PDF
+  in a Home Screen app), **Share / Save to Files** (only on https: iOS has no Web Share on plain http; the file is fetched while
+  the panel is open) and **Copy link for Safari** (the URL with `ft=`, the 10-minute download token, to paste into Safari). There is
+  no Open in Safari: window.open stays inside the app (manifest scope `/`) and iOS rejects `x-safari-https://` there.
+  Plan: serve JobHub over https (Tailscale serve or a reverse proxy) so Share works in the app.
 - **Gas station detection** (`service.check_fuel_stops`, `stops.fuel_check` NULL/0/1): on day load and when auto-sync adds data,
   up to 4 short (≤ 30 min), untyped, unnamed Draft stops not on a saved place get one OSM lookup each (60 m; `amenity=fuel` wins
   over a shop tag in `osm._category`). A hit sets `gas_hint`; the card asks "⛽ At a gas station. What was it?" with Fill-up
