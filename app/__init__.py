@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import ai, equipment, kits, logs, mailer, photos, receipts, summary, vendors
+from . import ai, equipment, kits, logs, mailer, photos, receipt_inbox, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .geo import haversine_m
@@ -707,6 +707,56 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     @app.post("/api/tool-files/<int:fid>/dismiss-read")
     def tools_file_dismiss(fid):
         return catalog(lambda conn: equipment.dismiss_read(conn, fid))
+
+    # ---- Add stops from receipts (Truck → Receipts) ---------------------------------
+    rlog = logs.get("receipts")
+
+    @app.get("/api/receipts/inbox")
+    def receipt_inbox_list():
+        return with_conn(lambda conn, cfg: jsonify(items=receipt_inbox.listing(conn, cfg),
+                                                   ready=bool(cfg.anthropic_key)))
+
+    @app.post("/api/receipts/inbox")
+    def receipt_inbox_add():
+        f = request.files.get("file")
+
+        def go(conn, cfg):
+            it = receipt_inbox.add(conn, cfg, f.read() if f else b"")
+            rlog.info("receipt %s added to the inbox (%s)", it["id"], "read" if not it["error"] else "not read")
+            return jsonify(item=it)
+        return with_conn(go)
+
+    @app.get("/api/receipts/inbox/<int:iid>.jpg")
+    def receipt_inbox_image(iid):
+        def go(conn, cfg):
+            return Response(receipt_inbox.image(cfg, receipt_inbox._row(conn, iid)), mimetype="image/jpeg",
+                            headers={"Cache-Control": "private, max-age=86400"})
+        return with_conn(go)
+
+    @app.post("/api/receipts/inbox/<int:iid>/read")
+    def receipt_inbox_read(iid):
+        return with_conn(lambda conn, cfg: jsonify(item=receipt_inbox.read_again(conn, cfg, iid)))
+
+    @app.post("/api/receipts/inbox/<int:iid>/apply")
+    def receipt_inbox_apply(iid):
+        def go(conn, cfg):
+            b = request.get_json(silent=True) or {}
+            date = receipt_inbox.apply(conn, cfg, iid, b, ensure_day)
+            rlog.info("receipt %s added as a %s stop on %s", iid, b.get("type"), date)
+            return jsonify(item=receipt_inbox.item(conn, cfg, receipt_inbox._row(conn, iid)))
+        return with_conn(go)
+
+    @app.post("/api/receipts/inbox/<int:iid>/skip")
+    def receipt_inbox_skip(iid):
+        return with_conn(lambda conn, cfg: (receipt_inbox.skip(conn, iid), jsonify(ok=True))[1])
+
+    @app.delete("/api/receipts/inbox/<int:iid>")
+    def receipt_inbox_delete(iid):
+        return with_conn(lambda conn, cfg: (receipt_inbox.delete(conn, cfg, iid), jsonify(ok=True))[1])
+
+    @app.get("/api/receipts/jobs")
+    def receipt_jobs():
+        return with_conn(lambda conn, cfg: jsonify(jobs=receipt_inbox.jobs_near(conn, cfg, request.args.get("date", ""))))
 
     @app.get("/api/tool-files/<int:fid>.jpg")
     def tools_file_get(fid):

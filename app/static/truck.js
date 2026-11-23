@@ -118,7 +118,8 @@ function route() {
   document.querySelectorAll('#subnav a').forEach(a => a.classList.toggle('on', a.dataset.v === tab));
   view.replaceChildren(el('div', 'hint', 'Loading…'));
   const show = m ? partPage(+m[1]) : vm ? vendorPage(decodeURIComponent(vm[1])) : km ? kitPage(km[1]) : tm ? toolPage(tm[1])
-    : ({parts: partsView, stock: stockView, vendors: vendorsView, kits: kitsView, tools: toolsView, fuel: () => fuelView('month'), data: dataView}[tab] || partsView)();
+    : ({parts: partsView, stock: stockView, vendors: vendorsView, kits: kitsView, tools: toolsView, fuel: () => fuelView('month'),
+        receipts: receiptsView, data: dataView}[tab] || partsView)();
   Promise.resolve(show).catch(e => { view.replaceChildren(el('div', 'err', e.message)); });
 }
 window.addEventListener('hashchange', route);
@@ -1031,3 +1032,205 @@ function dataView() {
 }
 
 route();
+
+// ---- Receipts: add past gas and vendor stops from receipt photos (#receipts) ------------------------------
+// Each photo is read once by Claude (store, date, time, total, items). Nothing is added until "Add to JobHub";
+// each store item is handled its own way: truck stock, used on a job, expense, or skip.
+const RECEIPT_ACTIONS = [['stock', 'Truck stock'], ['job', 'Used on a job'], ['expense', 'Expense'], ['skip', 'Skip']];
+const jobsCache = {};
+async function jobsFor(date) {
+  if (!jobsCache[date]) jobsCache[date] = api('GET', '/api/receipts/jobs?date=' + encodeURIComponent(date || '')).then(r => r.jobs);
+  return jobsCache[date];
+}
+
+async function receiptsView() {
+  const [d] = await Promise.all([api('GET', '/api/receipts/inbox'), PARTS.length ? null : loadParts()]);
+  const wrap = el('div');
+  wrap.append(el('div', 'hint', 'Photos of past gas and store receipts become stops on their day, with the receipt attached. ' +
+    'Each photo is read by Claude (about 2–3¢). Nothing is added until you check it and tap Add to JobHub.'));
+  if (!d.ready) {
+    const a = el('a', null, 'Settings → AI'); a.href = '/settings';
+    const m = el('div', 'err'); m.append('Reading receipts needs the Anthropic API key: add it in ', a, '.');
+    wrap.append(m); view.replaceChildren(wrap); return;
+  }
+  const file = el('input'); file.type = 'file'; file.accept = 'image/*'; file.multiple = true; file.hidden = true;
+  const pickBtn = el('button', 'primary', '+ Add receipt photos'); pickBtn.type = 'button'; pickBtn.onclick = () => file.click();
+  const prog = el('div', 'hint');
+  file.onchange = async () => {
+    const files = [...file.files];
+    if (!files.length) return;
+    pickBtn.disabled = true;
+    const fails = [];
+    for (let i = 0; i < files.length; i++) {
+      prog.textContent = 'Reading ' + (i + 1) + ' of ' + files.length + '…';
+      try {
+        const fd = new FormData(); fd.append('file', await shrinkImage(files[i]), 'receipt.jpg');
+        await api('POST', '/api/receipts/inbox', fd, fd);
+      } catch (e) { fails.push((files[i].name || 'photo ' + (i + 1)) + ': ' + e.message); }
+    }
+    pickBtn.disabled = false;
+    await receiptsView();
+    if (fails.length) view.prepend(el('div', 'err', 'Not added: ' + fails.join('; ')));
+  };
+  wrap.append(el('div', 'row'), file, pickBtn, prog);
+  const pending = d.items.filter(x => x.status === 'new'), rest = d.items.filter(x => x.status !== 'new');
+  wrap.append(el('h3', null, pending.length ? pending.length + ' to check' : 'Nothing to check'));
+  pending.forEach(it => wrap.append(receiptCard(it)));
+  if (rest.length) {
+    const det = el('details', 'card');
+    det.append(el('summary', null, 'Done and skipped (' + rest.length + ')'));
+    rest.forEach(x => {
+      const r = x.read || {}, a = x.applied;
+      const line = el(a ? 'a' : 'div', 'hrow');
+      if (a) line.href = '/day/' + a.date + '?stop=' + a.stop_id;
+      line.append(el('div', null, (x.status === 'done' ? '✓ ' : 'Skipped: ') + (r.store || 'Receipt') + (r.date ? ' · ' + niceDate(r.date) : '') +
+                                 (r.total != null ? ' · ' + money(r.total) : '')),
+                  el('div', 'm', a ? (a.type === 'gas' ? 'Gas stop' : 'Vendor stop') + ' on ' + niceDate(a.date) +
+                                     (a.items.length ? ' · ' + a.items.length + ' item' + (a.items.length === 1 ? '' : 's') : '') : ''));
+      det.append(line);
+    });
+    wrap.append(det);
+  }
+  view.replaceChildren(wrap);
+}
+
+function receiptCard(it) {
+  const card = el('section', 'card rcard');
+  const thumb = el('img', 'rthumb'); thumb.src = it.image; thumb.alt = 'Receipt'; thumb.onclick = () => viewImage(it.image);
+  const err = el('div', 'err');
+  const del = el('button', 'danger', 'Delete'); del.type = 'button';
+  del.onclick = async () => { if (!confirm('Delete this receipt photo from the list?')) return;
+    try { await api('DELETE', '/api/receipts/inbox/' + it.id); card.remove(); } catch (e) { err.textContent = e.message; } };
+  if (it.error || !it.proposal) {
+    const again = el('button', null, 'Read again'); again.type = 'button';
+    again.onclick = async () => { err.textContent = 'Reading…';
+      try { const r = await api('POST', '/api/receipts/inbox/' + it.id + '/read'); card.replaceWith(receiptCard(r.item)); }
+      catch (e) { err.textContent = e.message; } };
+    const acts = el('div', 'row'); acts.append(again, del);
+    card.append(thumb, el('div', 'err', it.error || 'Could not read this receipt.'), acts, err);
+    return card;
+  }
+  const p = it.proposal, rd = it.read;
+  let type = p.type;
+  const inp = (v, ph, mode) => { const i = el('input'); i.value = v == null ? '' : v; if (ph) i.placeholder = ph; if (mode) i.inputMode = mode; return i; };
+  const seg = el('div', 'seg');
+  const gasB = el('button', null, '⛽ Gas'), venB = el('button', null, '🏪 Vendor');
+  [gasB, venB].forEach(b => { b.type = 'button'; seg.append(b); });
+  const store = inp(p.store, 'Store or station');
+  const date = el('input'); date.type = 'date'; date.value = p.date;
+  const tm = el('input'); tm.type = 'time'; tm.value = p.time;
+  const arr = el('input'); arr.type = 'time'; arr.value = p.arrive;
+  const dep = el('input'); dep.type = 'time'; dep.value = p.depart;
+  const match = el('select');
+  const optNew = el('option', null, 'Make a new stop'); optNew.value = ''; match.append(optNew);
+  p.candidates.forEach(c => { const o = el('option', null, 'Use the stop at ' + c.arrive + '–' + c.depart + (c.name ? ' (' + c.name + ')' : '')); o.value = c.id; match.append(o); });
+  match.value = p.stop_id ? String(p.stop_id) : '';
+  const total = inp(rd.total, '0.00', 'decimal');
+  const times = el('div', 'two'); times.append(lab('Arrived', arr), lab('Left', dep));
+  const syncMatch = () => { times.hidden = !!match.value; };
+  match.onchange = syncMatch;
+  const gal = inp(rd.gallons, 'gallons', 'decimal'), odo = inp('', 'optional', 'numeric');
+  const gasBox = el('div', 'two'); gasBox.append(lab('Gallons', gal), lab('Odometer', odo));
+  // store items
+  const itemsBox = el('div');
+  const rows = (it.items || []).map(x => receiptItemRow(x, () => date.value));
+  if (rows.length) {
+    itemsBox.append(el('label', null, 'Items on the receipt'));
+    rows.forEach(r => itemsBox.append(r.el));
+  }
+  const taxBox = el('label', 'chk'), taxC = el('input'); taxC.type = 'checkbox'; taxC.checked = !!rd.tax;
+  taxBox.append(taxC, ' Add the tax ' + (rd.tax ? money(rd.tax) + ' ' : '') + 'as an expense');
+  taxBox.hidden = !rd.tax;
+  const wholeBox = el('label', 'chk'), wholeC = el('input'); wholeC.type = 'checkbox'; wholeC.checked = true;
+  wholeBox.append(wholeC, ' No items were read: add the whole total as an expense');
+  wholeBox.hidden = rows.length > 0;
+  const venBox = el('div'); venBox.append(itemsBox, taxBox, wholeBox);
+  const setType = t => { type = t; gasB.classList.toggle('on', t === 'gas'); venB.classList.toggle('on', t === 'vendor');
+                         gasBox.hidden = t !== 'gas'; venBox.hidden = t !== 'vendor'; };
+  gasB.onclick = () => setType('gas'); venB.onclick = () => setType('vendor');
+  setType(type); syncMatch();
+  const add = el('button', 'primary', 'Add to JobHub'); add.type = 'button';
+  const skip = el('button', null, 'Skip'); skip.type = 'button';
+  skip.onclick = async () => { try { await api('POST', '/api/receipts/inbox/' + it.id + '/skip'); card.remove(); } catch (e) { err.textContent = e.message; } };
+  add.onclick = async () => {
+    err.textContent = '';
+    const body = {type, store: store.value, date: date.value, time: tm.value, arrive: arr.value, depart: dep.value,
+                  stop_id: match.value ? +match.value : null, total: total.value};
+    if (type === 'gas') Object.assign(body, {gallons: gal.value, odometer: odo.value});
+    else Object.assign(body, {items: rows.map(r => r.value()), tax: rd.tax, tax_expense: taxC.checked, whole_as_expense: !rows.length && wholeC.checked});
+    if (!body.stop_id && (!body.arrive || !body.depart)) { err.textContent = 'Give the arrived and left times (or the time on the receipt).'; return; }
+    add.disabled = true;
+    try {
+      const r = await api('POST', '/api/receipts/inbox/' + it.id + '/apply', body);
+      const a = r.item.applied, done = el('a', 'hrow', '');
+      done.href = '/day/' + a.date + '?stop=' + a.stop_id;
+      done.append(el('div', null, '✓ Added: ' + (a.type === 'gas' ? 'Gas' : 'Vendor') + ' stop, ' + store.value + ', ' + niceDate(a.date) + ' ›'));
+      card.replaceChildren(done);
+    } catch (e) { err.textContent = e.message; add.disabled = false; }
+  };
+  tm.onchange = () => {                       // a new receipt time moves a new stop's times with it
+    if (!tm.value || match.value) return;
+    const [h, m] = tm.value.split(':').map(Number), t = h * 60 + m, f = x => String(Math.floor(((x + 1440) % 1440) / 60)).padStart(2, '0') + ':' + String((x + 1440) % 60).padStart(2, '0');
+    arr.value = f(t - (type === 'gas' ? 8 : 20)); dep.value = f(t + 2);
+  };
+  date.onchange = () => rows.forEach(r => r.refreshJobs());
+  const head = el('div', 'rhead'); head.append(thumb, el('div', null, ''));
+  head.lastChild.append(seg, lab('Store', store));
+  const g1 = el('div', 'two'); g1.append(lab('Date', date), lab('Time on receipt', tm));
+  const acts = el('div', 'row'); acts.append(add, skip, del);
+  card.append(head, g1, lab('Stop', match), times, lab('Total', total), gasBox, venBox, acts, err);
+  return card;
+}
+
+function receiptItemRow(x, getDate) {
+  const box = el('div', 'ritem');
+  const name = el('input'); name.value = x.description;
+  const qty = el('input'); qty.value = x.qty; qty.inputMode = 'decimal';
+  const amt = el('input'); amt.value = x.amount == null ? '' : x.amount; amt.inputMode = 'decimal'; amt.placeholder = 'amount';
+  const act = el('select');
+  RECEIPT_ACTIONS.forEach(([v, t]) => { const o = el('option', null, t); o.value = v; act.append(o); });
+  act.value = x.action;
+  let part = x.part;                               // {id, name, unit, pack_size, pack_unit} or null (= a new part)
+  const partLine = el('div', 'hint');
+  const packC = el('input'); packC.type = 'checkbox'; packC.checked = !!x.packs;
+  const packL = el('label', 'chk'); packL.append(packC, '');
+  const showPack = () => {
+    const ok = part && part.pack_size;
+    packL.hidden = !ok;
+    if (ok) packL.lastChild.textContent = ' The receipt counts ' + (part.pack_unit || 'pack') + 's (' + part.pack_size + ' ' +
+      part.unit + ' each): ' + (Number(qty.value) || 0) + ' = ' + Math.round((Number(qty.value) || 0) * part.pack_size * 1000) / 1000 + ' ' + part.unit;
+  };
+  const partIn = el('input'); partIn.placeholder = 'Search your parts (blank = new part with this name)';
+  const showPart = () => { partLine.textContent = part ? 'Part: ' + part.name + (x.sku ? ' · receipt #' + x.sku : '') : 'New part: “' + name.value + '”'; showPack(); };
+  const partBox = el('div'); partBox.append(partLine, packL, partIn);
+  liveSearch(partIn, () => PARTS.filter(p => p.kind !== 'expense'), p => {
+    part = {id: p.id, name: p.name, unit: p.unit, pack_size: p.pack_size, pack_unit: p.pack_unit};
+    packC.checked = !!(p.pack_size && x.unit_price != null && p.last_cost && Math.abs(x.unit_price - p.last_cost * p.pack_size) < Math.abs(x.unit_price - p.last_cost));
+    partIn.value = ''; showPart(); });
+  partIn.addEventListener('input', () => { if (!partIn.value.trim()) { /* keep the current choice */ } });
+  const clear = el('button', null, 'New part instead'); clear.type = 'button'; clear.onclick = () => { part = null; showPart(); };
+  partBox.append(clear);
+  const job = el('select');
+  const jobBox = lab('Used on job', job);
+  async function refreshJobs() {
+    const keep = job.value;
+    job.replaceChildren(el('option', null, 'Loading jobs…'));
+    try {
+      const jobs = await jobsFor(getDate());
+      job.replaceChildren();
+      const none = el('option', null, jobs.length ? 'Pick the job…' : 'No jobs within 60 days'); none.value = ''; job.append(none);
+      jobs.forEach(j => { const o = el('option', null, niceDate(j.date) + ' ' + j.arrive + ' · ' + j.name + (j.ticket ? ' · #' + j.ticket : '')); o.value = j.id; job.append(o); });
+      job.value = keep;
+    } catch (e) { job.replaceChildren(el('option', null, e.message)); }
+  }
+  const sync = () => { partBox.hidden = !['stock', 'job'].includes(act.value); jobBox.hidden = act.value !== 'job';
+                       box.classList.toggle('skip', act.value === 'skip'); if (act.value === 'job' && !job.options.length) refreshJobs(); };
+  act.onchange = sync; name.oninput = showPart; qty.oninput = showPack;
+  const line = el('div', 'rline'); line.append(lab('Qty', qty), lab('Amount', amt), lab('This item is', act));
+  box.append(name, line, partBox, jobBox);
+  showPart(); sync();
+  return {el: box, refreshJobs,
+          value: () => ({action: act.value, name: name.value, sku: x.sku || '', qty: qty.value, amount: amt.value,
+                         packs: !!(part && part.pack_size && packC.checked),
+                         part_id: part ? part.id : null, job_stop_id: job.value ? +job.value : null})};
+}

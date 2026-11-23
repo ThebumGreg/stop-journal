@@ -677,3 +677,19 @@ D. Later / parked
   "Something went wrong (error <code>)…" (JSON for /api and non-GET). Events (counts only, no names or places): start-up summary,
   sync (`jobhub.sync`), alerts sent, report emails (subject = dates), calendar invites, backups, parts/places imports, receipt
   reads, AI polish. `GET /settings/log[?n=&download=1]` (text) behind the login; Settings → General → Log has View / Download.
+
+## Add stops from receipts (Truck → Receipts, 2026-11-23)
+- For catching up past gas and vendor stops (the user has no GPS for those days). `app/receipt_inbox.py`, table
+  `receipt_inbox` (path under photos/inbox/, read_json, status new|done|skipped, stop_id, applied_json). Upload one photo per
+  request (`POST /api/receipts/inbox`), always read with the Claude reader (needs ANTHROPIC key; counts against the receipt cap);
+  the reader now also returns `time` (HH:MM). `GET /api/receipts/inbox` items carry a `proposal` (gas when fuel; arrive/depart from
+  the receipt time: gas -8/+2 min, vendor -20/+2; candidates = that day's untyped/gas/vendor stops within -15/+45 min, one = picked)
+  and `items` with a guessed catalog part (sku / vendor_item / similar name), a default action (stock if matched, else expense) and
+  `packs` (price nearer our cost x pack size: the receipt counts sticks/boxes, converted to stock units on apply).
+- `POST /api/receipts/inbox/<id>/apply`: validates everything first, then makes a manual stop (or types an existing one), sets
+  `stops.from_receipt`, Gas → fuel (total, gallons, odometer); Vendor → per item: stock (`parts.adjust` with paid, dated the receipt
+  day via `ts`), job (purchase logged, tracked parts stocked then used; billable part on the chosen job stop, `/api/receipts/jobs`
+  = job stops within 60 days), expense ("Store purchase" expense line, item in `notes`), skip; tax as an expense line (option);
+  no items → whole total as one expense (option); vendor stops are finished (Confirmed). The receipt is attached to the stop
+  (read_json dismissed). Skip / Delete / Read again. Report: `added_from_receipt` on stops and fuel; expenses carry `notes`
+  (PDF and records_to_update show them); PDF stop block "Source: Added from a receipt".

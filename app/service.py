@@ -854,8 +854,9 @@ def add_manual(conn, cfg, date, f):
     sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     if f.get("stop_type"):
         patch_stop(conn, cfg, sid, {"stop_type": f["stop_type"]})
-        return
+        return sid
     _finish(conn, cfg, date)
+    return sid
 
 
 def split_stop(conn, cfg, sid, at):
@@ -1283,7 +1284,7 @@ def day_payload(conn, cfg, date, include_path=False):
         "vendor_hint": site_kind.get(r["known_site_id"]) in (None, "client") and _looks_like_vendor(r, vendor_names),
         "parts": used.get(r["id"], []), "follow_ups": fups.get(r["id"], []),
         "work_category": r["work_category"] or "", "ticket": r["ticket"] or "", "qbo_estimate": r["qbo_estimate"] or "",
-        "ticket_action": r["ticket_action"] or "",
+        "ticket_action": r["ticket_action"] or "", "from_receipt": bool(r["from_receipt"]),
         # a visit after one that ended "return visit" / "waiting" is most likely the same job
         "ticket_action_default": "" if r["ticket_action"] or r["ticket"] or r["status"] in OFF_CLOCK + ("Traffic",) else (
             "continue" if previous_result(conn, r["id"], r["business_name"], r["known_site_id"], r["date"])

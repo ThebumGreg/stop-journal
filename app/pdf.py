@@ -253,7 +253,7 @@ def _money(v):
 
 
 def _expenses_table(items, st):
-    rows = [[_p(e["name"], st["small"]), _p(f"{e['quantity']:g}", st["small"]), _p(_money(e["unit_cost"]), st["small"]),
+    rows = [[_p(e["name"] + (f" ({e['notes']})" if e.get("notes") else ""), st["small"]), _p(f"{e['quantity']:g}", st["small"]), _p(_money(e["unit_cost"]), st["small"]),
              _p(_money(e["line_cost"]), st["small"]), _p("yes" if e["billable"] else "no", st["small"])] for e in items]
     total = sum(e["line_cost"] or 0 for e in items)
     rows.append([Paragraph("Total", st["th"]), _p("", st["small"]), _p("", st["small"]),
@@ -313,6 +313,8 @@ def _stop_block(s, st):
         "(no GPS data)" if s["latitude"] is None else f"{s['latitude']:.6f}, {s['longitude']:.6f}")
     rows = [("Stop number", str(s["stop_number"])), ("Business name", s["business_name"]),
             ("Address", s["address"])]
+    if s.get("added_from_receipt"):
+        rows.append(("Source", "Added from a receipt (no GPS for this stop; times from the receipt)"))
     if s["place_type"]:
         rows.append(("Place type", s["place_type"]))
     lunch = s.get("lunch_non_billable") or []

@@ -87,10 +87,16 @@ def claude(cfg, jpeg, session=None):
         items.append({"description": desc, "sku": str(it.get("sku") or "").strip()[:40], "qty": qty or 1,
                       "unit_price": unit, "amount": amount})
     date = str(d.get("date") or "").strip()
+    tm = str(d.get("time") or "").strip()
+    if re.match(r"^\d{1,2}:\d{2}$", tm) and int(tm.split(":")[0]) < 24 and int(tm.split(":")[1]) < 60:
+        tm = f"{int(tm.split(':')[0]):02d}:{tm.split(':')[1]}"
+    else:
+        tm = ""
     return {"fields": {
         "total": total, "gallons": gallons, "price_per_gallon": ppg,
         "checks": bool(total and gallons and ppg and abs(gallons * ppg - total) <= max(0.02 * total, 0.05)),
         "store": str(d.get("store") or "").strip()[:80], "date": date if re.match(r"^\d{4}-\d{2}-\d{2}$", date) else "",
+        "time": tm,
         "tax": num(d.get("tax")), "items": items}}
 
 

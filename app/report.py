@@ -43,7 +43,7 @@ def _place_type(category):
 def _part(p):
     return {"name": p["name"], "part_number": p["sku"], "quantity": p["qty"], "unit": p["unit"],
             "unit_cost": p["unit_cost"], "line_cost": p["line_cost"], "billable": p["billable"],
-            "qbo_item": p.get("qbo_item") or ""}
+            "qbo_item": p.get("qbo_item") or "", "notes": p.get("notes") or ""}
 
 
 TICKET_ACTIONS = {"continue": "continue", "new": "create", "unsure": "find"}
@@ -250,6 +250,7 @@ def build_day(payload, cfg):
         out_stops.append({
             "stop_number": len(out_stops) + 1,
             "stop_uid": s.get("uid") or "",
+            "added_from_receipt": bool(s.get("from_receipt")),
             "business_name": s["business_name"], "address": s["address"],
             "place_type": _place_type(s["category"]),
             "latitude": s["lat"], "longitude": s["lon"],
@@ -320,6 +321,7 @@ def build_day(payload, cfg):
                          "label": f"{'Receipt' if p['kind'] == 'receipt' else 'Photo'}: {where}" +
                                   (f". {p['caption']}" if p["caption"] else "")})
     fuel = [{"arrival": s["arrive"], "departure": s["depart"], "station": s["business_name"] or "",
+             "added_from_receipt": bool(s.get("from_receipt")),
              **{k: (s.get("fuel") or {}).get(k) for k in ("gallons", "total", "price_per_gallon", "odometer")}}
             for s in stops if s.get("stop_type") == "gas" and s["status"] == "Traffic"]
     return {"date": payload["date"], "report_key": payload["date"],
@@ -366,7 +368,8 @@ def records_to_update(days, technician=None):
                          "time_on_site_minutes": s["time_on_site_minutes"],
                          "technician_email": (technician or {}).get("email", ""),
                          "consumables_used": [_line_text(p) for p in s.get("consumables_used") or []],
-                         "expenses": [p["name"] + (f" ${p['line_cost']:.2f}" if p["line_cost"] is not None else "")
+                         "expenses": [p["name"] + (f" ({p['notes']})" if p.get("notes") else "")
+                                      + (f" ${p['line_cost']:.2f}" if p["line_cost"] is not None else "")
                                       for p in s.get("expenses") or []],
                          "photo_attachments": [att[i] for i in s.get("photos") or [] if i in att]})
     return rows

@@ -110,7 +110,7 @@ def polish(conn, cfg, text, client=None):
 # ---- receipt reader (Settings → Receipts → claude) -----------------------------------------------
 RECEIPT_SYSTEM = """You read photos of purchase receipts for a field service technician (fuel, hardware and supply stores, \
 tool purchases). Extract exactly what is printed. Use null for anything not on the receipt or not readable; never \
-guess a number. Amounts are in the receipt's currency without symbols. Dates as YYYY-MM-DD. For fuel receipts give \
+guess a number. Amounts are in the receipt's currency without symbols. Dates as YYYY-MM-DD; the time of the sale as HH:MM in 24-hour time (null if not printed). For fuel receipts give \
 gallons and price per gallon as printed. Items: one entry per purchased line (not subtotal, tax, payment or change \
 lines), at most 30."""
 
@@ -120,6 +120,7 @@ RECEIPT_SCHEMA = {
     "properties": {
         "store": {"type": ["string", "null"]},
         "date": {"type": ["string", "null"]},
+        "time": {"type": ["string", "null"]},
         "total": _num, "tax": _num, "gallons": _num, "price_per_gallon": _num,
         "is_fuel": {"type": "boolean"},
         "items": {"type": "array", "items": {
@@ -129,7 +130,7 @@ RECEIPT_SCHEMA = {
             "required": ["description", "sku", "qty", "unit_price", "amount"],
             "additionalProperties": False}},
     },
-    "required": ["store", "date", "total", "tax", "gallons", "price_per_gallon", "is_fuel", "items"],
+    "required": ["store", "date", "time", "total", "tax", "gallons", "price_per_gallon", "is_fuel", "items"],
     "additionalProperties": False,
 }
 

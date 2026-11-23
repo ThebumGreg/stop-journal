@@ -42,6 +42,14 @@
   .live-hit .n { display:block; font-weight:600; } .live-hit .m { display:block; font-size:13px; color:var(--muted); }
     .thumbs { display:flex; gap:8px; flex-wrap:wrap; }
   .thumbs .th { position:relative; }
+  .rcard .rhead { display:grid; grid-template-columns:88px 1fr; gap:10px; align-items:start; }
+  .rthumb { width:88px; height:120px; object-fit:cover; border-radius:8px; border:1px solid var(--line); cursor:zoom-in; }
+  .rcard .seg { display:flex; margin-bottom:6px; } .rcard .seg button { flex:1; }
+  .rcard .seg button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .ritem { border-top:1px solid var(--line); padding:8px 0; display:grid; gap:6px; }
+  .ritem.skip > *:not(.rline) { opacity:.5; }
+  .rline { display:grid; grid-template-columns:64px 90px 1fr; gap:6px; }
+  .rline input, .rline select { width:100%; }
   .thumbs img { width:84px; height:84px; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
   .thumbs .k { position:absolute; left:4px; bottom:4px; font-size:11px; background:rgba(0,0,0,.6); color:#fff; padding:0 4px; border-radius:4px; }
   .thumbs .x { position:absolute; right:-6px; top:-6px; min-height:0; padding:0 6px; border-radius:50%; }
@@ -67,6 +75,7 @@
     <a href="#kits" data-v="kits">Kits</a>
     <a href="#tools" data-v="tools">Tools</a>
     <a href="#fuel" data-v="fuel">Fuel</a>
+    <a href="#receipts" data-v="receipts">Receipts</a>
     <a href="#data" data-v="data">Import / export</a>
   </nav>
   <div id="view"></div>

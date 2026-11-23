@@ -316,7 +316,7 @@ def move(conn, part, delta, reason, sp_id=None, note=""):
     _log(conn, part["id"], delta, reason, sp_id, note)
 
 
-def adjust(conn, pid, delta=None, set_to=None, note="", packs=None, paid=None, vendor=""):
+def adjust(conn, pid, delta=None, set_to=None, note="", packs=None, paid=None, vendor="", ts=None):
     """Change stock. When stock is added with `paid` (the total for what was added), it is a purchase."""
     p = get_part(conn, pid)
     packs = _num(packs, "Packs")
@@ -338,17 +338,17 @@ def adjust(conn, pid, delta=None, set_to=None, note="", packs=None, paid=None, v
         vendor = _text(vendor, "Vendor", 80) or p["vendor"] or ""
         note = note or ("Bought at " + vendor if vendor else "Bought")
         move(conn, get_part(conn, pid), delta, "bought", note=_text(note, "Note", 200))
-        record_purchase(conn, p, delta, paid, vendor, note)
+        record_purchase(conn, p, delta, paid, vendor, note, ts=ts)
     else:
         move(conn, get_part(conn, pid), delta, reason, note=_text(note, "Note", 200))
     conn.commit()
 
 
-def record_purchase(conn, p, qty, total, vendor="", note=""):
+def record_purchase(conn, p, qty, total, vendor="", note="", ts=None):
     """One line of the purchase log. The part's last_cost becomes what was paid per unit (its Unit cost, the price in
     reports, is left alone)."""
     conn.execute("INSERT INTO purchases(part_id, ts, vendor, qty, total, note) VALUES (?,?,?,?,?,?)",
-                 (p["id"], int(time.time()), vendor or None, qty, total, note or None))
+                 (p["id"], int(ts or time.time()), vendor or None, qty, total, note or None))
     if total is not None and qty:
         conn.execute("UPDATE parts SET last_cost=? WHERE id=?", (round(total / qty, 4), p["id"]))
 

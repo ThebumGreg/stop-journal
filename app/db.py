@@ -248,6 +248,16 @@ CREATE TABLE IF NOT EXISTS cal_sync_log (
   day TEXT NOT NULL, ts INTEGER NOT NULL, stop_id INTEGER, method TEXT
 );
 
+CREATE TABLE IF NOT EXISTS receipt_inbox (
+  id INTEGER PRIMARY KEY,
+  created INTEGER NOT NULL,
+  path TEXT,
+  read_json TEXT,
+  status TEXT NOT NULL DEFAULT 'new',
+  stop_id INTEGER,
+  applied_json TEXT
+);
+
 CREATE TABLE IF NOT EXISTS trips (
   id INTEGER PRIMARY KEY,
   site_id INTEGER NOT NULL,
@@ -311,6 +321,7 @@ MIGRATIONS = [
     ("parts", "vendor_item", "TEXT"),
     ("parts", "qbo_item", "TEXT"),
     ("stops", "ticket_action", "TEXT"),
+    ("stops", "from_receipt", "INTEGER DEFAULT 0"),
 ]
 
 
