@@ -266,7 +266,7 @@ function partsBlock(s, err) {
 
 // A part that is not in the catalog yet: ask what it is counted in and what it costs, so the report is never blank.
 const UNITS = [['ea', 'Each'], ['pair', 'Pair'], ['pack', 'Pack'], ['box', 'Box'], ['bag', 'Bag'], ['case', 'Case'],
-               ['roll', 'Roll'], ['ft', 'Foot'], ['gal', 'Gallon'], ['lb', 'Pound']];
+               ['roll', 'Roll'], ['ft', 'Foot'], ['gal', 'Gallon'], ['lb', 'Pound'], ['stick', 'Stick']];
 function newPartForm(box, name, qty, s, err) {
   box.replaceChildren(el('div', 'hint', '“' + name + '” is not in your parts list yet. It is added there too.'));
   const sku = el('input'); sku.placeholder = 'Part # (optional)';

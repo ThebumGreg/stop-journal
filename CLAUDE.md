@@ -666,3 +666,5 @@ D. Later / parked
   (gps | routed | estimate: how the MILES were found) and `minutes_estimated` (= `estimated`: the MINUTES are a distance
   guess because the phone sent no points). The End Day entry in `excluded` has an empty departure.
 - C3 (lunch default): not changed; the user keeps Lunch is paid = on until management decides.
+- Unit **stick** (aliases sticks, length, lengths) for things sold by the foot but bought in lengths: unit ft, pack_size 6,
+  pack_unit stick (raceway). "+ Add stick (6)" with Paid records the cost per ft.

@@ -68,3 +68,18 @@ def test_vendor_columns_and_cost_never_overwrites_sell_price(tmp_path):
     p = next(x for x in c.get("/api/parts").json["parts"] if x["sku"] == "PL6")
     assert p["unit_cost"] == 0.70 and p["last_cost"] == 0.99 and p["below_cost"]
     assert any("“Cost” was read as what you pay" in n for n in r["notes"])
+
+
+def test_sold_by_the_foot_bought_in_sticks(tmp_path):
+    c = make(tmp_path)
+    r = upload(c, "name,sku,unit,unit_cost,pack_size,pack_unit,vendor_unit_cost\n"
+                  "Raceway 3/4in - White,TSR1W-6A,ft,4.25,6,stick,2.6333\n")
+    assert r["created"] == 1 and not r["errors"]
+    p = next(x for x in c.get("/api/parts").json["parts"] if x["sku"] == "TSR1W-6A")
+    assert (p["unit"], p["pack_size"], p["pack_unit"]) == ("ft", 6, "stick") and not p["below_cost"]
+    assert p["margin_pct"] == 38.0
+    # buying 2 sticks for $31.60 adds 12 ft and records $2.6333 per ft
+    c.patch(f"/api/parts/{p['id']}", json={"tracked": True})
+    c.post(f"/api/parts/{p['id']}/adjust", json={"packs": 2, "paid": 31.60, "vendor": "Discount Low Voltage"})
+    p = next(x for x in c.get("/api/parts").json["parts"] if x["sku"] == "TSR1W-6A")
+    assert p["on_hand"] == 12 and round(p["last_cost"], 4) == 2.6333

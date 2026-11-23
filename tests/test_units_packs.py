@@ -96,4 +96,4 @@ def test_dropdown_choices_come_from_parts_and_vendor_places(tmp_path):
     ch = c.get("/api/parts/choices").json
     assert "Home Depot" in ch["vendors"] and "Ferguson" in ch["vendors"] and "My House" not in ch["vendors"]
     assert ch["categories"] == ["Cabling", "Plumbing"]
-    assert [u["value"] for u in ch["units"]] == ["ea", "pair", "pack", "box", "bag", "case", "roll", "ft", "gal", "lb"]
+    assert [u["value"] for u in ch["units"]] == ["ea", "pair", "pack", "box", "bag", "case", "roll", "ft", "gal", "lb", "stick"]

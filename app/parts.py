@@ -35,10 +35,11 @@ from .errors import EditError
 COLUMNS = ["sku", "name", "type", "unit", "unit_cost", "billable", "category", "vendor", "on_hand",
            "reorder_at", "pack_size", "pack_unit", "shelf", "bin", "vendor_item", "vendor_unit_cost", "qbo_item"]
 UNITS = {"ea": "Each", "pair": "Pair", "pack": "Pack", "box": "Box", "bag": "Bag", "case": "Case",
-         "roll": "Roll", "ft": "Foot", "gal": "Gallon", "lb": "Pound"}
+         "roll": "Roll", "ft": "Foot", "gal": "Gallon", "lb": "Pound", "stick": "Stick"}   # stick: raceway, conduit lengths
 UNIT_WORDS = {"each": "ea", "pc": "ea", "pcs": "ea", "piece": "ea", "pieces": "ea", "feet": "ft", "foot": "ft",
               "bx": "box", "boxes": "box", "bags": "bag", "packs": "pack", "pairs": "pair", "rolls": "roll",
-              "cases": "case", "gallon": "gal", "gallons": "gal", "pound": "lb", "pounds": "lb", "lbs": "lb"}
+              "cases": "case", "gallon": "gal", "gallons": "gal", "pound": "lb", "pounds": "lb", "lbs": "lb",
+              "sticks": "stick", "length": "stick", "lengths": "stick"}
 KINDS = ("part", "consumable", "expense")
 KIND_WORDS = {"part": "part", "parts": "part", "billable": "part", "material": "part",
               "consumable": "consumable", "consumables": "consumable", "supply": "consumable",
