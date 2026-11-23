@@ -257,7 +257,7 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Vendor and Category are dropdowns with "+ New…" (`/api/parts/choices`: vendors = saved vendor Places plus vendors on parts;
   categories = those already used). Stock buttons read "+ Add stock", "− Remove stock", "Set stock count to". The Truck page has a
   Low stock tab and "Show removed items" (with Restore).
-- Action plan for parts, in the order to build (1 and 2 built, 3-7 not yet):
+- Action plan for parts, in the order built (all built):
   1. (built) New-part prompt on the job sheet: typing a part that is not in the catalog asks for unit and cost, so the PDF is never blank there.
   2. (built) Export warning for billable parts with no unit cost (same list as the other export warnings).
   3. (built) Location is two fields: `parts.shelf` ("Shelf 2", "Door"; a datalist of shelves already used) and `parts.bin` ("12").
@@ -425,7 +425,7 @@ stop departed 12:21, and listed billable parts with no cost.
   Vision: DOCUMENT_TEXT_DETECTION, then `receipts.parse` (TOTAL/SALE line not subtotal/tax/change, GAL, PRICE/GAL, fills in the third
   from the other two, `checks` = gallons x price within 2% of the total). The sheet shows "Receipt says …" with **Use these** (gas: PUT
   fuel) or **Add $x as an expense** (other stops: expense "Store purchase"), Ignore (`/dismiss-read`), Try again (`/read`). Never
-  fills anything without a tap. An AI reader (option 3) is a future entry in `receipts.READERS` returning {text, fields}.
+  fills anything without a tap. The AI reader (`claude`) is built: see AI notes.
 - **Home page** (`/`, `app/summary.py`, `GET /api/summary`; the day view moved to `/day` and `/day/<date>`; menu: Home, Day,
   Export, Places, Truck, Settings; the JobHub brand hides under 520 px). Cards: Now (the stop you are at with its needs, else
   driving / place from the live status), Next appointment (first upcoming on-site calendar event, "in 45 min"; drive time from
