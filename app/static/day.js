@@ -472,6 +472,40 @@ function businessFinder(s, nameIn, addrIn, onPick) {
   return find;
 }
 
+// Saved places of the kind that fits the type (Job: clients, Vendor: vendors, Office: offices), nearest first.
+const PLACE_KIND = {job: 'client', vendor: 'vendor', office: 'office'};
+function savedPicker(s, onPick) {
+  const kind = PLACE_KIND[s.stop_type];
+  const box = el('div');
+  if (!kind) return box;
+  const sel = el('select');
+  sel.hidden = true;
+  box.append(sel);
+  api('GET', '/api/places?kind=' + kind).then(d => {
+    const near = p => (s.lat != null && p.lat != null) ? distM(s.lat, s.lon, p.lat, p.lon) : Infinity;
+    const list = d.places.map(p => [p, near(p)]).sort((a, b) => a[1] - b[1]);
+    if (!list.length) return;
+    const first = el('option', null, 'Saved ' + (kind === 'client' ? 'clients' : kind + 's') + ' (' + list.length + ')…');
+    first.value = ''; sel.append(first);
+    list.forEach(([p, m]) => {
+      const far = m === Infinity ? '' : m < 1000 ? ' · ' + Math.round(m) + ' m' : ' · ' + (m / 1609).toFixed(1) + ' mi';
+      const o = el('option', null, p.name + far); o.value = p.id; sel.append(o);
+    });
+    sel.onchange = () => {
+      const hit = list.find(([p]) => String(p.id) === sel.value);
+      sel.value = '';
+      if (hit) onPick(hit[0]);
+    };
+    sel.hidden = false;
+  }, () => {});
+  return box;
+}
+
+function distM(a, b, c, d) {
+  const r = Math.PI / 180, x = (d - b) * r * Math.cos((a + c) / 2 * r), y = (c - a) * r;
+  return Math.sqrt(x * x + y * y) * 6371000;
+}
+
 function openSheet(id) {
   const s = S.stops.find(x => x.id === id);
   if (!s) return;
@@ -510,6 +544,11 @@ function openSheet(id) {
                       known_site_id: c.source === 'known' ? c.known_site_id : null});
     saveSheet();
   });
+  const saved = savedPicker(s, p => {
+    nameIn.value = p.name; addrIn.value = p.address;
+    Object.assign(v, {business_name: p.name, address: p.address, known_site_id: p.id});
+    saveSheet();
+  });
   const arrIn = el('input'); arrIn.type = 'time'; arrIn.value = s.arrive;
   const depIn = el('input'); depIn.type = 'time'; depIn.value = s.depart;
   arrIn.onchange = () => { v.arrive = arrIn.value; saveSheet(); };
@@ -519,7 +558,7 @@ function openSheet(id) {
   sh.here = el('div');
   sec1.append(el('h3', null, '1 · What and where'), sh.types,
               labeled(type === 'vendor' ? 'Vendor' : type === 'gas' ? 'Station' : 'Business', nameIn),
-              labeled('Address', addrIn), find, times, sh.here);
+              labeled('Address', addrIn), saved, find, times, sh.here);
 
   // (2) the work
   const sec2 = el('section', 'sec');

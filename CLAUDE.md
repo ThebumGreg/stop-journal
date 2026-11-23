@@ -313,6 +313,10 @@ stop departed 12:21, and listed billable parts with no cost.
   receipts), 3 Finish (visit result for jobs, due date for a return/waiting follow-up, "Still needed" links that jump to the
   field, **Finish stop**, "Save & close (finish later)", Stop tools). All typed fields autosave (FIELDS include business_name,
   address, category, known_site_id, arrive, depart). Closing always returns to the list on that stop.
+- **Saved places by type**: the sheet has a "Saved clients / vendors / offices (n)…" dropdown (Job = client places, Vendor = vendor,
+  Office = office; nearest first with distance) that fills name, address and `known_site_id`. Picking the Office type fills the
+  nearest saved Office, and Personal fills Home when the stop is within 300 m of it (`service._place_for_type`), only when the stop has
+  no name yet or its name came from a saved place of another kind; a typed name is never replaced.
 - **Finish** `POST /api/stops/<id>/finish {visit_result, due}` (`service.finish_stop`): checks `service.stop_needs` (job:
   business name, category unless last time's can be copied, work performed, visit result; vendor/office: name; gas: total
   paid), adds one follow-up "Return visit" / "Waiting on parts or customer" (owner Me, due) when that is the result, confirms.

@@ -403,6 +403,33 @@ def end_at_home(conn, cfg, date, time_text=None):
     return date
 
 
+# ---- saved place for a picked type ---------------------------------------
+HOME_NEAR_M = 300      # a Personal stop this close to Home is Home
+
+
+def _place_for_type(conn, s, t):
+    """Picking Office fills the saved Office (nearest one); picking Personal at Home fills Home.
+    Only when the stop has no name yet, or its name came from a saved place of another kind."""
+    kind = {"office": "office", "personal": "home"}.get(t)
+    if not kind:
+        return None
+    if (s["business_name"] or "").strip():
+        cur = conn.execute("SELECT kind FROM known_sites WHERE id=?", (s["known_site_id"],)).fetchone() \
+            if s["known_site_id"] else None
+        if not cur or (cur["kind"] or "client") == kind:
+            return None
+    rows = conn.execute("SELECT * FROM known_sites WHERE kind=?", (kind,)).fetchall()
+    if not rows:
+        return None
+    if s["lat"] is None:
+        return rows[0] if len(rows) == 1 and kind == "office" else None
+    dist = lambda r: haversine_m(s["lat"], s["lon"], r["lat"], r["lon"]) if r["lat"] is not None else 1e12
+    best = min(rows, key=dist)
+    if kind == "home" and dist(best) > max(HOME_NEAR_M, best["radius_m"] or 0):
+        return None        # a Personal errand somewhere else stays unnamed
+    return best
+
+
 # ---- one-tap confirm for saved places -----------------------------------
 def suggestion(conn, s):
     """The saved place a Draft stop sits on (or is already filled in from), if any."""
@@ -568,6 +595,9 @@ def patch_stop(conn, cfg, sid, f):
             upd["status"] = TYPE_STATUS[t]
         elif upd.get("status", s["status"]) not in ("Draft", "Confirmed"):
             upd["status"] = "Draft"
+        fill = _place_for_type(conn, s, t) if t != s["stop_type"] and "business_name" not in f else None
+        if fill:
+            upd.update(business_name=fill["name"], address=fill["address"] or "", known_site_id=fill["id"])
     elif "status" in f:           # status set the old way: keep the stored type in step
         new = upd["status"]
         if not _type_fits(s["stop_type"], new):

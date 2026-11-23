@@ -14,7 +14,8 @@ Single user. Your location data stays on your own server.
   only if you enable it) and learns from what you confirm.
 - Per stop: first pick **what the stop is** (Job, Vendor, Office, Gas, Lunch, Personal, Traffic); the card then shows only
   what that type needs, and fields save on their own. Jobs, vendors and office stops have one **Confirm** button that says
-  what is still missing. Business, address, times, drag-to-move pin, **work performed**, **parts used**, **photos and
+  what is still missing. Job and Vendor stops can pick from your saved clients or vendors; choosing Office (or Personal at
+  Home) fills in the saved place. Business, address, times, drag-to-move pin, **work performed**, **parts used**, **photos and
   receipts**. Split, merge, delete, or add a stop by hand.
 - **Gas** stops log gallons, total and odometer (the time at the pump counts as drive time); the Truck page's **Fuel**
   panel shows spend, gallons, average price, MPG and fuel cost per mile.

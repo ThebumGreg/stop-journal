@@ -99,3 +99,23 @@ def test_undo_and_delete_keep_fuel_in_step(tmp_path):
     assert c.get("/api/fuel").json["summary"]["fill_ups"] == 0
     c.post(f"/api/day/{D}/undo")
     assert stops(c)[0]["fuel"]["gallons"] == 9
+
+
+def test_office_and_home_fill_from_saved_places(tmp_path):
+    c = make(tmp_path)
+    ss = stops(c)
+    a, b = ss[0], ss[1]
+    office = c.post("/api/places", json={"name": "Main Office", "address": "1 Office Way",
+                                         "lat": a["lat"] + 0.05, "lon": a["lon"], "kind": "office"}).json
+    c.post("/api/places", json={"name": "Home", "lat": b["lat"] + 0.0005, "lon": b["lon"], "kind": "home"})
+    r = c.patch(f"/api/stops/{a['id']}", json={"stop_type": "office"}).json["stops"]
+    s = next(x for x in r if x["id"] == a["id"])
+    assert (s["business_name"], s["address"], s["known_site_id"]) == ("Main Office", "1 Office Way", office["id"])
+    r = c.patch(f"/api/stops/{b['id']}", json={"stop_type": "personal"}).json["stops"]
+    assert next(x for x in r if x["id"] == b["id"])["business_name"] == "Home"       # ~55 m from Home
+    # a Personal errand far from Home stays unnamed; a typed name is never replaced
+    r = c.patch(f"/api/stops/{a['id']}", json={"stop_type": "job", "business_name": "Acme"}).json["stops"]
+    r = c.patch(f"/api/stops/{a['id']}", json={"stop_type": "office"}).json["stops"]
+    assert next(x for x in r if x["id"] == a["id"])["business_name"] == "Acme"
+    r = c.patch(f"/api/stops/{a['id']}", json={"stop_type": "personal"}).json["stops"]
+    assert next(x for x in r if x["id"] == a["id"])["business_name"] == "Acme"
