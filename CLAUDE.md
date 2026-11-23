@@ -613,3 +613,5 @@ D. Later / parked
   Merge keeps the earlier stop (its uid); split keeps the uid on the first part; re-detect gives each old uid to the new stop
   covering the middle of the old one (like photos). Report: `stop_uid` in `days[].stops[]`, `records_to_update[]`, top-level
   `follow_ups[]`; `follow_up_id` on every follow-up; day `report_key` = the date. Payload stop `uid`.
+- **Technician**: Settings → General → Technician (`TECH_NAME`, `TECH_EMAIL`). Report top-level `technician` {name, email};
+  PDF top section "Technician" row when set; email body `Technician:` line after `Dates:`; export warns (never blocks) when either is blank.

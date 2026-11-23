@@ -376,6 +376,9 @@ def render(report, load_photo=None):
               datetime.fromisoformat(report["date_from"]).strftime("%A, %Y-%m-%d"))
     gen = datetime.fromisoformat(report["generated_at"]).strftime("%Y-%m-%d %H:%M")
     head_rows = [("Period" if multi else "Date", period)]
+    tech = report.get("technician") or {}
+    if tech.get("name") or tech.get("email"):
+        head_rows.append(("Technician", " ".join(x for x in (tech.get("name"), f"({tech['email']})" if tech.get("email") else "") if x)))
 
     def summary_rows(day):
         sm = day["summary"]

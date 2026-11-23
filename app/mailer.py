@@ -86,12 +86,20 @@ def subject_for(rep, version):
     return s + (f" (update {version})" if version > 1 else "")
 
 
+def tech_text(t):
+    """{name, email} -> 'Jane Smith <jane@work.com>' (or whichever is set), '(not set)' when neither."""
+    t = t or {}
+    name, email = (t.get("name") or "").strip(), (t.get("email") or "").strip()
+    return f"{name} <{email}>" if name and email else name or email or "(not set)"
+
+
 def body_for(rep, version, attached, skipped_photos=0):
     a, b = rep["date_from"], rep["date_to"]
     stops = [(d, s) for d in rep["days"] for s in d["stops"]]
     lines = [
         "JobHub Daily Summary",
         "Dates: " + (a if a == b else f"{a} to {b}"),
+        "Technician: " + tech_text(rep.get("technician")),
         f"Version: {version}" + (" (replaces the earlier email for these dates)" if version > 1 else ""),
         f"Confirmed stops: {len(stops)}",
         "Report schema version: " + str(rep.get("schema_version", "1")),

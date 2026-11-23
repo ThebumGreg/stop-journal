@@ -59,6 +59,8 @@ class Config:
     smtp_password: str = ""      # secret (a Gmail App password)
     mail_from: str = ""          # blank = smtp_user
     mail_to: str = ""            # where reports go; blank = email off
+    tech_name: str = ""          # who did the work (report `technician`)
+    tech_email: str = ""
     calendar_invites: str = "off"   # today's stops as invites to mail_to (Settings → Email)
     calendar_invite_min: int = 10
 
@@ -116,6 +118,8 @@ class Config:
             smtp_password=e("SMTP_PASSWORD", "").strip(),
             mail_from=e("MAIL_FROM", "").strip(),
             mail_to=e("MAIL_TO", "").strip(),
+            tech_name=e("TECH_NAME", "").strip(),
+            tech_email=e("TECH_EMAIL", "").strip(),
             calendar_invites=e("CALENDAR_INVITES", "off").strip() or "off",
             calendar_invite_min=_int("CALENDAR_INVITE_MIN", 10),
         )

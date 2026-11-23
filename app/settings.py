@@ -175,6 +175,12 @@ SPEC += [
     ]),
 ]
 SPEC += [
+    ("Technician", [
+        dict(key="tech_name", label="Technician name", kind="text",
+             help="Your name as HubSpot knows you. It goes in every report (technician) and the report email."),
+        dict(key="tech_email", label="Technician email", kind="email",
+             help="Your work email, so the agent can set you as the owner of notes and tasks."),
+    ]),
     ("Backups", [
         dict(key="backup_keep", label="Daily backups to keep", kind="int", lo=0, hi=365,
              help="One snapshot of the database is saved each day. 0 turns automatic backups off."),
@@ -191,7 +197,7 @@ TABS = [
     ("AI", ["AI (Claude)"]),
     ("Email", ["Email (Gmail)"]),
     ("Notes", ["Quick phrases", "Grammar check (LanguageTool)"]),
-    ("General", ["Stop detection", "Backups"]),
+    ("General", ["Technician", "Stop detection", "Backups"]),
 ]
 FIELDS = {f["key"]: f for _, fs in SPEC for f in fs}
 

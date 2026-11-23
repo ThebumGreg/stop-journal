@@ -347,6 +347,11 @@ LENGTH_WORDS = ("cable", "wire", "conduit", "pipe", "tubing", "hose", "rope", "t
 def warnings(report):
     """Things worth a look before exporting. They never block: each names a stop or follow-up."""
     out = []
+    tech = report.get("technician") or {}
+    if not tech.get("name") or not tech.get("email"):
+        out.append("Technician " + ("name and email are" if not tech.get("name") and not tech.get("email")
+                                    else "name is" if not tech.get("name") else "email is")
+                   + " not set (Settings → General → Technician): the report does not say who did the work.")
     for day in report["days"]:
         for s in day["stops"]:
             who = f"{day['date']} stop {s['stop_number']} ({s['business_name']})"
@@ -389,6 +394,7 @@ def build(conn, cfg, dates, ensure, now=None):
         days.append(build_day(service.day_payload(conn, cfg, date), cfg))
     now = now or datetime.now(ZoneInfo(cfg.app_tz))
     return {"schema_version": SCHEMA_VERSION, "report": "JobHub daily summary",
+            "technician": {"name": cfg.tech_name, "email": cfg.tech_email},
             "date_from": dates[0], "date_to": dates[-1], "timezone": cfg.app_tz,
             "generated_at": now.isoformat(timespec="seconds"),
             "days": days, "records_to_update": records_to_update(days), "follow_ups": follow_ups(days)}
