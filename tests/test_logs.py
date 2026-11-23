@@ -32,3 +32,12 @@ def test_log_page_and_download(tmp_path):
     r = c.get("/settings/log")
     assert r.status_code == 200 and r.mimetype == "text/plain" and "JobHub started" in r.get_data(as_text=True)
     assert "attachment" in c.get("/settings/log?download=1").headers["Content-Disposition"]
+
+
+def test_page_errors_reach_the_log(tmp_path):
+    c = make(tmp_path)
+    assert c.post("/api/client-log", json={"level": "error", "msg": "boom at day.js:12 near 34.052235",
+                                           "page": "/day/2026-11-18?x=1"}).status_code == 204
+    text = "\n".join(logs.recent(50))
+    assert "jobhub.page: /day/2026-11-18 | boom at day.js:12 near [coord]" in text
+    assert 'name="jobhub-log" content="info"' in c.get("/day").get_data(as_text=True)

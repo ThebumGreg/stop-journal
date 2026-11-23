@@ -73,6 +73,24 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         log.warning("start-up summary failed: %s", type(e).__name__)
     conn0.close()
     reqlog = logs.get("http")
+    clog = logs.get("page")
+
+    @app.context_processor
+    def _log_level():
+        try:
+            return {"jobhub_log_level": eff().log_level}
+        except Exception:
+            return {"jobhub_log_level": "info"}
+
+    @app.post("/api/client-log")
+    def client_log():
+        """Errors and (with Log detail = debug) steps reported by the page on the phone."""
+        b = request.get_json(silent=True, force=True) or {}
+        lvl = str(b.get("level") or "info").lower()
+        msg = str(b.get("msg") or "")[:300].replace("\n", " ")
+        where = str(b.get("page") or "")[:80].split("?")[0]
+        {"error": clog.error, "warning": clog.warning, "debug": clog.debug}.get(lvl, clog.info)("%s | %s", where, msg)
+        return ("", 204)
 
     @app.before_request
     def _t0():
@@ -81,7 +99,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     @app.after_request
     def _logreq(resp):
         # path only (never the query string: it can hold coordinates); no static files or health checks
-        if request.endpoint not in ("static", "health", "manifest"):
+        if request.endpoint not in ("static", "health", "manifest", "client_log"):
             ms = (time.monotonic() - request.environ.get("jobhub.t0", time.monotonic())) * 1000
             (reqlog.warning if resp.status_code >= 500 else reqlog.info)(
                 "%s %s %s %.0fms", request.method, request.path, resp.status_code, ms)

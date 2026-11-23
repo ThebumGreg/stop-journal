@@ -31,13 +31,21 @@ const addMin = (hhmm, n) => {
   return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
 };
 
+const jl = (level, msg) => { try { if (window.jhLog) window.jhLog(level, msg); } catch (e) { /* never break the page */ } };
+
 async function api(method, url, body) {
-  const r = await fetch(url, {method, headers: body ? {'Content-Type': 'application/json'} : {},
-                              body: body ? JSON.stringify(body) : undefined});
+  let r;
+  try {
+    r = await fetch(url, {method, headers: body ? {'Content-Type': 'application/json'} : {},
+                          body: body ? JSON.stringify(body) : undefined});
+  } catch (e) { jl('warning', method + ' ' + url.split('?')[0] + ' did not reach the server (' + e.message + ')'); throw e; }
   if (r.status === 401) { location.href = '/login'; throw new Error('Login required'); }
   let d = null;
   try { d = await r.json(); } catch (e) { /* non-JSON error page */ }
-  if (!r.ok) throw new Error((d && d.error) || 'Request failed (' + r.status + ')');
+  if (!r.ok) {
+    jl('warning', method + ' ' + url.split('?')[0] + ' answered ' + r.status + ': ' + ((d && d.error) || ''));
+    throw new Error((d && d.error) || 'Request failed (' + r.status + ')');
+  }
   return d;
 }
 
@@ -57,6 +65,7 @@ async function run(fn, errEl, onOk) {
     applyDay(d);
     render(false);
   } catch (e) {
+    jl('error', 'action failed: ' + e.message + (e.stack ? ' @ ' + String(e.stack).split('\n')[1] : ''));
     if (errEl) errEl.textContent = e.message; else alert(e.message);
   }
 }
@@ -142,29 +151,56 @@ async function loadCands(s, box, q, pick, google) {
 function liveSearch(input, items, label, onPick, after) {
   const box = el('div', 'live-res'); box.hidden = true;
   input.setAttribute('autocomplete', 'off'); input.setAttribute('autocorrect', 'off');
+  let touching = false;                                    // a finger is on the list: do not hide it under the tap
+  box.addEventListener('pointerdown', () => { touching = true; });
+  box.addEventListener('pointercancel', () => { touching = false; });
   const show = () => {
     const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
     box.replaceChildren();
     if (!words.length) { box.hidden = true; return; }
-    const hits = items().filter(p => {
-      const hay = [p.name, p.sku, p.shelf, p.bin ? 'bin ' + p.bin : ''].join(' ').toLowerCase();
-      return words.every(w => hay.includes(w));
-    }).slice(0, 8);
+    const q = words.join(' ');
+    const all = rankParts(items(), words, q), hits = all.slice(0, 12);
+    jl('debug', 'search "' + q + '": ' + hits.length + ' shown of ' + all.length + ' matches');
     hits.forEach(p => {
       const b = el('button', 'live-hit'); b.type = 'button';
       const [main, sub] = label(p);
       b.append(el('span', 'n', main), sub ? el('span', 'm', sub) : '');
       b.onmousedown = e => e.preventDefault();          // keep the keyboard up until the tap lands
-      b.onclick = () => { box.hidden = true; onPick(p); };
+      // iPhone: pick on finger-up (a click can arrive late or not at all with the keyboard open); a drag is a scroll
+      let x0 = 0, y0 = 0, done = false;
+      const pick = (e, how) => { if (done) return; done = true; if (e) e.preventDefault(); touching = false; box.hidden = true;
+                                 jl('debug', 'search pick "' + p.name + '" (#' + p.id + ') by ' + how); onPick(p); };
+      b.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; jl('debug', 'search touch on "' + p.name + '"'); });
+      b.addEventListener('pointerup', e => {
+        if (Math.abs(e.clientX - x0) < 12 && Math.abs(e.clientY - y0) < 12) pick(e, 'finger-up');
+        else jl('debug', 'search touch moved (scroll), not a pick');
+      });
+      b.onclick = () => pick(null, 'click');
       box.append(b);
     });
+    if (all.length > hits.length) box.append(el('div', 'hint live-more', (all.length - hits.length) + ' more match' +
+      (all.length - hits.length === 1 ? '' : 'es') + ': type another word (e.g. plenum, white, 10ft)'));
     box.hidden = !hits.length;
   };
   input.addEventListener('input', show);
   input.addEventListener('focus', show);
-  input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 200));
+  input.addEventListener('blur', () => setTimeout(() => {
+    if (!touching) { if (!box.hidden) jl('debug', 'search list hidden (search box lost focus)'); box.hidden = true; }
+  }, 400));
   (after || input).after(box);
   return box;
+}
+// best matches first: name starts with what you typed, then every word in the name, then anywhere (part #, vendor #…)
+function rankParts(list, words, q) {
+  const out = [];
+  list.forEach(p => {
+    const name = (p.name || '').toLowerCase();
+    const hay = [name, p.sku, p.vendor_item, p.qbo_item, p.shelf, p.bin ? 'bin ' + p.bin : ''].join(' ').toLowerCase();
+    if (!words.every(w => hay.includes(w))) return;
+    const rank = name.startsWith(q) ? 0 : words.every(w => name.includes(w)) ? 1 : 2;
+    out.push([rank, name, p]);
+  });
+  return out.sort((a, b) => a[0] - b[0] || a[1].localeCompare(b[1])).map(x => x[2]);
 }
 const partLabel = p => [p.name, [p.sku, [p.shelf, p.bin ? 'bin ' + p.bin : ''].filter(Boolean).join(' · '),
                                  p.tracked ? p.on_hand + ' ' + p.unit + ' on truck' : '', p.kind === 'consumable' ? 'consumable' : '']
@@ -237,7 +273,9 @@ function partsBlock(s, err) {
     const v = name.value.trim();
     if (!v) { err.textContent = 'Enter a part name.'; return; }
     const m = S.parts.find(p => p.name.toLowerCase() === v.toLowerCase() || (p.sku && p.sku.toLowerCase() === v.toLowerCase()));
-    if (m) { run(() => api('POST', '/api/stops/' + s.id + '/parts', {qty: qty.value, part_id: m.id}), err, () => { loadParts(); }); return; }
+    if (m) { jl('debug', 'Add button: exact match "' + m.name + '"');
+             run(() => api('POST', '/api/stops/' + s.id + '/parts', {qty: qty.value, part_id: m.id}), err, () => { loadParts(); }); return; }
+    jl('debug', 'Add button: "' + v + '" is not an exact part name, opening the new-part form');
     newPartForm(fresh, v, () => qty.value, s, err);       // not in the catalog: ask for unit and cost first
   };
   name.addEventListener('input', () => { fresh.hidden = true; });
@@ -245,6 +283,7 @@ function partsBlock(s, err) {
   box.append(add, fresh);
   // tap a match to add it straight away with the quantity in the box
   liveSearch(name, () => S.parts.filter(p => p.active !== false && p.kind !== 'expense'), partLabel, p => {
+    jl('debug', 'adding "' + p.name + '" x ' + qty.value + ' to stop ' + s.id);
     name.value = '';
     run(() => api('POST', '/api/stops/' + s.id + '/parts', {qty: qty.value, part_id: p.id}), err, () => { loadParts(); });
   }, add);

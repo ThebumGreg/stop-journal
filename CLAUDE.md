@@ -693,3 +693,9 @@ D. Later / parked
   no items → whole total as one expense (option); vendor stops are finished (Confirmed). The receipt is attached to the stop
   (read_json dismissed). Skip / Delete / Read again. Report: `added_from_receipt` on stops and fuel; expenses carry `notes`
   (PDF and records_to_update show them); PDF stop block "Source: Added from a receipt".
+- **Page logging** (`static/clientlog.js`, loaded in `_head.html`; `<meta name="jobhub-log">` = the log detail): page errors,
+  unhandled promise errors and failed requests (day.js `api`, `run`) are always POSTed to `/api/client-log` (logger
+  `jobhub.page`, path without query, 300 chars, 40 lines/min, scrubbed); with Log detail = debug the part search / Add steps too.
+- **Part search** (day.js and truck.js `liveSearch`): picks on pointerup (finger-up, not if the finger moved 12+ px), click as a
+  fallback, once; the list stays while touched and hides 400 ms after blur. Ranked: name starts with the text, then all words in
+  the name, then anywhere (sku, vendor_item, qbo_item, shelf, bin); 12 shown in a scrolling list with "n more matches".

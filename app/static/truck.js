@@ -69,21 +69,35 @@ function kindSel(cur) {
 function liveSearch(input, items, onPick, after) {
   const box = el('div', 'live-res'); box.hidden = true;
   input.setAttribute('autocomplete', 'off');
+  let touching = false;
+  box.addEventListener('pointerdown', () => { touching = true; });
+  box.addEventListener('pointercancel', () => { touching = false; });
   const show = () => {
     const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
     box.replaceChildren();
     if (!words.length) { box.hidden = true; return; }
-    items().filter(p => words.every(w => [p.name, p.sku, p.shelf, p.bin].join(' ').toLowerCase().includes(w))).slice(0, 8).forEach(p => {
+    const q = words.join(' ');
+    const ranked = [];
+    items().forEach(p => {
+      const name = (p.name || '').toLowerCase();
+      const hay = [name, p.sku, p.vendor_item, p.qbo_item, p.shelf, p.bin].join(' ').toLowerCase();
+      if (words.every(w => hay.includes(w))) ranked.push([name.startsWith(q) ? 0 : words.every(w => name.includes(w)) ? 1 : 2, name, p]);
+    });
+    ranked.sort((a, b) => a[0] - b[0] || a[1].localeCompare(b[1])).slice(0, 12).forEach(([, , p]) => {
       const b = el('button', 'live-hit'); b.type = 'button';
       b.append(el('span', 'n', p.name), el('span', 'm', [p.sku, p.shelf, p.tracked ? p.on_hand + ' ' + p.unit : ''].filter(Boolean).join(' · ')));
       b.onmousedown = e => e.preventDefault();
-      b.onclick = () => { box.hidden = true; onPick(p); };
+      let x0 = 0, y0 = 0, done = false;
+      const pick = e => { if (done) return; done = true; if (e) e.preventDefault(); touching = false; box.hidden = true; onPick(p); };
+      b.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; });
+      b.addEventListener('pointerup', e => { if (Math.abs(e.clientX - x0) < 12 && Math.abs(e.clientY - y0) < 12) pick(e); });
+      b.onclick = () => pick();
       box.append(b);
     });
     box.hidden = !box.childNodes.length;
   };
   input.addEventListener('input', show);
-  input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 200));
+  input.addEventListener('blur', () => setTimeout(() => { if (!touching) box.hidden = true; }, 400));
   (after || input).after(box);
 }
 
