@@ -247,9 +247,9 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   tracked items at or below reorder level by vendor (suggests restocking to 2x the reorder level).
 - Report: each stop's `parts_used` holds parts only; consumables are in `consumables_used` (JSON) and a separate
   "Non-billable materials" table in the PDF; "Records to update" lists parts only. Schema stays "1" (additive).
-- Planned, not built: purchase/restock log with cost and a consumables cost summary (phase 3); install kits (phase 4).
+- Purchase log and install kits are built (see the parts action plan below).
 
-## Parts: units, packs, dropdowns (built) and the action plan (not built)
+## Parts: units, packs, dropdowns and the action plan (all built)
 - `parts.unit` is one of `parts.UNITS` (ea, pair, pack, box, bag, case, roll, ft, gal, lb); the Truck page uses a dropdown, the API and
   CSV accept common spellings (each, feet, bx...) and REJECT anything else (an older stored unit still saves while unchanged).
   Stock is always counted in `unit`. `pack_size` + `pack_unit` describe how it is bought ("bag" of 25): the stock row has
@@ -371,7 +371,7 @@ stop departed 12:21, and listed billable parts with no cost.
   panel with **Open in Safari** (the URL carries `ft=`, a signed download token from `GET /api/file-token`, 10 min,
   `FILE_TOKEN_S`, accepted by the login gate only on GET of `FILE_PATHS` download routes, because Safari has no login cookie;
   PDFs open with `?inline=1`) and **Share / Save to Files** (the file is fetched while the panel is open; iOS needs a fresh tap).
-- Not built: OCR of receipts; auto-detecting gas stations for stops that have no place category yet (only `gas_hint` from a
+- Not built: auto-detecting gas stations for stops that have no place category yet (only `gas_hint` from a
   picked fuel place); cleanup of orphaned photos.
 
 ## Alerts, find, parts, backups (built 2026-11-22, later)
