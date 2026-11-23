@@ -307,10 +307,22 @@ stop departed 12:21, and listed billable parts with no cost.
   time, mileage follows the real drive), job/vendor/office stay Draft until confirmed. `service.stop_type()` derives a type for
   rows without one (status, then saved-place kind; Confirmed = job; '' = not chosen). Setting `status` the old way keeps
   `stop_type` in step. Confirming a vendor-type stop with no category sets Internal operations.
-- Card (day.js): type buttons on top ("What is this stop?" until chosen), then one **Confirm** (job/vendor/office) that lists what
-  is still needed (name; for jobs also category unless last time's can be copied, and work notes) and opens the sheet for them;
-  "Back to Draft" is in More. No Save button: name/address save ~0.7 s after focus leaves the card's fields, times and picked
-  businesses save at once, any card button carries unsaved typing. Status line "Saved 10:42" / "Unsaved changes".
+- **Stop sheet** (day.js `openSheet`) is the one place to edit a Job/Vendor/Office/Gas stop, in three sections: 1 What and
+  where (type buttons, business/station + Find, address, Arrived/Left, Here now + Leaving now), 2 Work (Work performed,
+  grammar, category with "last time here", parts, vendor purchases, photos, details: ticket/expenses/follow-ups; Gas: fuel +
+  receipts), 3 Finish (visit result for jobs, due date for a return/waiting follow-up, "Still needed" links that jump to the
+  field, **Finish stop**, "Save & close (finish later)", Stop tools). All typed fields autosave (FIELDS include business_name,
+  address, category, known_site_id, arrive, depart). Closing always returns to the list on that stop.
+- **Finish** `POST /api/stops/<id>/finish {visit_result, due}` (`service.finish_stop`): checks `service.stop_needs` (job:
+  business name, category unless last time's can be copied, work performed, visit result; vendor/office: name; gas: total
+  paid), adds one follow-up "Return visit" / "Waiting on parts or customer" (owner Me, due) when that is the result, confirms.
+  It never sets the departure: a confirmed stop keeps growing on sync until you type the departure or tap Leaving now, so you
+  can finish before driving away (tested). Payload `needs` drives the card and the sheet. Export warns on a billable job with
+  no visit result.
+- **Card** is a summary: time, name, "Needs …", type chip and one button: **Start job** + Other type… (no type yet),
+  Continue / Fill-up / Review (opens the sheet), plus Confirm as <saved place> and Save as Vendor. Lunch/Personal/Traffic and
+  untyped stops open a small area on the card (type buttons, times, Personal name, Stop tools); picking a sheet type opens the
+  sheet. "Finished" = confirmed (gas: has a total) with nothing in `needs`.
 - **Fuel** (`fuel` table, one row per Gas stop: gallons, total, odometer; `PUT /api/stops/<id>/fuel`). `GET /api/fuel?from&to`:
   fills newest first with MPG from the odometer change since the previous fill-up (full-tank method, gaps > 1500 mi ignored) and a
   summary (spend, gallons, avg $/gal, MPG, $/mile). Truck page → Fuel. Report: day `fuel` list, `summary.fuel_total`, a PDF

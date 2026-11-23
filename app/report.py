@@ -337,6 +337,8 @@ def warnings(report):
                 out.append(f"{who}: no category chosen.")
             if not s["work_performed"].strip():
                 out.append(f"{who}: no work performed written.")
+            if s["billing"] != "non_billable" and not s["visit_result"]:
+                out.append(f"{who}: no visit result (complete, return visit or waiting).")
             dv = s["drive_from_previous_stop"] or {}
             if dv.get("estimated"):
                 nd = dv["no_location_data"]

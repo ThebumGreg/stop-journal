@@ -1094,6 +1094,9 @@ def day_payload(conn, cfg, date, include_path=False):
         "stop_type": stop_type(r, site_kind.get(r["known_site_id"]) or ""),
         "gas_hint": (r["category"] or "") in FUEL_CATEGORIES,
         "fuel": fuel.get(r["id"]), "photos": pics.get(r["id"], []),
+        "needs": stop_needs(r, stop_type(r, site_kind.get(r["known_site_id"]) or ""),
+                            "" if r["work_category"] else last_category(conn, r["id"], r["business_name"], r["known_site_id"]),
+                            fuel.get(r["id"])),
         "id": r["id"], "seq": r["seq"], "kind": r["kind"] or "stop", "source": r["source"],
         "lat": r["lat"], "lon": r["lon"],
         "arrive": fmt_time(cfg, r["arrive_utc"]), "depart": fmt_time(cfg, r["depart_utc"]),
@@ -1234,3 +1237,57 @@ def fuel_stats(conn, cfg, date_from=None, date_to=None):
                         "avg_price_per_gallon": round(bt / bg, 3) if bg else None,
                         "miles": mi, "mpg": round(mi / mg, 1) if mg else None,
                         "cost_per_mile": round(mc / mi, 3) if mi and mc else None}}
+
+
+# ---- finishing a stop ------------------------------------------------------
+FOLLOW_UP_FOR = {"return": "Return visit", "waiting": "Waiting on parts or customer"}
+
+
+def stop_needs(row, stype, category_hint="", fuel=None):
+    """What a stop still needs before it can be finished (shown on the card and the sheet, checked by Finish)."""
+    if not stype:
+        return ["stop type"]
+    name = (row["business_name"] or "").strip()
+    out = []
+    if stype == "job":
+        if not name:
+            out.append("business name")
+        if not row["work_category"] and not category_hint:
+            out.append("category")
+        if not (row["notes"] or "").strip():
+            out.append("work performed")
+        if not row["visit_result"]:
+            out.append("visit result")
+    elif stype in ("vendor", "office"):
+        if not name:
+            out.append("vendor name" if stype == "vendor" else "name")
+    elif stype == "gas":
+        if not (fuel and fuel.get("total")):
+            out.append("total paid")
+    return out
+
+
+def finish_stop(conn, cfg, sid, f):
+    """The end of a stop: check it has what its type needs, save the visit result (a return visit or waiting adds a
+    follow-up for you), and confirm it. The departure is NOT set here: until you type it or tap Leaving now it keeps
+    following the GPS, so finishing before you drive away is fine."""
+    s = _stop(conn, sid)
+    if "visit_result" in f:
+        patch_stop(conn, cfg, sid, {"visit_result": f["visit_result"]})
+        s = _stop(conn, sid)
+    site = conn.execute("SELECT kind FROM known_sites WHERE id=?", (s["known_site_id"],)).fetchone() \
+        if s["known_site_id"] else None
+    stype = stop_type(s, site["kind"] if site else "")
+    if stype in ("lunch", "personal", "traffic"):
+        return s["date"]                      # nothing to finish: the type is the whole answer
+    hint = "" if s["work_category"] else last_category(conn, sid, s["business_name"], s["known_site_id"])
+    fuel = fuel_for_day(conn, s["date"]).get(sid)
+    need = stop_needs(s, stype, hint, fuel)
+    if need:
+        raise EditError("Still needed: " + ", ".join(need) + ".")
+    text = FOLLOW_UP_FOR.get(s["visit_result"]) if stype == "job" else None
+    if text and not conn.execute("SELECT 1 FROM follow_ups WHERE stop_id=? AND text=?", (sid, text)).fetchone():
+        add_followup(conn, cfg, sid, {"text": text, "owner": "Me", "due": f.get("due") or ""})
+    if stype != "gas" and s["status"] != "Confirmed":
+        patch_stop(conn, cfg, sid, {"status": "Confirmed"})
+    return s["date"]

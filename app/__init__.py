@@ -403,6 +403,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         return with_conn(lambda conn, cfg: jsonify(service.fuel_stats(conn, cfg, a, b)))
 
     # ---- follow-ups ----------------------------------------------------
+    @app.post("/api/stops/<int:sid>/finish")
+    def stop_finish(sid):
+        return mutate(service.finish_stop, sid, request.get_json(silent=True) or {})
+
     @app.post("/api/stops/<int:sid>/follow-ups")
     def followup_add(sid):
         return mutate(service.add_followup, sid, request.get_json(silent=True) or {})

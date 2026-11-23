@@ -87,7 +87,8 @@ function addMarker(s, i) {
   const m = L.marker([s.lat, s.lon], {icon, draggable: true}).addTo(pathLayer);
   if (S.sel !== s.id) m.dragging.disable();
   m.on('click', () => {
-    setOpen(s.id, true); setSel(s.id, false);
+    if (!SHEET_TYPES.includes(s.stop_type)) setOpen(s.id, true);   // sheet stops: tap the card to open it
+    setSel(s.id, false);
     const card = document.querySelector('.card[data-id="' + s.id + '"]');
     if (card) card.scrollIntoView({block: 'nearest'});
   });
@@ -195,14 +196,23 @@ function partsBlock(s, err) {
   return box;
 }
 
-// ---- notes & parts sheet (slides up over the day) ------------------------------
-// Work performed, category and the other job fields autosave a moment after you stop typing (and when you leave
-// a field); the status line says whether what you typed is saved. Parts, expenses and follow-ups save as you add them.
+// ---- the stop sheet (slides up over the day) ------------------------------------
+// One place for everything about a stop, top to bottom: (1) what it is and where/when, (2) the work, (3) Finish.
+// Typed fields autosave a moment after you stop typing (and when you leave a field); a status line says whether
+// what you typed is saved. Parts, expenses, photos and follow-ups save as they are added.
+// Finish checks what the stop's type needs, saves the visit result and confirms the stop. It does not set the
+// departure: that keeps following the GPS until you type it or tap Leaving now, so you can finish before driving off.
 const CATS = ['Time & Material', 'Quoted project', 'White-label migration', 'Internal operations',
               'Administrative', 'Customer outreach', 'Training'];
-const RESULTS = [['complete', 'Complete'], ['return', 'Return visit needed'], ['waiting', 'Waiting (parts or customer)']];
-const FIELDS = ['notes', 'work_category', 'ticket', 'visit_result'];
-const sheet = {id: null, vals: {}, timer: null, saving: false, again: false, failed: false};
+const RESULTS = [['complete', 'Complete'], ['return', 'Return visit'], ['waiting', 'Waiting (parts or customer)']];
+const FIELDS = ['business_name', 'address', 'category', 'known_site_id', 'arrive', 'depart',
+                'notes', 'work_category', 'ticket', 'visit_result'];
+const TYPES = [['job', 'Job'], ['vendor', 'Vendor'], ['office', 'Office'], ['gas', 'Gas'],
+               ['lunch', 'Lunch'], ['personal', 'Personal'], ['traffic', 'Traffic']];
+const TYPE_LABEL = Object.fromEntries(TYPES);
+const CONFIRMABLE = ['job', 'vendor', 'office'];
+const SHEET_TYPES = CONFIRMABLE.concat(['gas']);     // lunch, personal and traffic need no sheet
+const sheet = {id: null, vals: {}, timer: null, saving: false, again: false, failed: false, due: ''};
 const backEl = el('div', 'sheet-back'), sheetEl = el('div', 'sheet');
 backEl.hidden = sheetEl.hidden = true;
 document.body.append(backEl, sheetEl);
@@ -210,6 +220,7 @@ let sh = {};
 
 const curStop = () => S.stops.find(x => x.id === sheet.id);
 const sheetDirty = () => { const s = curStop(); return !!s && FIELDS.some(k => sheet.vals[k] !== s[k]); };
+const stopNum = s => S.stops.indexOf(s) + 1;
 
 function setStat(kind, msg) {
   if (!sh.stat) return;
@@ -234,7 +245,7 @@ async function saveSheet() {
   sheet.saving = true; setStat('saving');
   try {
     applyDay(await api('PATCH', '/api/stops/' + s.id, body));
-    sheet.failed = false; sh.everSaved = true;
+    sheet.failed = false; sh.everSaved = true; sh.err.textContent = '';
     render(false);
   } catch (e) {
     sheet.failed = true; setStat('error', 'Could not save: ' + e.message);
@@ -247,29 +258,25 @@ async function saveSheet() {
   return !sheet.failed && !sheetDirty();
 }
 
+// Closing always goes back to the list, on this stop.
 async function closeSheet(force) {
   if (!force && sheet.id) {
     const ok = await saveSheet();
     if (!ok && !confirm('Your changes could not be saved yet. Close anyway?')) return;
   }
   clearTimeout(sheet.timer);
+  const id = sheet.id;
   sheet.id = null; sheet.failed = false;
   sheetEl.hidden = backEl.hidden = true;
   document.body.classList.remove('sheet-open');
   sheetEl.replaceChildren();
+  candLayer.clearLayers();
+  render(false);
+  const card = id && document.querySelector('.card[data-id="' + id + '"]');
+  if (card) { setSel(id, false); card.scrollIntoView({block: 'nearest'}); }
 }
 backEl.onclick = () => closeSheet();
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet.id) closeSheet(); });
-window.addEventListener('beforeunload', e => { if (sheet.id && sheetDirty()) { e.preventDefault(); e.returnValue = ''; } });
-if (window.visualViewport) {          // keep the sheet above the iPhone keyboard
-  const fit = () => {
-    const v = window.visualViewport;
-    sheetEl.style.bottom = Math.max(0, window.innerHeight - v.height - v.offsetTop) + 'px';
-    sheetEl.style.maxHeight = Math.round(v.height * 0.94) + 'px';
-  };
-  window.visualViewport.addEventListener('resize', fit);
-  window.visualViewport.addEventListener('scroll', fit);
-}
 
 function expensesBlock(s, err) {
   const box = el('div');
@@ -334,16 +341,6 @@ function followBlock(s, err) {
   return box;
 }
 
-// the parts of the sheet that come from the server are rebuilt after every change; typed fields are left alone
-function refreshSheet() {
-  const s = curStop();
-  if (!s) { closeSheet(true); return; }
-  const n = S.stops.indexOf(s) + 1;
-  sh.title.textContent = n + ' · ' + (s.business_name || 'Stop') + ' · ' + s.arrive + '–' + s.depart;
-  sh.parts.replaceChildren(partsBlock(s, sh.err));
-  sh.more.replaceChildren(expensesBlock(s, sh.err), followBlock(s, sh.err));
-}
-
 // Optional grammar check (LanguageTool): the button only appears when the server has one configured.
 let grammarOn = null;
 function grammarBlock(notes) {
@@ -377,64 +374,315 @@ function grammarBlock(notes) {
   return box;
 }
 
+
+// which field to jump to for a missing item
+const NEED_FIELD = {'business name': 'name', 'vendor name': 'name', 'name': 'name', 'category': 'cat',
+                    'work performed': 'notes', 'visit result': 'result', 'total paid': 'fuel', 'stop type': 'types'};
+
+// Pick a type (sheet or card). Lunch, Personal and Traffic are done once picked; the others open the sheet.
+async function setType(s, k, err) {
+  if (k === s.stop_type) return;
+  if (sheet.id === s.id && !(await saveSheet())) return;
+  try {
+    applyDay(await api('PATCH', '/api/stops/' + s.id, {stop_type: k}));
+  } catch (e) { if (err) err.textContent = e.message; else alert(e.message); return; }
+  if (sheet.id === s.id) { sheet.id = null; sheetEl.replaceChildren(); }   // rebuilt below for the new type
+  render(false);
+  if (SHEET_TYPES.includes(k)) openSheet(s.id);
+  else { sheetEl.hidden = backEl.hidden = true; document.body.classList.remove('sheet-open'); }
+}
+
+function typeRow(s, err) {
+  const types = el('div', 'types');
+  TYPES.forEach(([k, label]) => {
+    const b = el('button', s.stop_type === k ? 'on' : (!s.stop_type && k === 'gas' && s.gas_hint ? 'hint' : ''), label);
+    b.type = 'button';
+    b.onclick = () => setType(s, k, err);
+    types.append(b);
+  });
+  return types;
+}
+
+// Split, merge, start/end the day here, save as a place, back to draft, delete.
+function toolsBlock(s, err, inSheet) {
+  const i = S.stops.indexOf(s);
+  const more = el('div', 'more');
+  const act = fn => run(fn, err, () => { if (inSheet) closeSheet(true); });
+  if (s.status === 'Confirmed') {
+    const back = el('button', null, 'Back to Draft'); back.type = 'button';
+    back.onclick = () => run(() => api('PATCH', '/api/stops/' + s.id, {status: 'Draft'}), err);
+    more.append(back);
+  }
+  const splitRow = el('div', 'two'); splitRow.hidden = true;
+  const splitIn = el('input'); splitIn.type = 'time';
+  const splitGo = el('button', null, 'Split here'); splitGo.type = 'button';
+  splitGo.onclick = () => act(() => api('POST', '/api/stops/' + s.id + '/split', {at: splitIn.value}));
+  splitRow.append(splitIn, splitGo);
+  const splitB = el('button', null, 'Split…'); splitB.type = 'button';
+  splitB.onclick = () => { splitIn.value = addMin(s.arrive, Math.round(s.minutes / 2)); splitRow.hidden = !splitRow.hidden; };
+  more.append(splitB);
+  const sb = el('button', null, 'Start day here'); sb.type = 'button'; sb.title = 'Work day starts when you arrived at this stop';
+  sb.onclick = () => markHere(s, 'start', err);
+  const eb = el('button', null, 'End day here'); eb.type = 'button';
+  eb.title = s.status === 'Personal' ? 'Work day ends when you arrived here' : 'Work day ends when you left this stop';
+  eb.onclick = () => markHere(s, 'end', err);
+  more.append(sb, eb);
+  if (s.lat != null) {
+    [['vendor', 'Vendor'], ['office', 'Office'], ['home', 'Home']].forEach(([k, t]) => {
+      if (s.site_kind === k) return;
+      const pb = el('button', null, 'Save as ' + t); pb.type = 'button';
+      pb.title = 'Remember this spot as a ' + t + ' place; later stops here are pre-filled';
+      pb.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/save-place', {kind: k}), err);
+      more.append(pb);
+    });
+  }
+  const prev = S.stops[i - 1], next = S.stops[i + 1];
+  const mergeWith = other => act(() => api('POST', '/api/stops/merge', {ids: [s.id, other.id]}));
+  if (prev) { const b = el('button', null, 'Merge ↑'); b.type = 'button'; b.title = 'Merge with the previous stop'; b.onclick = () => mergeWith(prev); more.append(b); }
+  if (next) { const b = el('button', null, 'Merge ↓'); b.type = 'button'; b.title = 'Merge with the next stop'; b.onclick = () => mergeWith(next); more.append(b); }
+  const del = el('button', 'danger', s.kind === 'short' ? 'Dismiss' : 'Delete'); del.type = 'button';
+  del.onclick = () => {
+    if (!confirm('Delete this stop? Raw GPS points are kept; only this entry is removed. You can Undo it.')) return;
+    act(() => api('DELETE', '/api/stops/' + s.id));
+  };
+  more.append(del);
+  const w = el('div'); w.append(more, splitRow);
+  return w;
+}
+
+function businessFinder(s, nameIn, addrIn, onPick) {
+  const find = el('button', null, s.stop_type === 'gas' ? 'Find station' : 'Find business'); find.type = 'button';
+  let panel = null;
+  find.onclick = () => {
+    if (panel) { panel.remove(); panel = null; candLayer.clearLayers(); return; }
+    panel = el('div', 'panel');
+    const form = el('form'), inp = el('input'), go = el('button', null, 'Search');
+    inp.placeholder = 'Search by name or address'; go.type = 'submit';
+    const box = el('div');
+    form.append(inp, go); panel.append(form, box);
+    const pick = c => {     // choosing a business closes the list and saves it
+      panel.remove(); panel = null; candLayer.clearLayers();
+      nameIn.value = c.name; addrIn.value = c.address;
+      onPick(c);
+    };
+    form.onsubmit = e => { e.preventDefault(); loadCands(s, box, inp.value.trim(), pick); };
+    find.after(panel);
+    loadCands(s, box, '', pick);
+  };
+  return find;
+}
+
 function openSheet(id) {
   const s = S.stops.find(x => x.id === id);
   if (!s) return;
-  sheet.id = id; sheet.failed = false; sheet.again = false;
-  sheet.vals = {notes: s.notes, work_category: s.work_category, ticket: s.ticket, visit_result: s.visit_result};
+  if (!SHEET_TYPES.includes(s.stop_type)) { setOpen(id, true); setSel(id, true); return; }
+  sheet.id = id; sheet.failed = false; sheet.again = false; sheet.due = '';
+  sheet.vals = {};
+  FIELDS.forEach(k => { sheet.vals[k] = s[k]; });
   sh = {everSaved: false};
   sheetEl.replaceChildren();
+  const type = s.stop_type;
+  const v = sheet.vals;
 
   const top = el('div', 'sheet-top');
   sh.title = el('div', 'sheet-title');
-  const done = el('button', 'primary', 'Done'); done.type = 'button'; done.onclick = () => closeSheet();
-  top.append(sh.title, done);
+  const close = el('button', null, 'Close'); close.type = 'button'; close.onclick = () => closeSheet();
+  top.append(sh.title, close);
   sh.stat = el('div', 'sheet-stat');
   sh.err = el('div', 'err');
+  const field = (k, inp) => {     // typed field: autosave after a pause, and on leaving it
+    inp.addEventListener('input', () => { v[k] = inp.value; touched(); });
+    inp.addEventListener('blur', () => { if (sheetDirty()) saveSheet(); });
+    return inp;
+  };
 
-  const notes = el('textarea', 'sheet-notes'); notes.value = s.notes;
-  notes.placeholder = 'What was wrong, what you did, the result';
-  notes.spellcheck = true; notes.setAttribute('autocorrect', 'on'); notes.setAttribute('autocapitalize', 'sentences');
-  notes.oninput = () => { sheet.vals.notes = notes.value; touched(); };
-  notes.onblur = () => { if (sheetDirty()) saveSheet(); };
+  // (1) what and where
+  const sec1 = el('section', 'sec');
+  sh.types = typeRow(s, sh.err);
+  const nameIn = el('input'); nameIn.value = s.business_name;
+  nameIn.placeholder = {vendor: 'Vendor (supply shop)', gas: 'Station (optional)', office: 'Office'}[type] || 'Business name';
+  nameIn.addEventListener('input', () => { v.known_site_id = null; });
+  field('business_name', nameIn);
+  sh.name = nameIn;
+  const addrIn = field('address', el('input')); addrIn.value = s.address; addrIn.placeholder = 'Address';
+  const find = businessFinder(s, nameIn, addrIn, c => {
+    Object.assign(v, {business_name: c.name, address: c.address, category: c.category,
+                      known_site_id: c.source === 'known' ? c.known_site_id : null});
+    saveSheet();
+  });
+  const arrIn = el('input'); arrIn.type = 'time'; arrIn.value = s.arrive;
+  const depIn = el('input'); depIn.type = 'time'; depIn.value = s.depart;
+  arrIn.onchange = () => { v.arrive = arrIn.value; saveSheet(); };
+  depIn.onchange = () => { v.depart = depIn.value; saveSheet(); };
+  sh.arr = arrIn; sh.dep = depIn;
+  const times = el('div', 'two'); times.append(labeled('Arrived', arrIn), labeled('Left', depIn));
+  sh.here = el('div');
+  sec1.append(el('h3', null, '1 · What and where'), sh.types,
+              labeled(type === 'vendor' ? 'Vendor' : type === 'gas' ? 'Station' : 'Business', nameIn),
+              labeled('Address', addrIn), find, times, sh.here);
 
-  const cat = el('select');
-  [['', 'Choose a category…']].concat(CATS.map(c => [c, c])).forEach(([v, t]) => { const o = el('option', null, t); o.value = v; cat.append(o); });
-  cat.value = s.work_category;
-  cat.onchange = () => { sheet.vals.work_category = cat.value; saveSheet(); };
-  const catBox = labeled('Category', cat);
-  if (!s.work_category && s.category_hint) {
-    const q = el('button', 'quick', 'Use ' + s.category_hint + ' (last time here)'); q.type = 'button';
-    q.onclick = () => { cat.value = s.category_hint; sheet.vals.work_category = cat.value; q.remove(); saveSheet(); };
-    catBox.append(q);
+  // (2) the work
+  const sec2 = el('section', 'sec');
+  sh.parts = el('div'); sh.photos = el('div'); sh.exp = el('div'); sh.fu = el('div'); sh.fuel = el('div');
+  if (type === 'gas') {
+    sec2.append(el('h3', null, '2 · Fill-up'), sh.fuel, sh.photos);
+  } else {
+    const notes = field('notes', el('textarea', 'sheet-notes')); notes.value = s.notes;
+    notes.placeholder = type === 'vendor' ? 'What you picked up or did here' : 'What was wrong, what you did, the result';
+    notes.spellcheck = true; notes.setAttribute('autocorrect', 'on'); notes.setAttribute('autocapitalize', 'sentences');
+    sh.notes = notes;
+    const cat = el('select');
+    [['', 'Choose a category…']].concat(CATS.map(c => [c, c])).forEach(([val, t]) => { const o = el('option', null, t); o.value = val; cat.append(o); });
+    cat.value = s.work_category;
+    cat.onchange = () => { v.work_category = cat.value; saveSheet(); };
+    sh.cat = cat;
+    sh.catHint = el('div');
+    const catBox = labeled('Category', cat); catBox.append(sh.catHint);
+    const ticket = field('ticket', el('input')); ticket.value = s.ticket; ticket.placeholder = 'e.g. #1042, or the project / milestone';
+    const det = el('details', 'sheet-more');
+    det.append(el('summary', null, type === 'vendor' ? 'Ticket and follow-ups' : 'Ticket, expenses and follow-ups'));
+    det.open = !!(s.ticket || (s.follow_ups || []).length || (type !== 'vendor' && (s.parts || []).some(p => p.expense)));
+    const grid = el('div', 'sheet-grid');
+    grid.append(labeled('Job / ticket / project', ticket));
+    if (type !== 'vendor') grid.append(sh.exp);
+    grid.append(sh.fu);
+    det.append(grid);
+    sec2.append(el('h3', null, '2 · Work'), labeled('Work performed', notes), grammarBlock(notes),
+                catBox, sh.parts);
+    if (type === 'vendor') sec2.append(sh.exp);          // purchases are the main thing at a vendor
+    sec2.append(sh.photos, det);
   }
 
-  const ticket = el('input'); ticket.value = s.ticket; ticket.placeholder = 'e.g. #1042, or the project / milestone';
-  ticket.oninput = () => { sheet.vals.ticket = ticket.value; touched(); };
-  ticket.onblur = () => { if (sheetDirty()) saveSheet(); };
-  const result = el('select');
-  [['', '—']].concat(RESULTS).forEach(([v, t]) => { const o = el('option', null, t); o.value = v; result.append(o); });
-  result.value = s.visit_result;
-  result.onchange = () => { sheet.vals.visit_result = result.value; saveSheet(); };
+  // (3) finish
+  const sec3 = el('section', 'sec');
+  sec3.append(el('h3', null, '3 · Finish'));
+  if (type === 'job') {
+    const res = el('div', 'seg res');
+    sh.resBtns = RESULTS.map(([k, t]) => {
+      const b = el('button', null, t); b.type = 'button';
+      b.onclick = () => { v.visit_result = k; paintResult(); saveSheet(); };
+      res.append(b);
+      return [k, b];
+    });
+    const due = el('input'); due.type = 'date';
+    due.onchange = () => { sheet.due = due.value; };
+    sh.dueBox = labeled('Due date for the follow-up (optional)', due);
+    sh.res = res;
+    sec3.append(labeled('Visit result', res), sh.dueBox);
+  }
+  sh.needs = el('div', 'needs');
+  sh.finish = el('div', 'finish');
+  const tools = el('details', 'sheet-more');
+  sh.tools = el('div');
+  tools.append(el('summary', null, 'Stop tools (split, merge, delete…)'), sh.tools);
+  sec3.append(sh.needs, sh.finish, tools);
 
-  sh.parts = el('div');
-  const det = el('details', 'sheet-more');
-  det.append(el('summary', null, 'More details'));
-  det.open = !!(s.ticket || s.visit_result || (s.follow_ups || []).length || (s.parts || []).some(p => p.expense));
-  sh.more = el('div', 'sheet-grid');
-  det.append(labeled('Job / ticket / project', ticket), labeled('Visit result', result), sh.more);
-
-  const done2 = el('button', 'primary wide', 'Done'); done2.type = 'button'; done2.onclick = () => closeSheet();
   const body = el('div', 'sheet-body');
-  const gram = grammarBlock(notes);
-  body.append(sh.stat, sh.err, labeled('Work performed', notes), gram, catBox, sh.parts, det, done2);
+  body.append(sh.stat, sh.err, sec1, sec2, sec3);
   sheetEl.append(top, body);
   refreshSheet();
   setStat('clean');
   backEl.hidden = sheetEl.hidden = false;
   document.body.classList.add('sheet-open');
-  sheetEl.scrollTop = 0;
   sheetEl.style.bottom = '0px';
+  sheetEl.scrollTop = 0;
+  // the stop already has a name: start at the work
+  if (s.business_name) requestAnimationFrame(() => { sheetEl.scrollTop = Math.max(0, sec2.offsetTop - 56); });
+}
+
+function paintResult() {
+  if (!sh.resBtns) return;
+  sh.resBtns.forEach(([k, b]) => b.classList.toggle('on', sheet.vals.visit_result === k));
+  sh.dueBox.hidden = !['return', 'waiting'].includes(sheet.vals.visit_result);
+}
+
+function jumpTo(need) {
+  const f = NEED_FIELD[need];
+  const target = {name: sh.name, notes: sh.notes, cat: sh.cat, result: sh.res, fuel: sh.fuel, types: sh.types}[f];
+  if (!target) return;
+  target.scrollIntoView({block: 'center', behavior: 'smooth'});
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) setTimeout(() => target.focus(), 350);
+  target.classList.add('pulse'); setTimeout(() => target.classList.remove('pulse'), 1600);
+}
+
+async function finishStop() {
+  const s = curStop();
+  if (!s) return;
+  if (!(await saveSheet())) return;
+  const body = {};
+  if (s.stop_type === 'job') { body.visit_result = sheet.vals.visit_result || ''; if (sheet.due) body.due = sheet.due; }
+  try {
+    applyDay(await api('POST', '/api/stops/' + s.id + '/finish', body));
+  } catch (e) {
+    sh.err.textContent = e.message;
+    render(false);
+    const first = ((curStop() || {}).needs || [])[0];
+    if (first) jumpTo(first);
+    return;
+  }
+  S.flash = 'Stop ' + stopNum(s) + ' finished.';
+  await closeSheet(true);
+}
+
+// the parts of the sheet that come from the server are rebuilt after every change; typed fields are left alone
+function refreshSheet() {
+  const s = curStop();
+  if (!s || !SHEET_TYPES.includes(s.stop_type)) { closeSheet(true); return; }
+  sh.title.textContent = stopNum(s) + ' · ' + (s.business_name || TYPE_LABEL[s.stop_type]) + ' · ' + s.arrive + '–' + (s.here_now ? 'now' : s.depart);
+  // times the server moved (Leaving now, the GPS) show up unless you are editing them
+  [['arrive', sh.arr], ['depart', sh.dep]].forEach(([k, inp]) => {
+    if (document.activeElement !== inp && sheet.vals[k] === inp.value && inp.value !== s[k]) { inp.value = s[k]; sheet.vals[k] = s[k]; }
+  });
+  sh.here.replaceChildren();
+  if (s.here_now) {
+    sh.here.append(el('div', 'here', '● Here now. Leave “Left” alone: it follows the GPS until you drive away.'));
+    const lv = el('button', 'quick', 'Leaving now'); lv.type = 'button';
+    lv.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/leave'), sh.err);
+    sh.here.append(lv);
+  }
+  if (s.stop_type === 'gas') {
+    sh.fuel.replaceChildren(...fuelBox(s, sh.err));
+  } else {
+    sh.parts.replaceChildren(partsBlock(s, sh.err));
+    sh.exp.replaceChildren(expensesBlock(s, sh.err));
+    sh.fu.replaceChildren(followBlock(s, sh.err));
+    sh.catHint.replaceChildren();
+    if (!s.work_category && s.category_hint) {
+      sh.catHint.append(el('div', 'hint', 'Last time here: ' + s.category_hint + '. Used when you finish, unless you pick one.'));
+      const q = el('button', 'quick', 'Use ' + s.category_hint); q.type = 'button';
+      q.onclick = () => { sh.cat.value = s.category_hint; sheet.vals.work_category = s.category_hint; saveSheet(); };
+      sh.catHint.append(q);
+    }
+  }
+  sh.photos.replaceChildren(el('label', null, s.stop_type === 'gas' || s.stop_type === 'vendor' ? 'Receipts and photos' : 'Photos and receipts'),
+                            ...photoBox(s, sh.err));
+  paintResult();
+  // what is still needed, from the server (the same check Finish uses)
+  const needs = (s.needs || []).filter(n => !(n === 'visit result' && sheet.vals.visit_result));
+  const done = !needs.length && (s.stop_type === 'gas' || s.status === 'Confirmed');
+  sh.needs.replaceChildren();
+  if (needs.length) {
+    sh.needs.append(el('span', 'need', 'Still needed: '));
+    needs.forEach((n, k) => {
+      const a = el('button', 'link', n); a.type = 'button'; a.onclick = () => jumpTo(n);
+      sh.needs.append(a);
+      if (k < needs.length - 1) sh.needs.append(', ');
+    });
+  } else if (!done) {
+    sh.needs.append(el('span', 'ready', 'Ready to finish.'));
+  }
+  sh.finish.replaceChildren();
+  if (done) {
+    sh.finish.append(el('div', 'done', '✓ Finished. Changes you make here still save.'));
+    const c = el('button', 'primary wide', 'Close'); c.type = 'button'; c.onclick = () => closeSheet();
+    sh.finish.append(c);
+  } else {
+    const fin = el('button', 'primary wide' + (needs.length ? ' notready' : ''), 'Finish stop ✓'); fin.type = 'button';
+    fin.onclick = finishStop;
+    const later = el('button', 'wide', 'Save & close (finish later)'); later.type = 'button'; later.onclick = () => closeSheet();
+    sh.finish.append(fin, later);
+  }
+  sh.tools.replaceChildren(toolsBlock(s, sh.err, true));
 }
 
 // ---- stop card ---------------------------------------------------------
@@ -442,23 +690,7 @@ function labeled(label, input) {
   const w = el('div'); w.append(el('label', null, label), input); return w;
 }
 
-// What each stop type needs before it can be confirmed, and which parts of the card it shows.
-// Gas, Lunch, Personal and Traffic are done once picked (the server sets their status).
-const TYPES = [['job', 'Job'], ['vendor', 'Vendor'], ['office', 'Office'], ['gas', 'Gas'],
-               ['lunch', 'Lunch'], ['personal', 'Personal'], ['traffic', 'Traffic']];
-const TYPE_LABEL = Object.fromEntries(TYPES);
-const CONFIRMABLE = ['job', 'vendor', 'office'];
-function stillNeeded(s, d) {
-  const t = s.stop_type, miss = [];
-  if (!t) return ['what this stop is'];
-  if (!CONFIRMABLE.includes(t)) return miss;
-  if (!(d.business_name || '').trim()) miss.push(t === 'vendor' ? 'vendor name' : 'business name');
-  if (t === 'job') {
-    if (!s.work_category && !s.category_hint) miss.push('category');   // confirming fills in last time's category
-    if (!s.notes.trim()) miss.push('work notes');
-  }
-  return miss;
-}
+
 function cardTitle(s) {
   if (s.business_name) return s.business_name;
   if (s.stop_type === 'gas') return 'Gas';
@@ -467,59 +699,60 @@ function cardTitle(s) {
 }
 function chipText(s) {
   const t = TYPE_LABEL[s.stop_type];
-  if (!t) return 'Draft';
-  return CONFIRMABLE.includes(s.stop_type) ? t + (s.status === 'Confirmed' ? ' ✓' : ' · Draft') : t;
+  if (!t) return 'No type';
+  if (CONFIRMABLE.includes(s.stop_type)) return t + (s.status === 'Confirmed' ? ' ✓' : ' · Draft');
+  return t;
 }
 
+// The card is a summary with one main button; the sheet does the rest. Lunch, Personal, Traffic and stops with
+// no type yet open a small area on the card instead (type buttons, times, stop tools).
 function stopCard(s, i) {
   const card = el('div', 'card st-' + s.status + (s.kind === 'short' ? ' short' : ''));
   card.dataset.id = s.id;
   if (S.sel === s.id) card.classList.add('sel');
+  const sheetType = SHEET_TYPES.includes(s.stop_type);
 
   const head = el('div', 'head');
   const body = el('div', 'body');
-  const t = el('div', 't', s.arrive + ' – ' + s.depart + ' · ' + dur(s.minutes));
+  const t = el('div', 't', s.arrive + ' – ' + (s.here_now ? 'now' : s.depart) + ' · ' + dur(s.minutes));
   if (s.kind === 'short') t.append(' ', el('span', 'chip', 'short'));
   body.append(t, el('div', 'm', cardTitle(s)));
-  if (s.status === 'Confirmed') {
-    const miss = stillNeeded(s, s);
-    if (miss.length) body.append(el('div', 'need', 'Needs ' + miss.join(' and ')));
+  const needs = (s.needs || []).filter(n => n !== 'stop type');
+  if (needs.length && sheetType) body.append(el('div', 'need', 'Needs ' + needs.join(', ')));
+  if (s.here_now) body.append(el('div', 'here', '● Here now'));
+
+  const btns = el('div', 'cardacts');
+  const stop = fn => ev => { ev.stopPropagation(); fn(); };
+  if (!s.stop_type) {
+    const go = el('button', 'primary', 'Start job'); go.type = 'button';
+    go.onclick = stop(() => setType(s, 'job'));
+    const other = el('button', null, 'Other type…'); other.type = 'button';
+    other.onclick = stop(() => { setOpen(s.id, !S.open.has(s.id)); setSel(s.id, true); });
+    btns.append(go, other);
+  } else if (sheetType) {
+    const finished = !needs.length && (s.stop_type === 'gas' || s.status === 'Confirmed');
+    const go = el('button', finished ? null : 'primary',
+                  finished ? 'Review ›' : s.stop_type === 'gas' ? 'Fill-up ›' : 'Continue ›');
+    go.type = 'button';
+    go.onclick = stop(() => { setSel(s.id, true); openSheet(s.id); });
+    btns.append(go);
   }
-  if (s.stop_type === 'gas' && !(s.fuel && s.fuel.total)) body.append(el('div', 'need', 'Add gallons and total'));
-  if (s.here_now) {
-    body.append(el('div', 'here', '● Here now · keeps growing while you are on site'));
-    if (s.status === 'Draft' || s.status === 'Confirmed') {
-      const lv = el('button', 'quick', 'Leaving now'); lv.type = 'button';
-      lv.title = 'Set the departure to the current time';
-      lv.onclick = async ev => {
-        ev.stopPropagation();
-        try { applyDay(await api('POST', '/api/stops/' + s.id + '/leave')); render(false); }
-        catch (e) { alert(e.message); }
-      };
-      body.append(lv);
-    }
+  if (s.suggest && s.status === 'Draft') {
+    const q = el('button', 'quick', (s.business_name ? 'Confirm ' : 'Confirm as ') + s.suggest.name); q.type = 'button';
+    q.title = 'A saved place: confirm it in one tap (add the notes later)';
+    q.onclick = stop(() => run(() => api('POST', '/api/stops/' + s.id + '/confirm-known'), null));
+    btns.append(q);
   }
   if (s.vendor_hint && s.stop_type !== 'vendor' && s.status !== 'Confirmed') {
     const vb = el('button', 'quick', 'Save as Vendor'); vb.type = 'button';
     vb.title = 'A supply shop: later visits are pre-filled and the report says "from Vendor"';
-    vb.onclick = async ev => {
-      ev.stopPropagation();
-      try { applyDay(await api('POST', '/api/stops/' + s.id + '/save-place', {kind: 'vendor'})); render(false); }
-      catch (e) { alert(e.message); }
-    };
-    body.append(vb);
+    vb.onclick = stop(() => run(() => api('POST', '/api/stops/' + s.id + '/save-place', {kind: 'vendor'}), null));
+    btns.append(vb);
   }
+  if (btns.childNodes.length) body.append(btns);
   head.append(el('div', 'num', String(i + 1)), body, el('span', 'chip', chipText(s)));
-  if (s.suggest && s.status === 'Draft') {
-    const q = el('button', 'quick', (s.business_name ? 'Confirm ' : 'Confirm as ') + s.suggest.name);
-    q.onclick = async ev => {
-      ev.stopPropagation();
-      try { applyDay(await api('POST', '/api/stops/' + s.id + '/confirm-known')); render(false); }
-      catch (e) { alert(e.message); }
-    };
-    body.append(q);
-  }
   head.onclick = () => {
+    if (sheetType) { setSel(s.id, true); openSheet(s.id); return; }
     const open = !S.open.has(s.id);
     if (!open) flushCard(s.id);
     setOpen(s.id, open);
@@ -527,8 +760,8 @@ function stopCard(s, i) {
   };
 
   const edit = el('div', 'edit');
-  edit.hidden = !S.open.has(s.id);
-  buildEdit(edit, s, i);
+  edit.hidden = sheetType || !S.open.has(s.id);
+  if (!sheetType) buildEdit(edit, s);
   card.append(head, edit);
   return card;
 }
@@ -656,162 +889,32 @@ function photoBox(s, err) {
   return [box, row];
 }
 
-function buildEdit(edit, s, i) {
+// The small area on the card for stops with no sheet: type buttons, times (and a name for Personal), stop tools.
+function buildEdit(edit, s) {
   const key = 's' + s.id;
-  const d = Object.assign({business_name: s.business_name, address: s.address,
-    arrive: s.arrive, depart: s.depart, category: s.category,
-    known_site_id: s.known_site_id}, S.drafts[key] || {});
+  const d = Object.assign({business_name: s.business_name, arrive: s.arrive, depart: s.depart}, S.drafts[key] || {});
   const err = el('div', 'err');
-  const remember = (k, v) => { d[k] = v; (S.drafts[key] = S.drafts[key] || {})[k] = v; stat.textContent = 'Unsaved changes'; };
   const stat = el('div', 'saved', S.drafts[key] ? 'Unsaved changes' : (S.savedAt[s.id] ? 'Saved ' + S.savedAt[s.id] : ''));
-  const type = s.stop_type;
-
-  // 1. what is this stop? (picked first; it decides what else the card shows)
-  const types = el('div', 'types');
-  TYPES.forEach(([k, label]) => {
-    const b = el('button', type === k ? 'on' : (!type && k === 'gas' && s.gas_hint ? 'hint' : ''), label); b.type = 'button';
-    b.onclick = () => { if (k !== type) saveCard(s.id, {stop_type: k}, err); };
-    types.append(b);
-  });
-  if (!type) edit.append(el('div', 'ask', 'What is this stop?' + (s.gas_hint ? ' (looks like a gas station)' : '')));
-  edit.append(types);
-
-  // name and address (with the business finder)
-  const nameIn = el('input'); nameIn.value = d.business_name;
-  nameIn.placeholder = {vendor: 'Vendor (supply shop)', gas: 'Station (optional)', office: 'Office', personal: 'Name (optional, e.g. Home)'}[type] || 'Business name';
-  nameIn.oninput = () => { remember('business_name', nameIn.value); remember('known_site_id', null); };
-  const addrIn = el('input'); addrIn.value = d.address; addrIn.placeholder = 'Address';
-  addrIn.oninput = () => remember('address', addrIn.value);
-  const find = el('button', null, type === 'gas' ? 'Find station' : 'Find business'); find.type = 'button';
-  let panel = null;
-  find.onclick = () => {
-    if (panel) { panel.remove(); panel = null; candLayer.clearLayers(); return; }
-    panel = el('div', 'panel');
-    const form = el('form'), inp = el('input'), go = el('button', null, 'Search');
-    inp.placeholder = 'Search by name or address'; go.type = 'submit';
-    const box = el('div');
-    form.append(inp, go); panel.append(form, box);
-    const pick = c => {     // choosing a business closes the list and saves it
-      panel.remove(); panel = null;
-      candLayer.clearLayers();
-      remember('business_name', c.name); remember('address', c.address);
-      remember('category', c.category);
-      remember('known_site_id', c.source === 'known' ? c.known_site_id : null);
-      saveCard(s.id, null, err);
-    };
-    form.onsubmit = e => { e.preventDefault(); loadCands(s, box, inp.value.trim(), pick); };
-    find.after(panel);
-    loadCands(s, box, '', pick);
-  };
-
+  const remember = (k, val) => { d[k] = val; (S.drafts[key] = S.drafts[key] || {})[k] = val; stat.textContent = 'Unsaved changes'; };
+  if (!s.stop_type) edit.append(el('div', 'ask', 'What is this stop?' + (s.gas_hint ? ' (looks like a gas station)' : '')));
+  edit.append(typeRow(s, err));
   const arrIn = el('input'); arrIn.type = 'time'; arrIn.value = d.arrive;
   arrIn.oninput = () => remember('arrive', arrIn.value);
   arrIn.onchange = () => saveCard(s.id, null, err);
   const depIn = el('input'); depIn.type = 'time'; depIn.value = d.depart;
   depIn.oninput = () => remember('depart', depIn.value);
   depIn.onchange = () => saveCard(s.id, null, err);
-  const times = el('div', 'two'); times.append(labeled('Arrived', arrIn), labeled('Departed', depIn));
-  [nameIn, addrIn].forEach(x => { x.onblur = () => laterSave(s.id, err); });
-
-  // notes & parts summary button (jobs, vendors, office)
-  const flat = (s.notes || '').replace(/\s+/g, ' ').trim();
-  const np = el('button', 'notesbtn'); np.type = 'button';
-  const bits = [];
-  const nParts = (s.parts || []).filter(p => !p.expense).length, nExp = (s.parts || []).filter(p => p.expense).length;
-  if (nParts) bits.push(nParts + ' part' + (nParts > 1 ? 's' : ''));
-  if (nExp) bits.push(nExp + ' expense' + (nExp > 1 ? 's' : ''));
-  if ((s.follow_ups || []).length) bits.push(s.follow_ups.length + ' follow-up' + (s.follow_ups.length > 1 ? 's' : ''));
-  if (s.work_category) bits.push(s.work_category);
-  np.append(el('span', 'nb-t', (type === 'vendor' ? 'Notes, purchases & parts' : 'Notes & parts') + ' ›'),
-            el('span', 'nb-m' + (flat ? '' : ' nb-empty'), flat ? flat.slice(0, 110) + (flat.length > 110 ? '…' : '') : 'No work notes yet'),
-            el('span', 'nb-m', bits.join(' · ') || 'No parts yet'));
-  np.onclick = () => { flushCard(s.id); openSheet(s.id); };
-
-  // 2. the one main action: Confirm (jobs, vendors, office), once the type has what it needs
-  const acts = el('div', 'acts');
-  if (CONFIRMABLE.includes(type)) {
-    const miss = stillNeeded(s, d);
-    if (s.status === 'Confirmed') {
-      acts.append(el('span', 'done', '✓ Confirmed'));
-    } else {
-      const confB = el('button', 'primary' + (miss.length ? ' notready' : ''), 'Confirm'); confB.type = 'button';
-      confB.onclick = () => {
-        if (!miss.length) return saveCard(s.id, {status: 'Confirmed'}, err);
-        err.textContent = 'Still needed: ' + miss.join(', ') + '.';
-        if (miss.some(m => m.includes('name'))) nameIn.focus();
-        else { flushCard(s.id); openSheet(s.id); }
-      };
-      acts.append(confB);
-      if (miss.length) acts.append(el('span', 'need', 'Needs ' + miss.join(', ')));
-    }
+  const times = el('div', 'two'); times.append(labeled('Arrived', arrIn), labeled('Left', depIn));
+  if (s.stop_type === 'personal') {
+    const nameIn = el('input'); nameIn.value = d.business_name; nameIn.placeholder = 'Name (optional, e.g. Home)';
+    nameIn.oninput = () => { remember('business_name', nameIn.value); remember('known_site_id', null); };
+    nameIn.onblur = () => laterSave(s.id, err);
+    edit.append(labeled('Name', nameIn));
   }
-  const moreB = el('button', 'morebtn', 'More ▾'); moreB.type = 'button';
-  acts.append(moreB);
-  const more = el('div', 'more'); more.hidden = true;
-  moreB.onclick = () => { more.hidden = !more.hidden; moreB.textContent = more.hidden ? 'More ▾' : 'More ▴'; };
-
-  if (s.status === 'Confirmed') {
-    const back = el('button', null, 'Back to Draft'); back.type = 'button';
-    back.onclick = () => saveCard(s.id, {status: 'Draft'}, err);
-    more.append(back);
-  }
-  // split
-  const splitRow = el('div', 'two'); splitRow.hidden = true;
-  const splitIn = el('input'); splitIn.type = 'time';
-  const splitGo = el('button', null, 'Split here');
-  splitGo.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/split', {at: splitIn.value}), err);
-  splitRow.append(splitIn, splitGo);
-  const splitB = el('button', null, 'Split…');
-  splitB.onclick = () => {
-    splitIn.value = addMin(s.arrive, Math.round(s.minutes / 2));
-    splitRow.hidden = !splitRow.hidden;
-  };
-  more.append(splitB);
-
-  // make this stop the start and/or end of the work day
-  const sb = el('button', null, 'Start day here'); sb.title = 'Work day starts when you arrived at this stop';
-  sb.onclick = () => markHere(s, 'start', err);
-  const eb = el('button', null, 'End day here');
-  eb.title = s.status === 'Personal' ? 'Work day ends when you arrived here' : 'Work day ends when you left this stop';
-  eb.onclick = () => markHere(s, 'end', err);
-  more.append(sb, eb);
-  if (s.lat != null) {
-    [['vendor', 'Vendor'], ['office', 'Office'], ['home', 'Home']].forEach(([k, t]) => {
-      if (s.site_kind === k) return;
-      const pb = el('button', null, 'Save as ' + t); pb.type = 'button';
-      pb.title = 'Remember this spot as a ' + t + ' place; later stops here are pre-filled';
-      pb.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/save-place', {kind: k}), err);
-      more.append(pb);
-    });
-  }
-
-  const prev = S.stops[i - 1], next = S.stops[i + 1];
-  const mergeWith = other => run(() => api('POST', '/api/stops/merge', {ids: [s.id, other.id]}), err);
-  if (prev) { const b = el('button', null, 'Merge ↑'); b.title = 'Merge with the previous stop'; b.onclick = () => mergeWith(prev); more.append(b); }
-  if (next) { const b = el('button', null, 'Merge ↓'); b.title = 'Merge with the next stop'; b.onclick = () => mergeWith(next); more.append(b); }
-  const del = el('button', 'danger', s.kind === 'short' ? 'Dismiss' : 'Delete');
-  del.onclick = () => {
-    if (!confirm('Delete this stop? Raw GPS points are kept; only this entry is removed.')) return;
-    run(() => api('DELETE', '/api/stops/' + s.id), err, () => { delete S.drafts[key]; S.open.delete(s.id); });
-  };
-  more.append(del);
-
-  edit.append(acts, more, splitRow, err);
-  // 3. the fields this type needs
-  if (!type) {
-    edit.append(times);
-  } else if (CONFIRMABLE.includes(type)) {
-    edit.append(labeled(type === 'vendor' ? 'Vendor' : 'Business', nameIn), labeled('Address', addrIn), find, times, np,
-                ...photoBox(s, err));
-  } else if (type === 'gas') {
-    edit.append(...fuelBox(s, err), ...photoBox(s, err), labeled('Station', nameIn), find, times);
-  } else if (type === 'personal') {
-    edit.append(labeled('Name', nameIn), times);
-  } else {
-    edit.append(times);
-  }
-  edit.append(stat);
-  if (s.lat != null && type) edit.append(el('div', 'hint', 'Tip: tap this stop\'s pin on the map, then drag it to move the location.'));
+  edit.append(times, err);
+  const tools = el('details', 'sheet-more');
+  tools.append(el('summary', null, 'Stop tools (split, merge, delete…)'), toolsBlock(s, err, false));
+  edit.append(tools, stat);
 }
 
 // ---- drive row ---------------------------------------------------------
