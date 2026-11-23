@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import photos, receipts, summary
+from . import photos, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
@@ -787,6 +787,19 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     @app.get("/api/places/<int:sid>/history")
     def places_history(sid):
         return with_conn(lambda conn, cfg: jsonify(service.place_history(conn, cfg, sid)))
+
+    @app.get("/api/vendors")
+    def vendors_list():
+        return catalog(lambda conn: {"vendors": vendors.list_vendors(conn)})
+
+    @app.get("/api/vendors/detail")
+    def vendors_detail():
+        return with_conn(lambda conn, cfg: jsonify(vendors.detail(conn, cfg, request.args.get("name", ""))))
+
+    @app.put("/api/vendors")
+    def vendors_save():
+        b = request.get_json(silent=True) or {}
+        return catalog(lambda conn: {"name": vendors.save(conn, b.get("name", ""), b)})
 
     @app.get("/api/places/group-history")
     def places_group_history():

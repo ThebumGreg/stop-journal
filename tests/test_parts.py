@@ -214,7 +214,7 @@ def test_part_page_history_and_truck_tabs(tmp_path):
     reasons = [x["reason"] for x in h["log"]]
     assert "Used on a stop" in reasons and "Stock added" in reasons and h["log"][0]["note"] == "Ferguson"
     page = c.get("/truck").data.decode()
-    for tab in ('href="#parts"', 'href="#stock"', 'href="#fuel"', 'href="#data"'):
+    for tab in ('href="#parts"', 'href="#stock"', 'href="#vendors"', 'href="#fuel"', 'href="#data"'):
         assert tab in page
     assert ">Reports<" in page and "Import / export</a>" in page
 

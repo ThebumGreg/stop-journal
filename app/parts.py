@@ -589,7 +589,8 @@ def choices(conn):
     """Values for the Truck page dropdowns: vendors (saved vendor places plus any used on a part) and categories."""
     vend = {r[0].strip() for r in conn.execute(
         "SELECT vendor FROM parts WHERE COALESCE(vendor,'')!='' UNION "
-        "SELECT name FROM known_sites WHERE kind='vendor' AND COALESCE(name,'')!=''")}
+        "SELECT name FROM known_sites WHERE kind='vendor' AND COALESCE(name,'')!='' UNION "
+        "SELECT name FROM vendors")}
     cats = {r[0].strip() for r in conn.execute("SELECT category FROM parts WHERE COALESCE(category,'')!=''")}
     key = lambda x: x.lower()
     return {"vendors": sorted(vend, key=key), "categories": sorted(cats, key=key),

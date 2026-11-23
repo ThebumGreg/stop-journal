@@ -130,6 +130,13 @@ CREATE TABLE IF NOT EXISTS stops (
   times_edited INTEGER DEFAULT 0
 );
 
+-- vendor details (one row per vendor name; the name links parts.vendor and vendor places)
+CREATE TABLE IF NOT EXISTS vendors (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  account TEXT, phone TEXT, contact TEXT, website TEXT, notes TEXT
+);
+
 CREATE TABLE IF NOT EXISTS follow_ups (
   id INTEGER PRIMARY KEY,
   stop_id INTEGER NOT NULL,

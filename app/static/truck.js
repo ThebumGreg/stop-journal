@@ -79,10 +79,12 @@ function qtyText(p) {
 function route() {
   const h = location.hash.slice(1) || 'parts';
   const m = /^part-(\d+)$/.exec(h);
-  const tab = m ? 'parts' : h;
+  const vm = /^vendor\/(.+)$/.exec(h);
+  const tab = m ? 'parts' : vm ? 'vendors' : h;
   document.querySelectorAll('#subnav a').forEach(a => a.classList.toggle('on', a.dataset.v === tab));
   view.replaceChildren(el('div', 'hint', 'Loading…'));
-  const show = m ? partPage(+m[1]) : ({parts: partsView, stock: stockView, fuel: () => fuelView('month'), data: dataView}[tab] || partsView)();
+  const show = m ? partPage(+m[1]) : vm ? vendorPage(decodeURIComponent(vm[1]))
+    : ({parts: partsView, stock: stockView, vendors: vendorsView, fuel: () => fuelView('month'), data: dataView}[tab] || partsView)();
   Promise.resolve(show).catch(e => { view.replaceChildren(el('div', 'err', e.message)); });
 }
 window.addEventListener('hashchange', route);
@@ -199,6 +201,7 @@ async function partPage(id) {
   head.append(el('h1', 'page-title', p.name),
               el('div', 'hint', [p.active ? '' : 'REMOVED', KINDS.find(k => k[0] === p.kind)[1], p.sku ? 'Part # ' + p.sku : '', p.bin ? '📍 ' + p.bin : '',
                                  p.vendor, money(p.unit_cost) + (p.unit_cost != null ? ' / ' + p.unit : '')].filter(Boolean).join(' · ')));
+  if (p.vendor) { const va = el('a', 'back', 'Vendor: ' + p.vendor + ' ›'); va.href = vendorHref(p.vendor); head.append(va); }
   const err = el('div', 'err');
 
   // stock card
@@ -401,6 +404,110 @@ async function shoppingBox() {
     box.append(w);
   });
   return box;
+}
+
+// ---- Vendors: one per name (all branches), with what you buy there --------------------------
+const vendorHref = name => '#vendor/' + encodeURIComponent(name);
+async function vendorsView() {
+  const vs = (await api('GET', '/api/vendors')).vendors;
+  const list = el('div');
+  if (!vs.length) list.append(el('div', 'hint', 'No vendors yet. Set a vendor on a part, or save a stop as a Vendor place.'));
+  vs.forEach(v => {
+    const a = el('a', 'part'); a.href = vendorHref(v.name);
+    const body = el('div', 'body');
+    body.append(el('div', 'n', v.name), el('div', 'm', [
+      v.locations ? v.locations + ' location' + (v.locations === 1 ? '' : 's') : 'no saved location',
+      v.parts + ' part' + (v.parts === 1 ? '' : 's'), v.last_visit ? 'last visit ' + niceDate(v.last_visit) : ''].filter(Boolean).join(' · ')));
+    a.append(body, v.low ? el('div', 'qty low', v.low + ' low') : el('div', 'hint', ''));
+    list.append(a);
+  });
+  view.replaceChildren(el('div', 'hint', 'A vendor covers all its branches. Low items show first.'), list);
+}
+
+async function vendorPage(name) {
+  const d = await api('GET', '/api/vendors/detail?name=' + encodeURIComponent(name));
+  const back = el('a', 'back', '‹ All vendors'); back.href = '#vendors';
+  const err = el('div', 'err');
+  const i = d.info;
+  const head = el('div');
+  head.append(el('h1', 'page-title', d.name), el('div', 'hint', [d.totals.parts + ' parts', d.locations.length + ' location' + (d.locations.length === 1 ? '' : 's'),
+    d.totals.visits ? d.totals.visits + ' visits' : '', d.totals.expenses ? money(d.totals.expenses) + ' in receipts' : ''].filter(Boolean).join(' · ')));
+
+  // contact card
+  const info = el('section', 'card');
+  info.append(el('h2', null, 'Account and contact'));
+  if (i.phone) { const a = el('a', 'btn', '📞 ' + i.phone); a.href = 'tel:' + i.phone.replace(/[^\d+]/g, ''); info.append(a); }
+  [['Account #', i.account], ['Contact', i.contact], ['Website', i.website], ['Notes', i.notes]].forEach(([k, v]) => {
+    if (v) info.append(el('div', null, k + ': ' + v));
+  });
+  if (!i.phone && !i.account && !i.contact && !i.website && !i.notes) info.append(el('div', 'hint', 'Add your account number, phone and a contact under Edit.'));
+
+  // low here
+  const low = el('section', 'card');
+  low.append(el('h2', null, 'Low at the truck (' + d.low.length + ')'));
+  if (!d.low.length) low.append(el('div', 'hint', 'Nothing from this vendor is low.'));
+  d.low.forEach(it => {
+    const r = el('div', 'crow'); r.style.gridTemplateColumns = '1fr auto';
+    const amt = it.packs ? it.packs + ' ' + (it.pack_unit || 'pack') + (it.packs > 1 ? 's' : '') + ' of ' + it.pack_size : it.suggest + ' ' + it.unit;
+    const l = el('div'); l.append(el('div', 'n', amt + ' ' + it.name), el('div', 'hint', 'have ' + it.on_hand + ', reorder at ' + it.reorder_at));
+    const b = el('button', null, '✓ Bought'); b.type = 'button';
+    b.onclick = async () => {
+      try { await api('POST', '/api/parts/bought', {vendor: d.name, items: [it.packs ? {id: it.id, packs: it.packs} : {id: it.id, qty: it.suggest}]}); route(); }
+      catch (e) { err.textContent = e.message; }
+    };
+    r.append(l, b); low.append(r);
+  });
+
+  // parts
+  const ps = el('details', 'card');
+  ps.append(el('summary', null, 'Parts from this vendor (' + d.parts.length + ')'));
+  d.parts.forEach(p => {
+    const a = el('a', 'hrow'); a.href = '#part-' + p.id;
+    const q = qtyText(p);
+    a.append(el('div', null, p.name + (p.sku ? ' · ' + p.sku : '')), el('div', 'm', [money(p.unit_cost), q.t, p.bin ? '📍 ' + p.bin : ''].filter(Boolean).join(' · ')));
+    ps.append(a);
+  });
+
+  // locations and visits
+  const locs = el('section', 'card');
+  locs.append(el('h2', null, 'Locations'));
+  if (!d.locations.length) locs.append(el('div', 'hint', 'No saved location. On a stop at this vendor, use Tools → Save as Vendor.'));
+  d.locations.forEach(l => {
+    const a = el('a', 'hrow'); a.href = 'https://maps.apple.com/?daddr=' + encodeURIComponent(l.address || (l.lat + ',' + l.lon));
+    a.append(el('div', null, '📍 ' + (l.address || 'No address saved')), el('div', 'm', l.times_confirmed + ' visit' + (l.times_confirmed === 1 ? '' : 's') + ' · directions'));
+    locs.append(a);
+  });
+  const vis = el('details', 'card');
+  vis.append(el('summary', null, 'Visits (' + d.totals.visits + ')'));
+  d.visits.slice(0, 20).forEach(v => {
+    const a = el('a', 'hrow'); a.href = v.url;
+    a.append(el('div', null, niceDate(v.date) + ' · ' + v.arrive + '–' + v.depart), el('div', 'm', [v.address, v.summary].filter(Boolean).join(' · ')));
+    vis.append(a);
+  });
+  const buys = el('details', 'card');
+  buys.append(el('summary', null, 'Bought from the shopping list (' + d.bought.length + ')'));
+  d.bought.forEach(b => buys.append(el('div', 'hrow', whenFull(b.ts) + ' · +' + b.qty + ' ' + b.unit + ' ' + b.name)));
+
+  // edit
+  const ed = el('details', 'card');
+  ed.append(el('summary', null, 'Edit'));
+  const F = {};
+  const mk = (k, label, val, ph) => { const x = k === 'notes' ? el('textarea') : el('input'); x.value = val || ''; if (ph) x.placeholder = ph; F[k] = x; return lab(label, x); };
+  const ren = el('input'); ren.value = d.name;
+  ed.append(lab('Name', ren), mk('account', 'Account #', i.account), mk('phone', 'Phone', i.phone, '555-0100'),
+            mk('contact', 'Contact', i.contact, 'counter, rep…'), mk('website', 'Website', i.website), mk('notes', 'Notes', i.notes));
+  if (F.phone) F.phone.inputMode = 'tel';
+  ed.append(el('div', 'hint', 'Renaming to the name of another vendor merges them (their parts and locations move over).'));
+  const save = el('button', 'primary', 'Save'); save.type = 'button';
+  save.onclick = async () => {
+    err.textContent = '';
+    const b = {name: d.name, rename: ren.value.trim()};
+    Object.keys(F).forEach(k => { b[k] = F[k].value; });
+    try { const r = await api('PUT', '/api/vendors', b); location.hash = vendorHref(r.name); route(); }
+    catch (e) { err.textContent = e.message; }
+  };
+  ed.append(save);
+  view.replaceChildren(back, head, err, info, low, ps, locs, vis, buys, ed);
 }
 
 // ---- Fuel: fill-ups logged on Gas stops (day page) ------------------------------------------
