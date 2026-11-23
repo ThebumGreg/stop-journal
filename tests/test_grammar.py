@@ -64,7 +64,7 @@ def test_settings_page_has_one_tab_per_integration(tmp_path):
     c = client(tmp_path)
     html = c.get("/settings").get_data(as_text=True)
     tabs = re.findall(r'data-tab="\d+"[^>]*>([^<●]+)', html)
-    assert tabs == ["OwnTracks", "Places", "Pushover", "Road distance", "Calendar", "Receipts", "Grammar", "General"]
+    assert tabs == ["OwnTracks", "Places", "Pushover", "Road distance", "Calendar", "Receipts", "AI", "Grammar", "General"]
     from app import settings
     assert sorted(g for _, gs in settings.TABS for g in gs) == sorted(g for g, _ in settings.SPEC)
     bad = c.post("/settings", data={"stop_radius_m": "abc"}).get_data(as_text=True)

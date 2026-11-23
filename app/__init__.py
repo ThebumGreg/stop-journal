@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import kits, photos, receipts, summary, vendors
+from . import ai, kits, photos, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
@@ -495,6 +495,15 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         q, everything = request.args.get("q", ""), request.args.get("all") == "1"
         kind = request.args.get("kind") if request.args.get("kind") in parts.KINDS else None
         return catalog(lambda conn: {"parts": parts.list_parts(conn, q, everything, kind)})
+
+    @app.get("/api/ai/status")
+    def ai_status():
+        return jsonify(notes=ai.enabled(eff()))
+
+    @app.post("/api/notes/polish")
+    def notes_polish():
+        b = request.get_json(silent=True) or {}
+        return with_conn(lambda conn, cfg: jsonify(text=ai.polish(conn, cfg, b.get("text", ""))))
 
     @app.post("/api/grammar")
     def grammar_check():

@@ -291,7 +291,7 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   text to `{url}/v2/check` (language en-US, 5000 chars, 30 issues) and returns offset/length/message/replacements;
   `GET /api/grammar/status` says whether it is on. The sheet's "Check grammar" button lists issues with one-tap fixes.
 - Community image `erikvl87/languagetool` (port 8010, about 1 GB RAM) is a commented example in docker-compose.yml; confirm it
-  before relying on it. Not planned unless asked: an AI "polish my notes" button (sends customer notes outside, costs per use).
+  before relying on it. The AI "polish my notes" button is built (see AI notes).
 
 ## Data gaps, open stops, vendor marking, auto-sync (built; from the 2026-11-20 day)
 Found on 2026-11-20: the phone sent nothing 08:54:55 to 09:55:12; the app drew a 60-minute counted "drive" for 2.7 km, and the tech
@@ -433,6 +433,15 @@ stop departed 12:21, and listed billable parts with no cost.
   day's appointments). The API strips coordinates from the live block. Refreshes every minute while visible. No traffic
   (Google Routes would cost money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
   Drive); not built.
+
+## AI notes (2026-11-23, the user approved the cost)
+- `app/ai.py`, Settings → AI: `ANTHROPIC_API_KEY` (secret, write-only), `AI_NOTES` on/off, `AI_MONTHLY_CAP` 300 (counted in
+  `api_usage` provider "ai"). Official SDK `anthropic==2.12.0`, imported lazily. Model `claude-opus-5-5`, effort low, server-side
+  fallback on (`betas=["server-side-fallback-2026-07-01"]`, `fallbacks="default"`); refusal / cut-off / API errors become plain
+  messages. ONLY the Work performed text is sent (wrapped in <notes>), with a system prompt that fixes language and never changes
+  facts, numbers, part or model names. `POST /api/notes/polish {text}` → {text}; `GET /api/ai/status`. The sheet's
+  "✨ Polish notes" (hidden without a key) shows a Suggested box with Use it / Keep mine; nothing is replaced without a tap.
+- Not built: the AI receipt reader (option 3); the user chose notes only for now.
 
 ## Poor signal (2026-11-23)
 - The stop sheet writes every change of its typed fields (FIELDS) to localStorage `jobhub-draft-<stop id>` at once (`keepDraft`),

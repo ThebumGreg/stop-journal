@@ -32,6 +32,8 @@ Single user. Your location data stays on your own server.
   From the Home Screen app the files open the share sheet (Save to Files, Mail).
 - **Home page**: where you are, the next on-site appointment with drive time ("leave by", or an ETA while driving), and
   what is still unfinished today. The day view is under **Day**.
+- **AI notes** (optional, Anthropic API key in Settings → AI): ✨ Polish notes fixes spelling and grammar in Work performed
+  and shows the result for you to accept; only that text is sent.
 - **Receipt reading** (optional, Google Cloud Vision): a receipt photo suggests the fuel total and gallons, or a store total as
   an expense; you tap to use it.
 - **Places history**: tap a client, vendor, office or gas station to see every visit (date, time, work, parts, fill-ups) and
@@ -143,7 +145,8 @@ do not contain them, so back up the whole `/data` folder (at least `backups/` an
 - Do **not** expose the app to the internet without protection. Safe options: LAN only, a VPN
   (WireGuard/Tailscale), or a reverse proxy with authentication and HTTPS. Always set `APP_PASSWORD`.
 - The only outbound calls are place lookups (coordinates and search text go to the provider you
-  choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, reading your published calendar (only if you set the link), map tiles, and Pushover notifications (whose text never contains locations).
+  choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, reading your published calendar (only if you set the link), Google Vision for receipts and Claude for Polish notes (only if
+  turned on; receipt photos and the note text respectively), map tiles, and Pushover notifications (whose text never contains locations).
 - Request URLs contain coordinates, so the server keeps its access log off. Nothing is logged to
   stdout that includes locations. No analytics or telemetry.
 - If you ever track technicians, that needs written consent and work-hours-only tracking. This app

@@ -8,7 +8,7 @@ address, user and device can be picked on the Settings page.
 import secrets
 from dataclasses import replace
 
-SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user", "calendar_url", "receipt_key")
+SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user", "calendar_url", "receipt_key", "anthropic_key")
 DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
@@ -90,6 +90,15 @@ SPEC = [
         dict(key="receipt_monthly_cap", label="Most receipts to read per month", kind="int", lo=0, hi=5000,
              help="A spending safeguard. Google's free tier is 1000 a month."),
     ]),
+    ("AI (Claude)", [
+        dict(key="anthropic_key", label="Anthropic API key", kind="secret",
+             help="From console.anthropic.com → API keys. Set a monthly spend limit there too. Only the Work performed "
+                  "text is sent, when you tap Polish notes; nothing else."),
+        dict(key="ai_notes", label="Polish notes button", kind="choice", choices=["on", "off"],
+             help="Shows ✨ Polish notes under Work performed (only with a key). About 1-2 cents per use."),
+        dict(key="ai_monthly_cap", label="Most AI requests per month", kind="int", lo=0, hi=5000,
+             help="A spending safeguard on top of the Anthropic account's own limit."),
+    ]),
     ("Grammar check (LanguageTool)", [
         dict(key="languagetool_url", label="Grammar check server (LanguageTool)", kind="url",
              help="Your own LanguageTool container, for example http://192.168.1.10:8010. Only the note text is "
@@ -154,6 +163,7 @@ TABS = [
     ("Road distance", ["Road distance (OSRM)"]),
     ("Calendar", ["Calendar (Outlook)"]),
     ("Receipts", ["Receipts"]),
+    ("AI", ["AI (Claude)"]),
     ("Grammar", ["Grammar check (LanguageTool)"]),
     ("General", ["Stop detection", "Backups"]),
 ]

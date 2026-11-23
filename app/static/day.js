@@ -497,6 +497,39 @@ function followBlock(s, err) {
 
 // Optional grammar check (LanguageTool): the button only appears when the server has one configured.
 let grammarOn = null;
+let aiOn = null;
+
+// ✨ Polish notes (Settings → AI): sends only this text to Claude and shows the cleaned-up version next to yours.
+// Nothing changes until you tap Use it.
+function polishBlock(notes) {
+  const box = el('div', 'polish');
+  const btn = el('button', 'quick', '✨ Polish notes'); btn.type = 'button'; btn.hidden = true;
+  btn.title = 'Fix spelling and grammar and tidy the wording (same facts). Sends only these notes to the AI.';
+  const out = el('div');
+  btn.onclick = async () => {
+    const text = notes.value.trim();
+    if (!text) { out.replaceChildren(el('div', 'hint', 'Write some notes first.')); return; }
+    btn.disabled = true; btn.textContent = 'Polishing…'; out.replaceChildren();
+    try {
+      const d = await api('POST', '/api/notes/polish', {text});
+      if (d.text === text) { out.replaceChildren(el('div', 'hint', 'Looks good already: nothing to change.')); return; }
+      const card = el('div', 'suggest');
+      card.append(el('div', 'n', 'Suggested'), el('div', 'sugtext', d.text));
+      const use = el('button', 'primary', 'Use it'); use.type = 'button';
+      use.onclick = () => { notes.value = d.text; sheet.vals.notes = d.text; touched(); out.replaceChildren(el('div', 'hint', 'Updated. Your words are replaced; Undo with the keyboard if needed.')); };
+      const keep = el('button', null, 'Keep mine'); keep.type = 'button';
+      keep.onclick = () => out.replaceChildren();
+      const row = el('div', 'cardacts'); row.append(use, keep);
+      card.append(row);
+      out.replaceChildren(card);
+    } catch (e) { out.replaceChildren(el('div', 'err', e.message)); }
+    finally { btn.disabled = false; btn.textContent = '✨ Polish notes'; }
+  };
+  box.append(btn, out);
+  (aiOn === null ? api('GET', '/api/ai/status').then(r => (aiOn = r.notes), () => false) : Promise.resolve(aiOn))
+    .then(on => { btn.hidden = !on; });
+  return box;
+}
 function grammarBlock(notes) {
   const box = el('div', 'gram');
   const btn = el('button', 'quick', 'Check grammar'); btn.type = 'button'; btn.hidden = true;
@@ -777,7 +810,7 @@ function openSheet(id) {
     if (type !== 'vendor') grid.append(sh.exp);
     grid.append(sh.fu);
     det.append(grid);
-    sec2.append(el('h3', null, '2 · Work'), labeled('Work performed', notes), grammarBlock(notes),
+    sec2.append(el('h3', null, '2 · Work'), labeled('Work performed', notes), grammarBlock(notes), polishBlock(notes),
                 catBox, sh.parts);
     if (type === 'vendor') sec2.append(sh.exp);          // purchases are the main thing at a vendor
     sec2.append(sh.photos, det);

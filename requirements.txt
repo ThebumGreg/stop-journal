@@ -8,3 +8,4 @@ recurring-ical-events==3.8.2
 x-wr-timezone==2.0.1
 python-dateutil==2.9.0.post0
 tzdata==2026.6
+anthropic==2.12.0
