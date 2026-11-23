@@ -39,6 +39,8 @@ def _address(tags):
 
 
 def _category(tags):
+    if tags.get("amenity") == "fuel":       # a gas station with a shop is still a gas station
+        return "amenity=fuel"
     for k in POI_KEYS:
         if k in tags:
             return f"{k}={tags[k]}"

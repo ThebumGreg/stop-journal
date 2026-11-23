@@ -130,3 +130,34 @@ def test_new_part_from_the_sheet_keeps_unit_and_cost(tmp_path):
     assert (p["unit"], p["unit_cost"], p["billable"]) == ("ft", 3.1, True)
     cat = c.get("/api/parts?q=Copper").json["parts"][0]
     assert cat["unit"] == "ft" and cat["unit_cost"] == 3.1
+
+
+def test_short_stop_at_a_gas_station_is_flagged_once(tmp_path):
+    from app import db, service
+    from app.places.base import Candidate
+    c = make(tmp_path)
+    ss = stops(c)
+    conn = db.connect(str(tmp_path))
+    short = min(ss, key=lambda s: s["minutes"])
+    conn.execute("UPDATE stops SET depart_utc = arrive_utc + 600 WHERE id=?", (short["id"],))
+    conn.commit()
+    calls = []
+
+    def nearby(lat, lon, radius):
+        calls.append((lat, lon))
+        if abs(lat - short["lat"]) < 1e-9:
+            return [Candidate(name="Corner Fuel", lat=lat + 0.0002, lon=lon, category="amenity=fuel"),
+                    Candidate(name="Far Fuel", lat=lat + 0.01, lon=lon, category="amenity=fuel")]
+        return [Candidate(name="Cafe", lat=lat, lon=lon, category="amenity=cafe")]
+    n = service.check_fuel_stops(conn, D, nearby)
+    assert n >= 1 and len(calls) == n
+    s = next(x for x in stops(c) if x["id"] == short["id"])
+    assert s["gas_hint"] and s["stop_type"] == ""                   # a hint only: the type is still yours to pick
+    assert service.check_fuel_stops(conn, D, nearby) == 0           # checked once
+    def boom(*a):
+        raise OSError("map down")
+    conn.execute("UPDATE stops SET fuel_check=NULL")
+    conn.commit()
+    assert service.check_fuel_stops(conn, D, boom) == 0             # lookup down: nothing marked, tried again later
+    assert conn.execute("SELECT COUNT(*) FROM stops WHERE fuel_check IS NOT NULL").fetchone()[0] == 0
+    conn.close()

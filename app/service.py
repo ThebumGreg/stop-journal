@@ -1123,7 +1123,7 @@ def day_payload(conn, cfg, date, include_path=False):
         "category_hint": "" if r["work_category"] else last_category(
             conn, r["id"], r["business_name"], r["known_site_id"]),
         "stop_type": stop_type(r, site_kind.get(r["known_site_id"]) or ""),
-        "gas_hint": (r["category"] or "") in FUEL_CATEGORIES,
+        "gas_hint": (r["category"] or "") in FUEL_CATEGORIES or r["fuel_check"] == 1,
         "fuel": fuel.get(r["id"]), "photos": pics.get(r["id"], []),
         "needs": stop_needs(r, stop_type(r, site_kind.get(r["known_site_id"]) or ""),
                             "" if r["work_category"] else last_category(conn, r["id"], r["business_name"], r["known_site_id"]),
@@ -1536,3 +1536,35 @@ def calendar_for_day(cfg, date, stops, now):
         e["minutes_to_start"] = round((ev["start_ts"] - now) / 60)
         out.append(e)
     return out, ""
+
+
+# ---- gas stations: is this short stop at a fuel station? -------------------------------
+FUEL_CHECK_MAX_MIN = 30     # longer stops are not fill-ups
+FUEL_NEAR_M = 60            # the stop's centre must be this close to a mapped gas station
+FUEL_CHECKS_PER_CALL = 4    # each check may be a map lookup: keep page loads quick, the rest are done next time
+
+
+def check_fuel_stops(conn, date, nearby):
+    """Look up (once per stop) whether short, untyped, unnamed stops sit on a gas station, using `nearby(lat, lon,
+    radius)` (the OSM provider). Sets stops.fuel_check 1/0; the page then asks "Gas fill-up, or a quick personal
+    stop?". Never sets the type itself. Returns how many stops were checked."""
+    rows = conn.execute(
+        "SELECT * FROM stops WHERE date=? AND COALESCE(kind,'stop')='stop' AND fuel_check IS NULL AND lat IS NOT NULL "
+        "AND COALESCE(stop_type,'')='' AND status='Draft' AND known_site_id IS NULL AND COALESCE(business_name,'')='' "
+        "AND depart_utc - arrive_utc <= ? ORDER BY arrive_utc", (date, FUEL_CHECK_MAX_MIN * 60)).fetchall()
+    done = 0
+    for r in rows[:FUEL_CHECKS_PER_CALL]:
+        if (r["category"] or "") in FUEL_CATEGORIES:
+            hit = True
+        else:
+            try:
+                found = nearby(r["lat"], r["lon"], FUEL_NEAR_M)
+            except Exception:
+                break                   # map lookup down: try again next time
+            hit = any(c.category in FUEL_CATEGORIES and haversine_m(r["lat"], r["lon"], c.lat, c.lon) <= FUEL_NEAR_M
+                      for c in found)
+        conn.execute("UPDATE stops SET fuel_check=? WHERE id=?", (1 if hit else 0, r["id"]))
+        done += 1
+    if done:
+        conn.commit()
+    return done

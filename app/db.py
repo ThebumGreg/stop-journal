@@ -254,6 +254,7 @@ MIGRATIONS = [
     ("known_sites", "old_address", "INTEGER"),
     ("parts", "shelf", "TEXT"),
     ("parts", "last_cost", "REAL"),
+    ("stops", "fuel_check", "INTEGER"),
 ]
 
 

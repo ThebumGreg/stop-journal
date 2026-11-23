@@ -151,11 +151,24 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def payload(conn, cfg, date, path=False):
         return jsonify(service.day_payload(conn, cfg, date, include_path=path))
 
+    def fuel_checks(conn, cfg, date):
+        """Short unnamed stops: are they at a gas station? (one map lookup per stop, a few per request)."""
+        if provider is None and client_given:
+            return                  # tests and sample data: no real map lookups
+        try:
+            prov = provider.get("osm") if isinstance(provider, dict) else provider
+            if prov is None:
+                prov = places.get_provider(cfg, "osm")
+            service.check_fuel_stops(conn, date, prov.search_nearby)
+        except Exception:
+            pass                    # a hint only: never in the way of the day page
+
     @app.get("/api/day/<date>")
     def day_api(date):
         def go(conn, cfg):
             check_date(date)
             ensure_day(conn, cfg, date)
+            fuel_checks(conn, cfg, date)
             return payload(conn, cfg, date, path=True)
         return with_conn(go)
 
@@ -232,7 +245,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             ensure_day(conn, cfg, date)
             if cfg.recorder_url and cfg.recorder_user and cfg.recorder_device:
                 try:
-                    service.catch_up(conn, client, cfg, date)
+                    if service.catch_up(conn, client, cfg, date):
+                        fuel_checks(conn, cfg, date)
                 except Exception:
                     return jsonify(error="Recorder not reachable"), 502
             return jsonify(service.day_payload(conn, cfg, date))

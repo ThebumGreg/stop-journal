@@ -898,7 +898,17 @@ function stopCard(s, i) {
 
   const btns = el('div', 'cardacts');
   const stop = fn => ev => { ev.stopPropagation(); fn(); };
-  if (!s.stop_type) {
+  if (!s.stop_type && s.gas_hint) {     // a short stop at a gas station: a fill-up, or a quick personal stop?
+    body.append(el('div', 'ask', '⛽ At a gas station. What was it?'));
+    const g = el('button', 'primary', '⛽ Fill-up'); g.type = 'button';
+    g.onclick = stop(() => setType(s, 'gas'));
+    const p = el('button', null, '🥤 Snack / restroom'); p.type = 'button';
+    p.title = 'Marks it Personal';
+    p.onclick = stop(() => run(() => api('PATCH', '/api/stops/' + s.id, {stop_type: 'personal', business_name: 'Snack / restroom'}), null));
+    const j = el('button', null, 'Job here'); j.type = 'button';
+    j.onclick = stop(() => setType(s, 'job'));
+    btns.append(g, p, j);
+  } else if (!s.stop_type) {
     const go = el('button', 'primary', 'Start job'); go.type = 'button';
     go.onclick = stop(() => setType(s, 'job'));
     const other = el('button', null, 'Other type…'); other.type = 'button';
