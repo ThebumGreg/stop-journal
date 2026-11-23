@@ -315,7 +315,7 @@ const CATS = ['Time & Material', 'Quoted project', 'White-label migration', 'Int
               'Administrative', 'Customer outreach', 'Training'];
 const RESULTS = [['complete', 'Complete'], ['return', 'Return visit'], ['waiting', 'Waiting (parts or customer)']];
 const FIELDS = ['business_name', 'address', 'category', 'known_site_id', 'arrive', 'depart',
-                'notes', 'work_category', 'ticket', 'visit_result'];
+                'notes', 'work_category', 'ticket', 'qbo_estimate', 'visit_result'];
 const TYPES = [['job', 'Job'], ['vendor', 'Vendor'], ['office', 'Office'], ['gas', 'Gas'],
                ['break', 'Break'], ['lunch', 'Lunch'], ['personal', 'Personal'], ['traffic', 'Traffic']];
 const TYPE_LABEL = Object.fromEntries(TYPES);
@@ -828,6 +828,7 @@ function openSheet(id) {
     nameIn.value = c.name; v.business_name = c.name; v.known_site_id = null;
     if (c.location) { addrIn.value = c.location; v.address = c.location; }
     if (c.ticket && !v.ticket) { v.ticket = c.ticket; if (sh.ticket) sh.ticket.value = c.ticket; }
+    if (c.estimate && !v.qbo_estimate) { v.qbo_estimate = c.estimate; if (sh.est) sh.est.value = c.estimate; }
     if (c.category && !v.work_category) { v.work_category = c.category; if (sh.cat) sh.cat.value = c.category; }
     saveSheet();
   };
@@ -861,12 +862,15 @@ function openSheet(id) {
     sh.cat = cat;
     sh.catHint = el('div');
     const catBox = labeled('Category', cat); catBox.append(sh.catHint);
-    const ticket = field('ticket', el('input')); ticket.value = s.ticket; sh.ticket = ticket; ticket.placeholder = 'e.g. #1042, or the project / milestone';
+    const ticket = field('ticket', el('input')); ticket.value = s.ticket; sh.ticket = ticket; ticket.placeholder = 'e.g. 1042';
+    ticket.inputMode = 'numeric';
+    const est = field('qbo_estimate', el('input')); est.value = s.qbo_estimate || ''; sh.est = est; est.placeholder = 'e.g. 2210';
     const det = el('details', 'sheet-more');
-    det.append(el('summary', null, type === 'vendor' ? 'Ticket and follow-ups' : 'Ticket, expenses and follow-ups'));
-    det.open = !!(s.ticket || (s.follow_ups || []).length || (type !== 'vendor' && (s.parts || []).some(p => p.expense)));
+    det.append(el('summary', null, type === 'vendor' ? 'Ticket and follow-ups' : 'Ticket, estimate, expenses and follow-ups'));
+    det.open = !!(s.ticket || s.qbo_estimate || (s.follow_ups || []).length || (type !== 'vendor' && (s.parts || []).some(p => p.expense)));
     const grid = el('div', 'sheet-grid');
-    grid.append(labeled('Job / ticket / project', ticket));
+    grid.append(labeled('HubSpot ticket #', ticket));
+    if (type !== 'vendor') grid.append(labeled('QuickBooks estimate #', est));
     if (type !== 'vendor') grid.append(sh.exp);
     grid.append(sh.fu);
     det.append(grid);
@@ -1134,6 +1138,7 @@ function stopCard(s, i) {
       const c = s.calendar, body = {business_name: c.name};
       if (c.location) body.address = c.location;
       if (c.ticket && !s.ticket) body.ticket = c.ticket;
+      if (c.estimate && !s.qbo_estimate) body.qbo_estimate = c.estimate;
       if (c.category && !s.work_category) body.work_category = c.category;
       if (!s.stop_type) body.stop_type = 'job';
       run(() => api('PATCH', '/api/stops/' + s.id, body), null, () => { if (!s.stop_type) setTimeout(() => openSheet(s.id), 0); });

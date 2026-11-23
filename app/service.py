@@ -656,6 +656,11 @@ def patch_stop(conn, cfg, sid, f):
         if wc and wc not in WORK_CATEGORIES:
             raise EditError("Choose one of the listed categories.")
         upd["work_category"] = wc or None
+    if "qbo_estimate" in f:
+        q = str(f["qbo_estimate"] or "").strip().lstrip("#").strip()
+        if len(q) > 40:
+            raise EditError("The QuickBooks estimate number is too long (40 characters at most).")
+        upd["qbo_estimate"] = q or None
     if "ticket" in f:
         t = str(f["ticket"] or "").strip()
         if len(t) > 80:
@@ -873,11 +878,11 @@ def merge_stops(conn, cfg, id_a, id_b):
     kind = "stop" if "stop" in (a["kind"], b["kind"]) else "short"
     conn.execute(
         "UPDATE stops SET arrive_utc=?, depart_utc=?, lat=?, lon=?, business_name=?, "
-        "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, work_category=?, ticket=?, "
+        "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, work_category=?, ticket=?, qbo_estimate=?, "
         "visit_result=?, stop_type=?, edited=1, times_edited=1 WHERE id=?",
         (a["arrive_utc"], b["depart_utc"], lat, lon, first["business_name"],
          first["address"], first["category"], first["known_site_id"], notes, status,
-         kind, a["work_category"] or b["work_category"], a["ticket"] or b["ticket"],
+         kind, a["work_category"] or b["work_category"], a["ticket"] or b["ticket"], a["qbo_estimate"] or b["qbo_estimate"],
          b["visit_result"] or a["visit_result"],
          a["stop_type"] if a["stop_type"] == b["stop_type"] and _type_fits(a["stop_type"], status) else None, a["id"]))
     conn.execute("UPDATE stop_parts SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
@@ -1244,7 +1249,7 @@ def day_payload(conn, cfg, date, include_path=False):
         "site_kind": site_kind.get(r["known_site_id"]) or "",
         "vendor_hint": site_kind.get(r["known_site_id"]) in (None, "client") and _looks_like_vendor(r, vendor_names),
         "parts": used.get(r["id"], []), "follow_ups": fups.get(r["id"], []),
-        "work_category": r["work_category"] or "", "ticket": r["ticket"] or "",
+        "work_category": r["work_category"] or "", "ticket": r["ticket"] or "", "qbo_estimate": r["qbo_estimate"] or "",
         "visit_result": r["visit_result"] or "",
         "category_hint": "" if r["work_category"] else last_category(
             conn, r["id"], r["business_name"], r["known_site_id"]),
@@ -1661,6 +1666,7 @@ def calendar_for_day(cfg, date, stops, now):
             e["state"] = "here" if best.get("here_now") else "done"
             cat = next((c for c in WORK_CATEGORIES if c.lower() == (ev.get("category") or "").strip().lower()), "")
             best["calendar"] = {"name": ev["name"], "location": ev["location"], "ticket": ev["ticket"],
+                                "estimate": ev.get("estimate", ""),
                                 "start": e["start"], "end": e["end"], "contact": ev.get("contact", ""),
                                 "work": ev.get("work", ""), "category": cat,
                                 # "Use calendar" is offered while the stop's name differs from the appointment's

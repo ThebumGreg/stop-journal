@@ -169,7 +169,8 @@ def build_day(payload, cfg):
             left, nxt = stops[cur], stops[cur + 2]
             m = merged.setdefault(s["id"], {"gaps": [], "notes": [s["notes"]], "parts": list(s["parts"]),
                                             "minutes": s["minutes"], "follow_ups": list(s["follow_ups"]),
-                                            "ticket": s["ticket"], "visit_result": s["visit_result"],
+                                            "ticket": s["ticket"], "qbo_estimate": s.get("qbo_estimate", ""),
+                                            "visit_result": s["visit_result"],
                                             "work_category": s["work_category"], "photos": list(s.get("photos") or [])})
             m["gaps"].append({"kind": stops[cur + 1]["status"], "from": left["depart"], "to": nxt["arrive"],
                               "secs": nxt["arrive_ts"] - left["depart_ts"]})
@@ -178,6 +179,7 @@ def build_day(payload, cfg):
             m["follow_ups"] += nxt["follow_ups"]
             m["photos"] += nxt.get("photos") or []
             m["ticket"] = m["ticket"] or nxt["ticket"]
+            m["qbo_estimate"] = m["qbo_estimate"] or nxt.get("qbo_estimate", "")
             m["work_category"] = m["work_category"] or nxt["work_category"]
             m["visit_result"] = nxt["visit_result"] or m["visit_result"]
             m["minutes"] += nxt["minutes"]
@@ -198,7 +200,7 @@ def build_day(payload, cfg):
                       for g in m["gaps"] if g["kind"] == "Personal"]
             s = dict(s, depart=m["depart"], depart_ts=m["depart_ts"], parts=m["parts"],
                      notes="\n\n".join(n for n in m["notes"] if n),
-                     minutes=m["minutes"], follow_ups=m["follow_ups"], ticket=m["ticket"],
+                     minutes=m["minutes"], follow_ups=m["follow_ups"], ticket=m["ticket"], qbo_estimate=m["qbo_estimate"],
                      visit_result=m["visit_result"], work_category=m["work_category"], photos=m["photos"])
         if s["status"] != "Confirmed":
             reason = {"Personal": "End Day" if s["id"] == end_id else "Personal", "Lunch": "Lunch",
@@ -239,6 +241,8 @@ def build_day(payload, cfg):
             "category": cat,
             "billing": service.WORK_CATEGORIES.get(cat, ""),
             "job_reference": s["ticket"],
+            "hubspot_ticket": (s["ticket"] or "").strip().lstrip("#").strip(),
+            "qbo_estimate": s.get("qbo_estimate") or "",
             "visit_result": service.VISIT_RESULTS.get(s["visit_result"], ""),
             "work_performed": s["notes"],
             "parts_used": used,
@@ -320,6 +324,7 @@ def records_to_update(days):
                          "business_name": s["business_name"], "address": s["address"],
                          "arrival": s["arrival"], "departure": s["departure"],
                          "category": s["category"], "job_reference": s["job_reference"],
+                         "hubspot_ticket": s["hubspot_ticket"], "qbo_estimate": s["qbo_estimate"],
                          "work_performed": s["work_performed"],
                          "parts_used": [f"{p['quantity']:g} x {p['name']}" + (f" ({p['part_number']})" if p["part_number"] else "")
                                         for p in s["parts_used"]],
@@ -348,6 +353,10 @@ def _gap_fields(d, counted):
 LENGTH_WORDS = ("cable", "wire", "conduit", "pipe", "tubing", "hose", "rope", "tape measure")
 
 
+REFERENCE_CATEGORIES = ("Time & Material", "Quoted project", "White-label migration")
+ESTIMATE_CATEGORIES = ("Quoted project", "White-label migration")
+
+
 def warnings(report):
     """Things worth a look before exporting. They never block: each names a stop or follow-up."""
     out = []
@@ -363,6 +372,13 @@ def warnings(report):
                 out.append(f"{who}: no category chosen.")
             if not s["work_performed"].strip():
                 out.append(f"{who}: no work performed written.")
+            if s["category"] in REFERENCE_CATEGORIES:
+                if not s["hubspot_ticket"]:
+                    out.append(f"{who}: no HubSpot ticket #.")
+                elif not s["hubspot_ticket"].isdigit():
+                    out.append(f"{who}: HubSpot ticket # “{s['hubspot_ticket']}” should be the ticket number (digits only).")
+                if s["category"] in ESTIMATE_CATEGORIES and not s["qbo_estimate"]:
+                    out.append(f"{who}: no QuickBooks estimate # (a {s['category']} job).")
             if s["billing"] != "non_billable" and not s["visit_result"]:
                 out.append(f"{who}: no visit result (complete, return visit or waiting).")
             dv = s["drive_from_previous_stop"] or {}

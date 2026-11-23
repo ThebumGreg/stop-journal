@@ -91,7 +91,7 @@ def clean_title(title, keyword):
 
 
 LABELS = {"contact": "contact", "phone": "contact", "work": "work", "scope": "work",
-          "category": "category", "billing": "category"}
+          "category": "category", "billing": "category", "estimate": "estimate", "quote": "estimate"}
 
 
 def labelled(notes):
@@ -140,7 +140,8 @@ def events_for_day(cfg, date, session=None):
             continue                                        # our own stop invites (calendar_out), not appointments
         m = TICKET.search(title + " " + notes)
         lines = labelled(notes)
-        out.append({"contact": lines.get("contact", ""), "work": lines.get("work", ""), "category": lines.get("category", ""),"uid": str(ev.get("UID", "")) + "@" + str(int(s.timestamp())),
+        out.append({"contact": lines.get("contact", ""), "work": lines.get("work", ""), "category": lines.get("category", ""),
+                    "estimate": lines.get("estimate", "").lstrip("#").strip()[:40],"uid": str(ev.get("UID", "")) + "@" + str(int(s.timestamp())),
                     "start_ts": int(s.timestamp()), "end_ts": int(e.timestamp()),
                     "title": title, "name": clean_title(title, cfg.calendar_keyword),
                     "location": location.replace("\n", ", "), "ticket": (m.group(1) or m.group(2)) if m else ""})

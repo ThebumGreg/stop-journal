@@ -41,8 +41,8 @@ INSTRUCTIONS = [
     "business name and address.",
     "Category is one of seven: Time & Material (billed hourly), Quoted project and White-label migration (hours "
     "tracked against the project), and Internal operations, Administrative, Customer outreach and Training "
-    "(non-billable). Job / ticket / project is the reference the technician entered (for a migration it may name the "
-    "milestone). Visit result says whether the job is complete, needs a return visit, or is waiting on parts or the "
+    "(non-billable). HubSpot ticket # is the service ticket number; QuickBooks estimate # is the estimate the job was "
+    "quoted on (quoted projects and migrations). Visit result says whether the job is complete, needs a return visit, or is waiting on parts or the "
     "customer. Hours by category adds up on-site time only. A dash means nothing was entered.",
     "Follow-ups: what is still open, who owns it and when it is due. Create a task for each one.",
     "Drive from previous stop: the mileage leg that ends at this stop, from Home, Client, Office or Vendor (the kind of "
@@ -318,7 +318,8 @@ def _stop_block(s, st):
     rows += [("Drive from previous stop", drive_txt),
              ("HubSpot company ID", s["hubspot_company_id"]),
              ("Category", s["category"] + (f" ({_BILLING[s['billing']]})" if s["category"] and s["billing"] else "")),
-             ("Job / ticket / project", s["job_reference"]), ("Visit result", s["visit_result"])]
+             ("HubSpot ticket #", s.get("hubspot_ticket", s["job_reference"])),
+             ("QuickBooks estimate #", s.get("qbo_estimate", "")), ("Visit result", s["visit_result"])]
     for i, piece in enumerate(_fit(s["work_performed"], st["base"], 7 * inch - LABEL_W - 12, MAX_ROW_H)):
         rows.append(("Work performed" if i == 0 else "Work performed (continued)", piece))
     rows.append(("Parts used", _parts_table(s["parts_used"], st)))
@@ -417,7 +418,7 @@ def render(report, load_photo=None):
             story.extend(blk)
 
     story.append(Paragraph("Records to update", st["h1"]))
-    head = ["Business name", "Address", "Arrival", "Departure", "Category", "Job / ticket", "Work performed",
+    head = ["Business name", "Address", "Arrival", "Departure", "Category", "Ticket / estimate", "Work performed",
             "Parts used"]
     widths = [0.95, 0.95, 0.7, 0.95, 0.85, 0.7, 1.4, 1.2]
     if multi:
@@ -433,7 +434,9 @@ def render(report, load_photo=None):
             if i == 0:
                 row = [_p(r["business_name"], st["small"]), _p(r["address"], st["small"]),
                        _p(r["arrival"], st["small"]), _p(r["departure"], st["small"]),
-                       _p(r["category"], st["small"]), _p(r["job_reference"], st["small"]),
+                       _p(r["category"], st["small"]),
+                       _p(" / ".join(x for x in (r.get("hubspot_ticket", r["job_reference"]), r.get("qbo_estimate", "")) if x),
+                          st["small"]),
                        _p(piece, st["small"]), _p(parts, st["small"])]
             else:  # long text continues on following rows (a table row cannot span pages)
                 blank = Paragraph("", st["small"])

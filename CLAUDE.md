@@ -625,3 +625,9 @@ D. Later / parked
   per line, Me may omit the email and uses the technician email; `settings.parse_owners` / `owner_emails`). Day payload
   `followup_owners` (names); the stop sheet's owner is a dropdown (an older typed owner shows as "(not in the list)"). Report:
   `owner_email` on every follow-up (stop list and top-level); blank when the owner is not in the list, and the export warns.
+- **HubSpot ticket # and QuickBooks estimate #** (user decision: two fields). `stops.ticket` is the HubSpot ticket # (sheet label;
+  report `hubspot_ticket` = ticket without '#'; `job_reference` stays the raw text); new `stops.qbo_estimate` (sheet "QuickBooks
+  estimate #", not on vendor stops; '#' stripped; merge keeps either). Report `hubspot_ticket` and `qbo_estimate` on stops and
+  records_to_update; PDF rows "HubSpot ticket #" and "QuickBooks estimate #", Records table column "Ticket / estimate".
+  Warnings: Time & Material / Quoted project / White-label migration without a ticket, a ticket that is not digits, and Quoted /
+  Migration without an estimate #. Calendar notes: `Estimate:` (or `Quote:`) line fills the estimate like `Ticket:`.

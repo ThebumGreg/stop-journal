@@ -183,7 +183,7 @@ def test_pdf_shows_the_new_sections(tmp_path):
     text = pdf_text(c.get(f"/api/export.pdf?from={D}"))
     flat = re.sub(r"\s+", " ", text)
     for needle in ("Hours by category (on-site time)", "Billed hourly", "Tracked against the project",
-                   "Category Time & Material (billed hourly)", "Job / ticket / project #1042", "Visit result Complete",
+                   "Category Time & Material (billed hourly)", "HubSpot ticket # 1042", "Visit result Complete",
                    "Expenses", "Parking", "12.50", "Order the second valve", "Send the quote", "2026-11-25"):
         assert needle in flat, needle
     assert "Expenses 12.50" in flat                                  # the top section total

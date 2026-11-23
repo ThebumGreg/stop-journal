@@ -307,6 +307,7 @@ MIGRATIONS = [
     ("stops", "fuel_check", "INTEGER"),
     ("tool_files", "read_json", "TEXT"),
     ("stops", "uid", "TEXT"),
+    ("stops", "qbo_estimate", "TEXT"),
 ]
 
 
