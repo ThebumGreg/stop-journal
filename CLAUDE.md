@@ -257,9 +257,9 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Vendor and Category are dropdowns with "+ New…" (`/api/parts/choices`: vendors = saved vendor Places plus vendors on parts;
   categories = those already used). Stock buttons read "+ Add stock", "− Remove stock", "Set stock count to". The Truck page has a
   Low stock tab and "Show removed items" (with Restore).
-- Action plan for parts, in the order to build (none built yet):
-  1. New-part prompt on the job sheet: typing a part that is not in the catalog asks for unit and cost, so the PDF is never blank there.
-  2. Export warning for billable parts with no unit cost (same list as the other export warnings).
+- Action plan for parts, in the order to build (1 and 2 built, 3-7 not yet):
+  1. (built) New-part prompt on the job sheet: typing a part that is not in the catalog asks for unit and cost, so the PDF is never blank there.
+  2. (built) Export warning for billable parts with no unit cost (same list as the other export warnings).
   3. Bin / location field ("Shelf 2"); the truck count sheet sorts by it.
   4. Shopping list: "Mark bought" (adds the stock, in packs) and a share/copy text that pastes cleanly into Notes.
   5. Purchase log (phase 3): "+ Add stock" also records what was paid and from whom; last cost updates the part; consumables cost summary.
