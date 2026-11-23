@@ -53,6 +53,13 @@ def _split_parts(lines):
             [_part(p) for p in lines if p.get("expense")])
 
 
+def _slug(name, n=30):
+    """'Acme Hardware & Co.' -> 'acme-hardware-co' (for file names)."""
+    out = "".join(c.lower() if c.isalnum() else "-" for c in (name or ""))
+    out = "-".join(x for x in out.split("-") if x)[:n].strip("-")
+    return out or "no-name"
+
+
 def _line_total(p):
     return p["line_cost"] if p["line_cost"] is not None else 0.0
 
@@ -84,8 +91,9 @@ def _timesheet(stops, drives):
         if st == "Confirmed":
             add(s["arrive_ts"], s["arrive"], s["depart"], "on_site", name(s), s["depart_ts"] - s["arrive_ts"], True)
         elif st == "Traffic":
-            add(s["arrive_ts"], s["arrive"], s["depart"], "drive", "Traffic (counted as drive time)",
-                s["depart_ts"] - s["arrive_ts"], True)
+            text = (f"Fuel stop{' (' + s['business_name'] + ')' if s['business_name'] else ''}, counted as drive time"
+                    if s.get("stop_type") == "gas" else "Traffic (counted as drive time)")
+            add(s["arrive_ts"], s["arrive"], s["depart"], "drive", text, s["depart_ts"] - s["arrive_ts"], True)
         elif st not in ("Personal", "Lunch"):
             add(s["arrive_ts"], s["arrive"], s["depart"], "unconfirmed", "Not confirmed (left out)",
                 s["depart_ts"] - s["arrive_ts"], False)
@@ -145,12 +153,13 @@ def build_day(payload, cfg):
             m = merged.setdefault(s["id"], {"gaps": [], "notes": [s["notes"]], "parts": list(s["parts"]),
                                             "minutes": s["minutes"], "follow_ups": list(s["follow_ups"]),
                                             "ticket": s["ticket"], "visit_result": s["visit_result"],
-                                            "work_category": s["work_category"]})
+                                            "work_category": s["work_category"], "photos": list(s.get("photos") or [])})
             m["gaps"].append({"kind": stops[cur + 1]["status"], "from": left["depart"], "to": nxt["arrive"],
                               "secs": nxt["arrive_ts"] - left["depart_ts"]})
             m["notes"].append(nxt["notes"])
             m["parts"] += nxt["parts"]
             m["follow_ups"] += nxt["follow_ups"]
+            m["photos"] += nxt.get("photos") or []
             m["ticket"] = m["ticket"] or nxt["ticket"]
             m["work_category"] = m["work_category"] or nxt["work_category"]
             m["visit_result"] = nxt["visit_result"] or m["visit_result"]
@@ -158,7 +167,7 @@ def build_day(payload, cfg):
             m["depart"], m["depart_ts"] = nxt["depart"], nxt["depart_ts"]
             absorbed.add(nxt["id"])
             cur += 2
-    out_stops, excluded = [], []
+    out_stops, excluded, pic_from = [], [], []   # pic_from: (label, photos) per confirmed stop and fill-up
     prev_type = "Home"          # what kind of place the previous work stop was (the first leg starts at Home)
     for s in stops:
         if s["id"] in absorbed:
@@ -173,10 +182,11 @@ def build_day(payload, cfg):
             s = dict(s, depart=m["depart"], depart_ts=m["depart_ts"], parts=m["parts"],
                      notes="\n\n".join(n for n in m["notes"] if n),
                      minutes=m["minutes"], follow_ups=m["follow_ups"], ticket=m["ticket"],
-                     visit_result=m["visit_result"], work_category=m["work_category"])
+                     visit_result=m["visit_result"], work_category=m["work_category"], photos=m["photos"])
         if s["status"] != "Confirmed":
             reason = {"Personal": "End Day" if s["id"] == end_id else "Personal", "Lunch": "Lunch",
-                      "Traffic": "Traffic (counted as drive time)"}.get(s["status"]) or \
+                      "Traffic": "Fuel stop (counted as drive time)" if s.get("stop_type") == "gas"
+                      else "Traffic (counted as drive time)"}.get(s["status"]) or \
                 "Not confirmed" + (" (short stop)" if s["kind"] == "short" else "")
             excluded.append({"arrival": s["arrive"], "departure": s["depart"], "reason": reason})
             continue
@@ -220,7 +230,10 @@ def build_day(payload, cfg):
             "consumables_used": consumed,
             "expenses": spent,
             "follow_ups": [{"what": f["text"], "owner": f["owner"], "due": f["due"]} for f in s["follow_ups"]],
+            "photos": [p["id"] for p in s.get("photos") or []],
         })
+        pic_from.append((f"Stop {len(out_stops)}, {s['business_name'] or 'no name'}, {s['arrive']}",
+                         f"stop-{len(out_stops)}-{_slug(s['business_name'])}", s.get("photos") or []))
     drive_min = sum(s["drive_from_previous_stop"]["minutes"] or 0 for s in out_stops if s["drive_from_previous_stop"])
     miles = sum(s["drive_from_previous_stop"]["miles_approx"] for s in out_stops if s["drive_from_previous_stop"])
     traffic = sum(s["minutes"] for s in stops if s["status"] == "Traffic")
@@ -244,6 +257,22 @@ def build_day(payload, cfg):
                                                                 "billing": o["billing"], "on_site_minutes": 0})
         row["on_site_minutes"] += o["time_on_site_minutes"]
     expenses_total = round(sum(_line_total(e) for o in out_stops for e in o["expenses"]), 2)
+    # pictures of confirmed stops and fill-ups only (never of Personal, Lunch or unconfirmed stops)
+    pic_from += [(f"Fuel stop{', ' + s['business_name'] if s['business_name'] else ''}, {s['arrive']}",
+                  f"fuel-{s['arrive'].replace(':', '')}-{_slug(s['business_name'])}", s.get("photos") or [])
+                 for s in stops if s.get("stop_type") == "gas" and s["status"] == "Traffic"]
+    y, mo, dd = payload["date"].split("-")
+    pics = []
+    for where, stem, ps in pic_from:
+        for k, p in enumerate(ps, 1):
+            # the same name the picture has in the zip export: photos/YYYY/MM/DD/stop-1-acme-receipt-1.jpg
+            pics.append({"id": p["id"], "kind": p["kind"], "caption": p["caption"],
+                         "file": f"photos/{y}/{mo}/{dd}/{stem.strip('-')}-{p['kind']}-{k}.jpg",
+                         "label": f"{'Receipt' if p['kind'] == 'receipt' else 'Photo'}: {where}" +
+                                  (f". {p['caption']}" if p["caption"] else "")})
+    fuel = [{"arrival": s["arrive"], "departure": s["depart"], "station": s["business_name"] or "",
+             **{k: (s.get("fuel") or {}).get(k) for k in ("gallons", "total", "price_per_gallon", "odometer")}}
+            for s in stops if s.get("stop_type") == "gas" and s["status"] == "Traffic"]
     return {"date": payload["date"],
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
@@ -251,7 +280,10 @@ def build_day(payload, cfg):
                         "lunch_minutes": lunch_min, "break_minutes_unpaid": break_min,
                         "paid_minutes": sum(s["time_on_site_minutes"] for s in out_stops) + drive_min + lunch_min, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded),
-                        "hours_by_category": list(by_cat.values()), "expenses_total": expenses_total},
+                        "hours_by_category": list(by_cat.values()), "expenses_total": expenses_total,
+                        "fuel_total": round(sum(f["total"] or 0 for f in fuel), 2)},
+            "fuel": fuel,
+            "photos": pics,
             "drive_after_last_stop": final,
             "timesheet": sheet,
             "mileage": mil,
@@ -319,6 +351,9 @@ def warnings(report):
                 miss = [w for w, v in (("an owner", f["owner"]), ("a due date", f["due"])) if not v]
                 if miss:
                     out.append(f"{who}: follow-up “{f['what']}” has no {' or '.join(m.split(' ', 1)[1] for m in miss)}.")
+        for f in day.get("fuel") or []:
+            if not f["total"]:
+                out.append(f"{day['date']} fuel stop at {f['arrival']}: no total paid entered.")
         if day["stops"] and day.get("day_end"):
             last = max(st["departure"] for st in day["stops"])
             if day["day_end"] < last:
@@ -340,12 +375,70 @@ def build(conn, cfg, dates, ensure, now=None):
             "days": days, "records_to_update": records_to_update(days), "follow_ups": follow_ups(days)}
 
 
+# Sections the user can leave out of an export (Export page "Include" ticks). The report says which were
+# left out (`omitted`, and a line in the PDF's reading notes) so a reader never takes a missing section for "none".
+OMIT_SECTIONS = {
+    "costs": "Part and material costs",
+    "expenses": "Expenses",
+    "fuel": "Fuel",
+    "photos": "Receipts and photos",
+    "materials": "Non-billable materials",
+    "categories": "Hours by category",
+    "follow_ups": "Follow-ups",
+    "mileage": "Mileage table",
+    "recap": "Day recap (timesheet)",
+}
+
+
+def parse_omit(text):
+    keys = [k.strip() for k in (text or "").split(",") if k.strip()]
+    bad = [k for k in keys if k not in OMIT_SECTIONS]
+    if bad:
+        raise EditError("Unknown export section: " + ", ".join(bad))
+    return [k for k in OMIT_SECTIONS if k in keys]      # fixed order
+
+
+def apply_omit(report, omit):
+    """Strip the chosen sections from a built report (in place) and record them in `omitted`."""
+    report["omitted"] = [{"key": k, "label": OMIT_SECTIONS[k]} for k in omit]
+    for day in report["days"]:
+        sm = day["summary"]
+        for s in day["stops"]:
+            if "costs" in omit:
+                for p in s["parts_used"] + s["consumables_used"]:
+                    p.pop("unit_cost", None); p.pop("line_cost", None)
+            if "expenses" in omit:
+                s.pop("expenses", None)
+            if "materials" in omit:
+                s.pop("consumables_used", None)
+            if "follow_ups" in omit:
+                s.pop("follow_ups", None)
+        if "expenses" in omit:
+            sm.pop("expenses_total", None)
+        if "categories" in omit:
+            sm.pop("hours_by_category", None)
+        if "fuel" in omit:
+            sm.pop("fuel_total", None)
+            day.pop("fuel", None)
+        if "mileage" in omit:
+            day.pop("mileage", None)
+        if "photos" in omit:
+            day.pop("photos", None)
+            for s in day["stops"]:
+                s.pop("photos", None)
+        if "recap" in omit:
+            day.pop("timesheet", None)
+    if "follow_ups" in omit:
+        report.pop("follow_ups", None)
+    return report
+
+
 def check(report):
     """Counts shown before exporting so drafts don't get left out by surprise."""
     out = {"days": [], "confirmed": 0, "not_confirmed": 0, "personal": 0}
     for d in report["days"]:
         nc = sum(1 for e in d["excluded"] if e["reason"].startswith("Not confirmed"))
-        pe = sum(1 for e in d["excluded"] if e["reason"] in ("Personal", "Lunch", "End Day") or e["reason"].startswith("Traffic"))
+        pe = sum(1 for e in d["excluded"] if e["reason"] in ("Personal", "Lunch", "End Day") or e["reason"].startswith(("Traffic", "Fuel")))
         out["days"].append({"date": d["date"], "confirmed": d["summary"]["stops_confirmed"],
                             "not_confirmed": nc, "personal": pe})
         out["confirmed"] += d["summary"]["stops_confirmed"]

@@ -301,6 +301,42 @@ stop departed 12:21, and listed billable parts with no cost.
 - Phone-side (not code): OwnTracks Move mode, Location Always, Background App Refresh on, Low Power Mode off (the gap looked like iOS
   freezing the app).
 
+## Stop types, fuel, photos, export filters (built 2026-11-22)
+- **Stop type first** (`stops.stop_type`: job | vendor | office | gas | lunch | personal | traffic; `service.STOP_TYPES`). The
+  time rules still run on `status`: gas/lunch/personal/traffic set it (`TYPE_STATUS`; **Gas = Traffic**: pump time is drive
+  time, mileage follows the real drive), job/vendor/office stay Draft until confirmed. `service.stop_type()` derives a type for
+  rows without one (status, then saved-place kind; Confirmed = job; '' = not chosen). Setting `status` the old way keeps
+  `stop_type` in step. Confirming a vendor-type stop with no category sets Internal operations.
+- Card (day.js): type buttons on top ("What is this stop?" until chosen), then one **Confirm** (job/vendor/office) that lists what
+  is still needed (name; for jobs also category unless last time's can be copied, and work notes) and opens the sheet for them;
+  "Back to Draft" is in More. No Save button: name/address save ~0.7 s after focus leaves the card's fields, times and picked
+  businesses save at once, any card button carries unsaved typing. Status line "Saved 10:42" / "Unsaved changes".
+- **Fuel** (`fuel` table, one row per Gas stop: gallons, total, odometer; `PUT /api/stops/<id>/fuel`). `GET /api/fuel?from&to`:
+  fills newest first with MPG from the odometer change since the previous fill-up (full-tank method, gaps > 1500 mi ignored) and a
+  summary (spend, gallons, avg $/gal, MPG, $/mile). Truck page → Fuel. Report: day `fuel` list, `summary.fuel_total`, a PDF
+  Fuel table; gas stops are excluded as "Fuel stop (counted as drive time)" and the recap row says "Fuel stop (name)". Export
+  warns on a fill-up with no total. Manual stops (+ Add stop) can be given a type.
+- **Photos/receipts** (`app/photos.py`): files in `<data>/photos/YYYY/MM/DD/<id>-<kind>.jpg` by the stop's date; the `photos`
+  table keeps `path` (`data` is empty; the first version's BLOBs move to files on connect, `move_to_files`). The SQLite
+  snapshots do not include them: back up `/data/photos/` too. Kept when a stop is deleted (user wants them kept). The phone shrinks to 1600 px,
+  the server re-encodes with Pillow (upright, 1600 px, JPEG, no EXIF/GPS), 12 per stop. `POST /api/stops/<id>/photos`
+  (multipart file, kind receipt|photo), `GET /api/photos/<id>.jpg`, `DELETE /api/photos/<id>`. Merge moves them, re-detect
+  re-attaches them to the new stop at the same time, delete leaves them so Undo restores them (orphans stay in the DB). Report:
+  per stop `photos` (ids), day `photos` [{id, kind, caption, label}] for confirmed stops and fill-ups only (never Personal,
+  Lunch or unconfirmed), PDF "Receipts and photos" section before the reading notes. The card's viewer is an in-page overlay.
+  Each report photo has `file` = its name in the zip (`photos/YYYY/MM/DD/stop-<n>-<business-slug>-<kind>-<k>.jpg`, fuel stops
+  `fuel-<hhmm>-<slug>-...`); the PDF prints it under the label.
+- **Zip export** `GET /api/export.zip?from&to&omit`: `<name>.pdf`, `<name>.json` and the report's pictures at their `file`
+  paths (JPEGs stored uncompressed). Export page button "Zip: PDF + photos" (share sheet in Home Screen mode).
+- **Export filters**: `omit=` (comma list of `report.OMIT_SECTIONS`: costs, expenses, fuel, photos, materials, categories,
+  follow_ups, mileage, recap) strips them from PDF and JSON; `omitted` [{key,label}] and a reading-note line say what was left
+  out on purpose, and notes for absent sections are dropped. `/api/export/check` ignores omit. Export page "Include" ticks
+  are remembered per phone.
+- **Home Screen mode**: links with `data-file` (exports, debug, parts CSV, backups) go through `static/share.js`: first tap
+  prepares the file, second opens the iOS share sheet (iOS needs a fresh tap). `?inline=1` serves an export inline.
+- Not built: OCR of receipts; auto-detecting gas stations for stops that have no place category yet (only `gas_hint` from a
+  picked fuel place); cleanup of orphaned photos.
+
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.
 - Show each milestone working before starting the next.

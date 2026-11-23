@@ -139,6 +139,27 @@ CREATE TABLE IF NOT EXISTS follow_ups (
 );
 CREATE INDEX IF NOT EXISTS idx_follow_ups_stop ON follow_ups(stop_id);
 
+-- photos and receipts (app/photos.py): files under photos/YYYY/MM/DD/, the path is kept here
+-- (data is only used by databases from before the move to files)
+CREATE TABLE IF NOT EXISTS photos (
+  id INTEGER PRIMARY KEY,
+  stop_id INTEGER NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'receipt',
+  caption TEXT,
+  created INTEGER NOT NULL,
+  width INTEGER, height INTEGER,
+  data BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_photos_stop ON photos(stop_id);
+
+-- one fill-up per Gas stop: what the pump and the dashboard said
+CREATE TABLE IF NOT EXISTS fuel (
+  stop_id INTEGER PRIMARY KEY,
+  gallons REAL,
+  total REAL,
+  odometer INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS route_cache (
   key TEXT PRIMARY KEY,
   meters REAL NOT NULL,
@@ -192,6 +213,8 @@ MIGRATIONS = [
     ("drives", "edited", "INTEGER DEFAULT 0"),
     ("known_sites", "kind", "TEXT DEFAULT 'client'"),
     ("known_sites", "default_status", "TEXT DEFAULT 'Draft'"),
+    ("stops", "stop_type", "TEXT"),
+    ("photos", "path", "TEXT"),
 ]
 
 
@@ -209,4 +232,6 @@ def connect(data_dir):
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     _migrate(conn)
+    from . import photos             # pictures stored in the database by the first version move to files
+    photos.move_to_files(conn, data_dir)
     return conn

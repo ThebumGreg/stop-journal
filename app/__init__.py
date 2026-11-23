@@ -1,7 +1,9 @@
 import hmac
+import io
 import json
 import os
 import time
+import zipfile
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -10,6 +12,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
 
 from . import alerts, backup, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
+from . import photos
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
@@ -135,20 +138,21 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         return with_conn(go)
 
     # ---- export (PDF + JSON report) -------------------------------------
-    def build_report(conn, cfg):
+    def build_report(conn, cfg, filtered=True):
         start = request.args.get("from", "")
         dates = reports.date_range(start, request.args.get("to") or start)
-        return reports.build(conn, cfg, dates, lambda c, cf, d: ensure_day(c, cf, d))
+        rep = reports.build(conn, cfg, dates, lambda c, cf, d: ensure_day(c, cf, d))
+        return rep if not filtered else reports.apply_omit(rep, reports.parse_omit(request.args.get("omit")))
 
     def download(body, mimetype, rep, ext):
         a, b = rep["date_from"], rep["date_to"]
         name = f"jobhub-daily-summary-{a}" if a == b else f"jobhub-daily-summary-{a}_to_{b}"
         return Response(body, mimetype=mimetype,
-                        headers={"Content-Disposition": f"attachment; filename={name}.{ext}"})
+                        headers={"Content-Disposition": f"{'inline' if request.args.get('inline') else 'attachment'}; filename={name}.{ext}"})
 
     @app.get("/api/export/check")
     def export_check():
-        return with_conn(lambda conn, cfg: jsonify(reports.check(build_report(conn, cfg))))
+        return with_conn(lambda conn, cfg: jsonify(reports.check(build_report(conn, cfg, filtered=False))))
 
     @app.get("/api/export.json")
     def export_json():
@@ -161,7 +165,29 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def export_pdf():
         def go(conn, cfg):
             rep = build_report(conn, cfg)
-            return download(pdf.render(rep), "application/pdf", rep, "pdf")
+            return download(pdf.render(rep, lambda pid: photos.get(conn, cfg.data_dir, pid)), "application/pdf", rep, "pdf")
+        return with_conn(go)
+
+    @app.get("/api/export.zip")
+    def export_zip():
+        """The PDF, its JSON twin and every picture in the report, filed as photos/YYYY/MM/DD/<name>.jpg
+        (the names the PDF and the JSON give them). The same Include ticks apply."""
+        def go(conn, cfg):
+            rep = build_report(conn, cfg)
+            a, b = rep["date_from"], rep["date_to"]
+            name = f"jobhub-daily-summary-{a}" if a == b else f"jobhub-daily-summary-{a}_to_{b}"
+            load = lambda pid: photos.get(conn, cfg.data_dir, pid)
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+                z.writestr(f"{name}.pdf", pdf.render(rep, load))
+                z.writestr(f"{name}.json", json.dumps(rep, indent=2, ensure_ascii=False))
+                for day in rep["days"]:
+                    for p in day.get("photos") or []:
+                        data = load(p["id"])
+                        if data:          # JPEGs are already compressed: stored as they are
+                            z.writestr(zipfile.ZipInfo(p["file"], date_time=time.localtime()[:6]), data,
+                                       compress_type=zipfile.ZIP_STORED)
+            return download(buf.getvalue(), "application/zip", rep, "zip")
         return with_conn(go)
 
     @app.post("/api/day/<date>/sync")
@@ -341,6 +367,40 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     @app.delete("/api/stop-parts/<int:spid>")
     def stop_part_delete(spid):
         return mutate(service.remove_stop_part, spid)
+
+    # ---- photos and receipts ----------------------------------------------
+    @app.post("/api/stops/<int:sid>/photos")
+    def stop_photo_add(sid):
+        f = request.files.get("file")
+        def go(conn, cfg):
+            date = service._stop(conn, sid)["date"]
+            photos.add(conn, cfg.data_dir, sid, f.read() if f else b"", request.form.get("kind", "receipt"),
+                       request.form.get("caption", ""))
+            return payload(conn, cfg, date)
+        return with_conn(go)
+
+    @app.get("/api/photos/<int:pid>.jpg")
+    def photo_get(pid):
+        def go(conn, cfg):
+            data = photos.get(conn, cfg.data_dir, pid)
+            if data is None:
+                return jsonify(error="Not found"), 404
+            return Response(data, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+        return with_conn(go)
+
+    @app.delete("/api/photos/<int:pid>")
+    def photo_delete(pid):
+        return mutate(lambda conn, cfg: photos.delete(conn, cfg.data_dir, pid))
+
+    # ---- fuel (Gas stops) ------------------------------------------------
+    @app.put("/api/stops/<int:sid>/fuel")
+    def stop_fuel(sid):
+        return mutate(service.set_fuel, sid, request.get_json(silent=True) or {})
+
+    @app.get("/api/fuel")
+    def fuel_api():
+        a, b = request.args.get("from") or None, request.args.get("to") or None
+        return with_conn(lambda conn, cfg: jsonify(service.fuel_stats(conn, cfg, a, b)))
 
     # ---- follow-ups ----------------------------------------------------
     @app.post("/api/stops/<int:sid>/follow-ups")

@@ -18,13 +18,39 @@ import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import detect, parts, routing
+from . import detect, parts, photos as photo_store, routing
 from .errors import EditError
 from .geo import haversine_m
 from .places import known
 
 STATUSES = ("Draft", "Confirmed", "Personal", "Lunch", "Traffic")
 OFF_CLOCK = ("Personal", "Lunch")   # not work: the stop and the drives to and from it are excluded
+
+# What a stop is for (`stops.stop_type`), picked first on the stop card. The time rules still run on the status:
+# a type listed in TYPE_STATUS sets that status (Gas is on the road like Traffic: its minutes are drive time,
+# not on-site time); the others are Draft until confirmed. Stops saved before types existed derive one.
+STOP_TYPES = {"job": "Job", "vendor": "Vendor", "office": "Office", "gas": "Gas",
+              "lunch": "Lunch", "personal": "Personal", "traffic": "Traffic"}
+TYPE_STATUS = {"gas": "Traffic", "lunch": "Lunch", "personal": "Personal", "traffic": "Traffic"}
+STATUS_TYPE = {"Lunch": "lunch", "Personal": "personal", "Traffic": "traffic"}
+FUEL_CATEGORIES = ("amenity=fuel", "place=fuel", "google=gas_station")
+
+
+def _type_fits(t, status):
+    return TYPE_STATUS.get(t) == status if t in TYPE_STATUS else status in ("Draft", "Confirmed")
+
+
+def stop_type(row, site_kind=""):
+    """The stop's type: the stored one when it agrees with the status, else one derived from the status and the
+    saved place ('' = not chosen yet, a new Draft stop)."""
+    st, t = row["status"] or "Draft", row["stop_type"]
+    if t in STOP_TYPES and _type_fits(t, st):
+        return t
+    if st in STATUS_TYPE:
+        return STATUS_TYPE[st]
+    if site_kind in ("vendor", "office"):
+        return site_kind
+    return "job" if st == "Confirmed" or site_kind in ("client", "home") else ""
 
 # Work categories (the SOP's seven). The value is how the hours are billed: hourly (time and material),
 # project (tracked against a quote or migration) or non_billable. The technician only picks the category.
@@ -272,11 +298,21 @@ def redetect(conn, cfg, date, kept, run_cfg):
     """Discard detected stops (and all their edits) and detect again. Manual stops stay."""
     snapshot_day(conn, date, "Re-detected the day")
     gone = [r["id"] for r in conn.execute("SELECT id FROM stops WHERE date=? AND source!='manual'", (date,))]
+    # photos are kept: each goes to the new stop that covers the middle of its old stop's time
+    pics = conn.execute(f"SELECT p.id, (s.arrive_utc + s.depart_utc) / 2 AS mid FROM photos p JOIN stops s ON s.id=p.stop_id "
+                        f"WHERE s.date=? AND s.source!='manual'", (date,)).fetchall()
     parts.release_stops(conn, gone)
     conn.executemany("DELETE FROM follow_ups WHERE stop_id=?", [(i,) for i in gone])
+    conn.executemany("DELETE FROM fuel WHERE stop_id=?", [(i,) for i in gone])
     conn.execute("DELETE FROM stops WHERE date=? AND source!='manual'", (date,))
     conn.execute("DELETE FROM drives WHERE date=?", (date,))
     materialize(conn, cfg, date, kept, run_cfg)
+    for p in pics:
+        to = conn.execute("SELECT id FROM stops WHERE date=? AND arrive_utc<=? AND depart_utc>=? ORDER BY arrive_utc LIMIT 1",
+                          (date, p["mid"], p["mid"])).fetchone()
+        if to:
+            conn.execute("UPDATE photos SET stop_id=? WHERE id=?", (to["id"], p["id"]))
+    conn.commit()
 
 
 # ---- day start / end marks -----------------------------------------------
@@ -416,10 +452,12 @@ def snapshot_day(conn, date, label):
         f"SELECT * FROM stop_parts WHERE stop_id IN ({marks})", ids)] if ids else []
     fu = [dict(r) for r in conn.execute(
         f"SELECT * FROM follow_ups WHERE stop_id IN ({marks})", ids)] if ids else []
+    fl = [dict(r) for r in conn.execute(
+        f"SELECT * FROM fuel WHERE stop_id IN ({marks})", ids)] if ids else []
     drives = [dict(r) for r in conn.execute("SELECT * FROM drives WHERE date=?", (date,))]
     conn.execute("INSERT INTO undo_log(date,ts,label,payload) VALUES (?,?,?,?)",
                  (date, int(time.time()), label,
-                  json.dumps({"stops": stops, "drives": drives, "stop_parts": sp, "follow_ups": fu})))
+                  json.dumps({"stops": stops, "drives": drives, "stop_parts": sp, "follow_ups": fu, "fuel": fl})))
     conn.execute("DELETE FROM undo_log WHERE date=? AND id NOT IN "
                  "(SELECT id FROM undo_log WHERE date=? ORDER BY id DESC LIMIT ?)",
                  (date, date, UNDO_KEEP))
@@ -442,6 +480,7 @@ def undo_last(conn, cfg, date):
     gone = [r["id"] for r in conn.execute("SELECT id FROM stops WHERE date=?", (date,))]
     parts.release_stops(conn, gone)
     conn.executemany("DELETE FROM follow_ups WHERE stop_id=?", [(i,) for i in gone])
+    conn.executemany("DELETE FROM fuel WHERE stop_id=?", [(i,) for i in gone])
     conn.execute("DELETE FROM drives WHERE date=?", (date,))
     conn.execute("DELETE FROM stops WHERE date=?", (date,))
 
@@ -461,6 +500,8 @@ def undo_last(conn, cfg, date):
         parts.move(conn, part, -rec["qty"], "used", rec["id"], "undo")
     for rec in snap.get("follow_ups", []):
         put("follow_ups", rec)
+    for rec in snap.get("fuel", []):
+        put("fuel", rec)
     conn.execute("DELETE FROM undo_log WHERE id=?", (row["id"],))
     _finish(conn, cfg, date)
     return date
@@ -518,6 +559,19 @@ def patch_stop(conn, cfg, sid, f):
         if f["status"] not in STATUSES:
             raise EditError("Status must be Draft, Confirmed, Personal, Lunch or Traffic.")
         upd["status"] = f["status"]
+    if "stop_type" in f:          # the type decides the status for gas/lunch/personal/traffic
+        t = str(f["stop_type"] or "").strip().lower() or None
+        if t and t not in STOP_TYPES:
+            raise EditError("Stop type must be one of: " + ", ".join(STOP_TYPES.values()) + ".")
+        upd["stop_type"] = t
+        if t in TYPE_STATUS:
+            upd["status"] = TYPE_STATUS[t]
+        elif upd.get("status", s["status"]) not in ("Draft", "Confirmed"):
+            upd["status"] = "Draft"
+    elif "status" in f:           # status set the old way: keep the stored type in step
+        new = upd["status"]
+        if not _type_fits(s["stop_type"], new):
+            upd["stop_type"] = STATUS_TYPE.get(new)
     if "lat" in f or "lon" in f:
         upd["lat"] = _float(f.get("lat"), -90, 90, "Latitude")
         upd["lon"] = _float(f.get("lon"), -180, 180, "Longitude")
@@ -551,7 +605,7 @@ def patch_stop(conn, cfg, sid, f):
             if not hint:     # a vendor stop (parts pickup) is internal work unless you say otherwise
                 site = conn.execute("SELECT kind FROM known_sites WHERE id=?",
                                     (upd.get("known_site_id", s["known_site_id"]),)).fetchone()
-                if site and site["kind"] == "vendor":
+                if (site and site["kind"] == "vendor") or upd.get("stop_type", s["stop_type"]) == "vendor":
                     hint = "Internal operations"
             if hint:         # same business as before: start from the category used last time
                 upd["work_category"] = hint
@@ -594,6 +648,7 @@ def delete_stop(conn, cfg, sid):
     snapshot_day(conn, date, "Deleted a stop")
     parts.release_stops(conn, [sid])
     conn.execute("DELETE FROM follow_ups WHERE stop_id=?", (sid,))
+    conn.execute("DELETE FROM fuel WHERE stop_id=?", (sid,))
     conn.execute("DELETE FROM stops WHERE id=?", (sid,))
     _finish(conn, cfg, date)
     return date
@@ -610,6 +665,10 @@ def add_manual(conn, cfg, date, f):
         "kind,status,source,edited) VALUES (?,?,?,?,?,?,'stop','Draft','manual',1)",
         (date, a, d, str(f.get("business_name", "")).strip(),
          str(f.get("address", "")).strip(), str(f.get("notes", ""))))
+    sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    if f.get("stop_type"):
+        patch_stop(conn, cfg, sid, {"stop_type": f["stop_type"]})
+        return
     _finish(conn, cfg, date)
 
 
@@ -663,13 +722,17 @@ def merge_stops(conn, cfg, id_a, id_b):
     conn.execute(
         "UPDATE stops SET arrive_utc=?, depart_utc=?, lat=?, lon=?, business_name=?, "
         "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, work_category=?, ticket=?, "
-        "visit_result=?, edited=1, times_edited=1 WHERE id=?",
+        "visit_result=?, stop_type=?, edited=1, times_edited=1 WHERE id=?",
         (a["arrive_utc"], b["depart_utc"], lat, lon, first["business_name"],
          first["address"], first["category"], first["known_site_id"], notes, status,
          kind, a["work_category"] or b["work_category"], a["ticket"] or b["ticket"],
-         b["visit_result"] or a["visit_result"], a["id"]))
+         b["visit_result"] or a["visit_result"],
+         a["stop_type"] if a["stop_type"] == b["stop_type"] and _type_fits(a["stop_type"], status) else None, a["id"]))
     conn.execute("UPDATE stop_parts SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
     conn.execute("UPDATE follow_ups SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
+    conn.execute("UPDATE OR IGNORE fuel SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
+    conn.execute("UPDATE photos SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
+    conn.execute("DELETE FROM fuel WHERE stop_id=?", (b["id"],))
     conn.execute("DELETE FROM stops WHERE id=?", (b["id"],))
     _finish(conn, cfg, a["date"])
     return a["date"]
@@ -691,6 +754,8 @@ def save_place(conn, cfg, sid, f):
     site_id = known.create_site(conn, site)
     conn.execute("UPDATE stops SET business_name=?, known_site_id=?, category=?, edited=1 WHERE id=?",
                  (name, site_id, f"place={kind}", sid))
+    if kind in ("vendor", "office") and s["status"] in ("Draft", "Confirmed"):
+        conn.execute("UPDATE stops SET stop_type=? WHERE id=?", (kind, sid))
     if kind == "vendor" and not s["work_category"]:
         conn.execute("UPDATE stops SET work_category='Internal operations' WHERE id=?", (sid,))
     apply_places(conn, s["date"])
@@ -1013,6 +1078,8 @@ def _looks_like_vendor(stop, vendor_names):
 def day_payload(conn, cfg, date, include_path=False):
     used = parts.for_day(conn, date)
     fups = followups_for_day(conn, date)
+    fuel = fuel_for_day(conn, date)
+    pics = photo_store.for_day(conn, date)
     site_kind = {r["id"]: r["kind"] for r in conn.execute("SELECT id, kind FROM known_sites")}
     vendor_names = {(r["vendor"] or "").strip().lower() for r in
                     conn.execute("SELECT DISTINCT vendor FROM parts WHERE vendor IS NOT NULL")} - {""}
@@ -1024,6 +1091,9 @@ def day_payload(conn, cfg, date, include_path=False):
         "visit_result": r["visit_result"] or "",
         "category_hint": "" if r["work_category"] else last_category(
             conn, r["id"], r["business_name"], r["known_site_id"]),
+        "stop_type": stop_type(r, site_kind.get(r["known_site_id"]) or ""),
+        "gas_hint": (r["category"] or "") in FUEL_CATEGORIES,
+        "fuel": fuel.get(r["id"]), "photos": pics.get(r["id"], []),
         "id": r["id"], "seq": r["seq"], "kind": r["kind"] or "stop", "source": r["source"],
         "lat": r["lat"], "lon": r["lon"],
         "arrive": fmt_time(cfg, r["arrive_utc"]), "depart": fmt_time(cfg, r["depart_utc"]),
@@ -1077,3 +1147,90 @@ def day_payload(conn, cfg, date, include_path=False):
         out["path"] = [[p["lat"], p["lon"]] for p in pts]
         out["kept_count"] = len(pts)
     return out
+
+
+# ---- fuel (Gas stops) ----------------------------------------------------
+def _fuel_row(r):
+    g, t = r["gallons"], r["total"]
+    return {"gallons": g, "total": t, "odometer": r["odometer"],
+            "price_per_gallon": round(t / g, 3) if g and t else None}
+
+
+def fuel_for_day(conn, date):
+    return {r["stop_id"]: _fuel_row(r) for r in conn.execute(
+        "SELECT f.* FROM fuel f JOIN stops s ON s.id=f.stop_id WHERE s.date=?", (date,))}
+
+
+def set_fuel(conn, cfg, sid, f):
+    """Gallons, total paid and odometer for a Gas stop. Blank clears a field."""
+    s = _stop(conn, sid)
+    if stop_type(s) != "gas":
+        raise EditError("Mark this stop as Gas first.")
+
+    def num(key, hi, what, cast=float):
+        v = f.get(key)
+        if v in (None, ""):
+            return None
+        try:
+            x = cast(float(str(v).replace(",", "").replace("$", "").strip()))
+        except ValueError:
+            raise EditError(f"{what} must be a number.")
+        if not 0 < x <= hi:
+            raise EditError(f"{what} is out of range.")
+        return x
+
+    cur = conn.execute("SELECT * FROM fuel WHERE stop_id=?", (sid,)).fetchone()
+    vals = {k: (cur[k] if cur else None) for k in ("gallons", "total", "odometer")}
+    if "gallons" in f:
+        vals["gallons"] = num("gallons", 500, "Gallons")
+    if "total" in f:
+        vals["total"] = num("total", 10000, "Total")
+        vals["total"] = None if vals["total"] is None else round(vals["total"], 2)
+    if "odometer" in f:
+        vals["odometer"] = num("odometer", 3_000_000, "Odometer", int)
+    conn.execute("INSERT INTO fuel(stop_id,gallons,total,odometer) VALUES (?,?,?,?) "
+                 "ON CONFLICT(stop_id) DO UPDATE SET gallons=excluded.gallons, total=excluded.total, "
+                 "odometer=excluded.odometer", (sid, vals["gallons"], vals["total"], vals["odometer"]))
+    conn.commit()
+    return s["date"]
+
+
+MPG_MAX_MILES = 1500   # odometer gaps larger than this (a missed fill-up, a typo) are not used for MPG
+
+
+def fuel_log(conn, cfg, date_from=None, date_to=None):
+    """Fill-ups (Gas stops) in time order, with MPG from the odometer change since the previous fill-up
+    (full-tank method: the gallons at this fill-up replace what was burned since the last one)."""
+    rows = conn.execute(
+        "SELECT s.id, s.date, s.arrive_utc, s.business_name, f.gallons, f.total, f.odometer FROM fuel f "
+        "JOIN stops s ON s.id=f.stop_id WHERE s.stop_type='gas' AND s.status='Traffic' "
+        "ORDER BY s.date, s.arrive_utc").fetchall()
+    out, prev_odo = [], None
+    for r in rows:
+        miles = mpg = None
+        if r["odometer"] and prev_odo and 0 < r["odometer"] - prev_odo <= MPG_MAX_MILES:
+            miles = r["odometer"] - prev_odo
+            mpg = round(miles / r["gallons"], 1) if r["gallons"] else None
+        if r["odometer"]:
+            prev_odo = r["odometer"]
+        if (date_from and r["date"] < date_from) or (date_to and r["date"] > date_to):
+            continue
+        out.append({"stop_id": r["id"], "date": r["date"], "time": fmt_time(cfg, r["arrive_utc"]),
+                    "station": r["business_name"] or "", **_fuel_row(r), "miles": miles, "mpg": mpg})
+    return out
+
+
+def fuel_stats(conn, cfg, date_from=None, date_to=None):
+    log = fuel_log(conn, cfg, date_from, date_to)
+    gal = sum(x["gallons"] or 0 for x in log)
+    tot = sum(x["total"] or 0 for x in log)
+    both = [x for x in log if x["gallons"] and x["total"]]
+    bg, bt = sum(x["gallons"] for x in both), sum(x["total"] for x in both)
+    m = [x for x in log if x["mpg"]]
+    mi, mg = sum(x["miles"] for x in m), sum(x["gallons"] for x in m)
+    mc = sum(x["total"] or 0 for x in m)
+    return {"fills": log[::-1],   # newest first
+            "summary": {"fill_ups": len(log), "gallons": round(gal, 2), "total": round(tot, 2),
+                        "avg_price_per_gallon": round(bt / bg, 3) if bg else None,
+                        "miles": mi, "mpg": round(mi / mg, 1) if mg else None,
+                        "cost_per_mile": round(mc / mi, 3) if mi and mc else None}}

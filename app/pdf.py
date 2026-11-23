@@ -11,7 +11,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table,
+from reportlab.platypus import (Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table,
                                 TableStyle)
 
 FONT_DIR = os.path.join(os.path.dirname(__file__), "fonts")
@@ -53,6 +53,10 @@ INSTRUCTIONS = [
     "site leaves out the lunch or break (listed as Lunch (non-billable) or Personal break (unpaid)), and the trip adds "
     "no miles or drive time.",
     "Records to update: one row per confirmed stop. This table is what to act on.",
+    "Receipts and photos: pictures the technician attached, each labelled with its stop number and business (or "
+    "fuel stop) and the file name it has in the zip export. The text in this report is the record; the pictures back it up.",
+    "Fuel: fill-ups at gas stations (the truck's fuel, not billed to a customer). The time at the pump counts as "
+    "drive time. Odometer is the reading the technician entered.",
     "Mileage: always measured Home to Home through the work stops in order, so it is what a customer may be billed. "
     "Personal stops and lunch are left out, so a detour to one is replaced by the direct road distance. Miles are "
     "approximate (road distance), not odometer readings. The total is the last row.",
@@ -71,6 +75,21 @@ def _end_day_rows(e):
     if e["kind"] != "home":
         row.append(("Drive home", "not counted as work time (miles are in the mileage)"))
     return row
+
+
+def _fuel_table(day, st, multi):
+    """Fill-ups (Gas stops): station, gallons, total, price per gallon, odometer."""
+    fl = day.get("fuel")
+    if not fl:
+        return []
+    B, Rt = st["small"], ParagraphStyle("rs", parent=st["small"], alignment=2)
+    num = lambda v, f: _p("" if v is None else format(v, f), Rt)
+    rows = [[_p(f["arrival"], B), _p(f["station"] or "Fuel stop", B), num(f["gallons"], ".3f"), num(f["total"], ".2f"),
+             num(f["price_per_gallon"], ".3f"), num(f["odometer"], "d")] for f in fl]
+    title = "Fuel" + (f": {day['date']}" if multi else "")
+    return [Paragraph(title, st["h1"]),
+            _grid(["Time", "Station", "Gallons", "Total", "Price / gal", "Odometer"], rows,
+                  [0.7 * inch, 2.6 * inch, 0.8 * inch, 0.9 * inch, 0.9 * inch, 1.1 * inch], st)]
 
 
 def _mileage_table(day, st):
@@ -206,12 +225,19 @@ def _grid(header, rows, widths, st):
 def _parts_table(parts, st):
     if not parts:
         return _p("None", st["base"])
-    rows = [[_p(p["name"], st["small"]), _p(p["part_number"], st["small"]),
-             _p(f"{p['quantity']:g}", st["small"]), _p(p["unit"], st["small"]),
-             _p("" if p["unit_cost"] is None else f"{p['unit_cost']:.2f}", st["small"]),
-             _p("yes" if p["billable"] else "no", st["small"])] for p in parts]
-    return _grid(["Part", "Part #", "Qty", "Unit", "Unit cost", "Billable"], rows,
-                 [1.65 * inch, 0.9 * inch, 0.45 * inch, 0.5 * inch, 0.8 * inch, 0.75 * inch], st)
+    costs = all("unit_cost" in p for p in parts)     # left out when the export omits costs
+    rows = []
+    for p in parts:
+        row = [_p(p["name"], st["small"]), _p(p["part_number"], st["small"]),
+               _p(f"{p['quantity']:g}", st["small"]), _p(p["unit"], st["small"])]
+        if costs:
+            row.append(_p("" if p["unit_cost"] is None else f"{p['unit_cost']:.2f}", st["small"]))
+        rows.append(row + [_p("yes" if p["billable"] else "no", st["small"])])
+    head = ["Part", "Part #", "Qty", "Unit"] + (["Unit cost"] if costs else []) + ["Billable"]
+    widths = [1.65, 0.9, 0.45, 0.5] + ([0.8] if costs else []) + [0.75]
+    if not costs:
+        widths[0] += 0.8
+    return _grid(head, rows, [w * inch for w in widths], st)
 
 
 _BILLING = {"hourly": "billed hourly", "project": "tracked against the project", "non_billable": "non-billable"}
@@ -300,10 +326,33 @@ def _stop_block(s, st):
         rows.append(("Expenses", _expenses_table(s["expenses"], st)))
     if s.get("follow_ups"):
         rows.append(("Follow-ups", _followups_table(s["follow_ups"], st, total=4.7)))
+    if s.get("photos"):
+        n = len(s["photos"])
+        rows.append(("Photos", f"{n} attached (see Receipts and photos)"))
     return [Paragraph(f"Stop {s['stop_number']}", st["h2"]), _kv(rows, st, label_w=LABEL_W)]
 
 
-def render(report):
+def _photos(report, st, load):
+    """Each attached picture on the page with its label above it; at most about two per page."""
+    items = [p for d in report["days"] for p in d.get("photos") or []]
+    if not items or not load:
+        return []
+    out = [Paragraph("Receipts and photos", st["h1"])]
+    for p in items:
+        data = load(p["id"])
+        if not data:
+            continue
+        img = Image(io.BytesIO(data))
+        w, h = img.imageWidth, img.imageHeight
+        k = min(7 * inch / w, 4.2 * inch / h, 1.0)
+        img.drawWidth, img.drawHeight = w * k, h * k
+        img.hAlign = "LEFT"
+        out.append(KeepTogether([_p(p["label"], st["label"]), _p(f"File: {p['file']}", st["small"]),
+                                 Spacer(1, 3), img, Spacer(1, 10)]))
+    return out
+
+
+def render(report, load_photo=None):
     _fonts()
     st = _styles()
     multi = report["date_from"] != report["date_to"]
@@ -337,6 +386,8 @@ def render(report):
                  ("Stops confirmed", str(sm["stops_confirmed"]))]
         if sm.get("expenses_total"):
             rows.append(("Expenses", f"{sm['expenses_total']:.2f}"))
+        if sm.get("fuel_total"):
+            rows.append(("Fuel", f"{sm['fuel_total']:.2f}"))
         if day.get("day_start") or day.get("day_end"):
             rows.append(("Work day", f"{day.get('day_start') or '—'} to {day.get('day_end') or '—'}"))
         return rows + _end_day_rows(day.get("end_day"))
@@ -391,19 +442,38 @@ def render(report):
     else:
         story.append(_p("No confirmed stops in this period.", st["base"]))
 
-    story.append(Paragraph("Follow-ups", st["h1"]))
-    if report.get("follow_ups"):
+    if "follow_ups" not in report:
+        pass                                  # left out of this export
+    elif report["follow_ups"]:
+        story.append(Paragraph("Follow-ups", st["h1"]))
         fl = [dict(f, what=f["what"], business_name=(f["date"] + " " if multi else "") + f["business_name"])
               for f in report["follow_ups"]]
         story.append(_followups_table(fl, st, extra=True))
     else:
+        story.append(Paragraph("Follow-ups", st["h1"]))
         story.append(_p("None.", st["base"]))
 
     for day in report["days"]:
+        story.extend(_fuel_table(day, st, multi))
+    for day in report["days"]:
         story.extend(_mileage_table(day, st))
-        story.extend(_recap(day, st, multi))
+        if "timesheet" in day:
+            story.extend(_recap(day, st, multi))
+
+    story.extend(_photos(report, st, load_photo))
+    gone = {o["key"] for o in report.get("omitted") or []}
+    if not (load_photo and any(d.get("photos") for d in report["days"])):
+        gone.add("photos")
+    if not any(d.get("fuel") for d in report["days"]):
+        gone.add("fuel")
+    skip = tuple(h for k, h in (("follow_ups", "Follow-ups:"), ("mileage", "Mileage:"), ("recap", "Day recap"),
+                                ("fuel", "Fuel:"), ("photos", "Receipts and photos:")) if k in gone)   # no reading notes for a section that is not there
+    notes = [t.replace("{tz}", report["timezone"]) for t in INSTRUCTIONS if not (skip and t.startswith(skip))]
+    if report.get("omitted"):
+        notes.append("Left out of this export on purpose (not missing data): " +
+                     ", ".join(o["label"] for o in report["omitted"]) + ".")
 
     story.append(KeepTogether([Paragraph("How to read this report", st["h1"])] +
-                              [_p(f"{i}. {t.replace('{tz}', report['timezone'])}", st["small"]) for i, t in enumerate(INSTRUCTIONS, 1)]))
+                              [_p(f"{i}. {t}", st["small"]) for i, t in enumerate(notes, 1)]))
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     return buf.getvalue()

@@ -195,3 +195,32 @@ def test_one_huge_line_and_words_are_not_split(tmp_path):
     c.patch(f"/api/stops/{sid}", json={"notes": "Customer wants a follow-up quote for the water heater."})
     text = re.sub(r"\s+", " ", pdf_text(c.get(f"/api/export.pdf?from={D}")))
     assert text.count("follow-up quote for the water heater.") >= 1   # whole phrase intact in the stop block
+
+
+def test_omit_sections_from_json_and_pdf(tmp_path):
+    c = make(tmp_path)
+    scenario(c)
+    full = c.get(f"/api/export.json?from={D}").json
+    assert full["omitted"] == []
+    assert full["days"][0]["stops"][0]["parts_used"][0]["unit_cost"] == 8.75
+    j = c.get(f"/api/export.json?from={D}&omit=costs,recap,mileage,follow_ups").json
+    assert [o["key"] for o in j["omitted"]] == ["costs", "follow_ups", "mileage", "recap"]
+    p = j["days"][0]["stops"][0]["parts_used"][0]
+    assert "unit_cost" not in p and "line_cost" not in p and p["name"] == "1/2 in. ball valve"
+    assert "timesheet" not in j["days"][0] and "mileage" not in j["days"][0] and "follow_ups" not in j
+    text = pdf_text(c.get(f"/api/export.pdf?from={D}&omit=costs,recap,follow_ups"))
+    assert "Unit cost" not in text and "8.75" not in text
+    assert "Clock in" not in text and "Day recap (timesheet): the day" not in text
+    assert "BV-050" in text                       # the part itself is still listed
+    assert re.search(r"Left out of this export on purpose.*Part and material costs", text.replace("\n", " "))
+    full_text = pdf_text(c.get(f"/api/export.pdf?from={D}"))
+    assert "Unit cost" in full_text and "Clock in" in full_text and "Left out of this export" not in full_text
+
+
+def test_omit_rejects_unknown_and_check_ignores_it(tmp_path):
+    c = make(tmp_path)
+    scenario(c)
+    assert c.get(f"/api/export.json?from={D}&omit=bogus").status_code == 400
+    r = c.get(f"/api/export.pdf?from={D}&inline=1")
+    assert r.headers["Content-Disposition"].startswith("inline")
+    assert c.get(f"/api/export/check?from={D}&omit=costs").status_code == 200

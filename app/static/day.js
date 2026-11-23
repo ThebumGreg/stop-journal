@@ -442,6 +442,35 @@ function labeled(label, input) {
   const w = el('div'); w.append(el('label', null, label), input); return w;
 }
 
+// What each stop type needs before it can be confirmed, and which parts of the card it shows.
+// Gas, Lunch, Personal and Traffic are done once picked (the server sets their status).
+const TYPES = [['job', 'Job'], ['vendor', 'Vendor'], ['office', 'Office'], ['gas', 'Gas'],
+               ['lunch', 'Lunch'], ['personal', 'Personal'], ['traffic', 'Traffic']];
+const TYPE_LABEL = Object.fromEntries(TYPES);
+const CONFIRMABLE = ['job', 'vendor', 'office'];
+function stillNeeded(s, d) {
+  const t = s.stop_type, miss = [];
+  if (!t) return ['what this stop is'];
+  if (!CONFIRMABLE.includes(t)) return miss;
+  if (!(d.business_name || '').trim()) miss.push(t === 'vendor' ? 'vendor name' : 'business name');
+  if (t === 'job') {
+    if (!s.work_category && !s.category_hint) miss.push('category');   // confirming fills in last time's category
+    if (!s.notes.trim()) miss.push('work notes');
+  }
+  return miss;
+}
+function cardTitle(s) {
+  if (s.business_name) return s.business_name;
+  if (s.stop_type === 'gas') return 'Gas';
+  if (['lunch', 'personal', 'traffic'].includes(s.stop_type)) return TYPE_LABEL[s.stop_type];
+  return s.source === 'manual' ? 'Manual stop' : 'New stop';
+}
+function chipText(s) {
+  const t = TYPE_LABEL[s.stop_type];
+  if (!t) return 'Draft';
+  return CONFIRMABLE.includes(s.stop_type) ? t + (s.status === 'Confirmed' ? ' ✓' : ' · Draft') : t;
+}
+
 function stopCard(s, i) {
   const card = el('div', 'card st-' + s.status + (s.kind === 'short' ? ' short' : ''));
   card.dataset.id = s.id;
@@ -451,13 +480,12 @@ function stopCard(s, i) {
   const body = el('div', 'body');
   const t = el('div', 't', s.arrive + ' – ' + s.depart + ' · ' + dur(s.minutes));
   if (s.kind === 'short') t.append(' ', el('span', 'chip', 'short'));
-  body.append(t, el('div', 'm', s.business_name || (s.source === 'manual' ? 'Manual stop' : 'Unnamed stop')));
+  body.append(t, el('div', 'm', cardTitle(s)));
   if (s.status === 'Confirmed') {
-    const miss = [];
-    if (!s.notes.trim()) miss.push('notes');
-    if (!s.work_category) miss.push('category');
+    const miss = stillNeeded(s, s);
     if (miss.length) body.append(el('div', 'need', 'Needs ' + miss.join(' and ')));
   }
+  if (s.stop_type === 'gas' && !(s.fuel && s.fuel.total)) body.append(el('div', 'need', 'Add gallons and total'));
   if (s.here_now) {
     body.append(el('div', 'here', '● Here now · keeps growing while you are on site'));
     if (s.status === 'Draft' || s.status === 'Confirmed') {
@@ -471,7 +499,7 @@ function stopCard(s, i) {
       body.append(lv);
     }
   }
-  if (s.vendor_hint) {
+  if (s.vendor_hint && s.stop_type !== 'vendor' && s.status !== 'Confirmed') {
     const vb = el('button', 'quick', 'Save as Vendor'); vb.type = 'button';
     vb.title = 'A supply shop: later visits are pre-filled and the report says "from Vendor"';
     vb.onclick = async ev => {
@@ -481,8 +509,8 @@ function stopCard(s, i) {
     };
     body.append(vb);
   }
-  head.append(el('div', 'num', String(i + 1)), body, el('span', 'chip', s.status));
-  if (s.suggest) {
+  head.append(el('div', 'num', String(i + 1)), body, el('span', 'chip', chipText(s)));
+  if (s.suggest && s.status === 'Draft') {
     const q = el('button', 'quick', (s.business_name ? 'Confirm ' : 'Confirm as ') + s.suggest.name);
     q.onclick = async ev => {
       ev.stopPropagation();
@@ -493,6 +521,7 @@ function stopCard(s, i) {
   }
   head.onclick = () => {
     const open = !S.open.has(s.id);
+    if (!open) flushCard(s.id);
     setOpen(s.id, open);
     if (open) setSel(s.id, true);
   };
@@ -513,21 +542,147 @@ async function markHere(s, which, err) {
             () => { S.flash = n ? n + ' stop' + (n > 1 ? 's' : '') + ' marked Personal.' : ''; });
 }
 
+// ---- autosave for the stop card ------------------------------------------
+// Typed fields save shortly after you leave the card's fields (not on every blur, so moving from Business to
+// Address does not redraw the card under your finger). Any button on the card sends unsaved typing with it.
+const CARD_FIELDS = ['business_name', 'address', 'arrive', 'depart', 'category', 'known_site_id'];
+const cardTimers = {};
+S.savedAt = {};
+function pendingFor(id) {
+  const s = S.stops.find(x => x.id === id), d = S.drafts['s' + id];
+  if (!s || !d) return {};
+  const body = {};
+  CARD_FIELDS.forEach(k => { if (k in d && d[k] !== s[k]) body[k] = d[k]; });
+  return body;
+}
+async function saveCard(id, extra, errEl) {
+  clearTimeout(cardTimers[id]);
+  const body = Object.assign(pendingFor(id), extra || {});
+  if (!Object.keys(body).length) return true;
+  if (errEl) errEl.textContent = '';
+  let ok = true;
+  await run(() => api('PATCH', '/api/stops/' + id, body), errEl, () => {
+    delete S.drafts['s' + id];
+    S.savedAt[id] = new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+  }).then(() => { ok = !(errEl && errEl.textContent); });
+  return ok;
+}
+function flushCard(id) { if (Object.keys(pendingFor(id)).length) saveCard(id); }
+function laterSave(id, errEl) {
+  clearTimeout(cardTimers[id]);
+  cardTimers[id] = setTimeout(() => {
+    const card = document.querySelector('.card[data-id="' + id + '"]');
+    if (card && card.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    saveCard(id, null, errEl);
+  }, 700);
+}
+
+function fuelBox(s, err) {
+  const f = s.fuel || {};
+  const box = el('div', 'fuel');
+  const mk = (label, key, val, mode, ph) => {
+    const i = el('input'); i.inputMode = mode; i.value = val == null ? '' : val; i.placeholder = ph;
+    i.onchange = () => run(() => api('PUT', '/api/stops/' + s.id + '/fuel', {[key]: i.value.trim()}), err);
+    return labeled(label, i);
+  };
+  const ppg = f.price_per_gallon ? '$' + f.price_per_gallon.toFixed(3) + ' / gal' : '';
+  box.append(mk('Gallons', 'gallons', f.gallons, 'decimal', '12.345'), mk('Total $', 'total', f.total, 'decimal', '48.20'),
+             mk('Odometer', 'odometer', f.odometer, 'numeric', 'miles on the dash'));
+  const out = el('div', 'hint', (ppg ? ppg + '. ' : '') + 'Fill the tank each time and enter the odometer for MPG (Truck page, Fuel).');
+  return [box, out];
+}
+
+// Photos and receipts: the phone shrinks the picture (and the re-encode drops its location data) before
+// uploading; the server does the same again. iPhone offers Take Photo or Photo Library for this input.
+function shrink(file, side = 1600) {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(b => resolve(b || file), 'image/jpeg', 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };   // let the server try
+    img.src = url;
+  });
+}
+// Full-size view over the page with a Close button (opening the picture on its own would leave the
+// home-screen app with no way back).
+function viewPhoto(src) {
+  const ov = el('div', 'viewer');
+  const close = el('button', 'primary', 'Close'); close.type = 'button';
+  const img = el('img'); img.src = src; img.alt = 'Picture';
+  ov.append(close, img);
+  const done = () => { ov.remove(); document.removeEventListener('keydown', esc); };
+  const esc = e => { if (e.key === 'Escape') done(); };
+  close.onclick = done; ov.onclick = e => { if (e.target === ov) done(); };
+  document.addEventListener('keydown', esc);
+  document.body.append(ov);
+}
+function photoBox(s, err) {
+  const box = el('div', 'photos');
+  (s.photos || []).forEach(p => {
+    const w = el('div', 'ph');
+    const a = el('a'); a.href = '/api/photos/' + p.id + '.jpg';
+    a.onclick = ev => { ev.preventDefault(); viewPhoto(a.href); };
+    const im = el('img'); im.src = a.href; im.alt = p.kind; im.loading = 'lazy'; a.append(im);
+    const x = el('button', 'danger', '✕'); x.type = 'button'; x.title = 'Remove this picture';
+    x.onclick = () => { if (confirm('Remove this ' + (p.kind === 'receipt' ? 'receipt' : 'photo') + '?'))
+      run(() => api('DELETE', '/api/photos/' + p.id), err); };
+    w.append(a, el('span', 'phk', p.kind === 'receipt' ? 'Receipt' : 'Photo'), x);
+    box.append(w);
+  });
+  const add = kind => {
+    const lab = el('label', 'quick addph'); const inp = el('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.hidden = true;
+    lab.append(kind === 'receipt' ? '+ Receipt' : '+ Photo', inp);
+    inp.onchange = async () => {
+      const f = inp.files[0]; if (!f) return;
+      lab.firstChild.textContent = 'Uploading…';
+      const fd = new FormData();
+      fd.append('file', await shrink(f), 'picture.jpg'); fd.append('kind', kind);
+      await run(async () => {
+        const r = await fetch('/api/stops/' + s.id + '/photos', {method: 'POST', body: fd});
+        let d = null; try { d = await r.json(); } catch (e) {}
+        if (!r.ok) throw new Error((d && d.error) || 'Upload failed (' + r.status + ')');
+        return d;
+      }, err);
+    };
+    return lab;
+  };
+  const row = el('div', 'acts'); row.append(add('receipt'), add('photo'));
+  return [box, row];
+}
+
 function buildEdit(edit, s, i) {
   const key = 's' + s.id;
   const d = Object.assign({business_name: s.business_name, address: s.address,
-    arrive: s.arrive, depart: s.depart, status: s.status, category: s.category,
+    arrive: s.arrive, depart: s.depart, category: s.category,
     known_site_id: s.known_site_id}, S.drafts[key] || {});
-  const remember = (k, v) => { d[k] = v; (S.drafts[key] = S.drafts[key] || {})[k] = v; };
   const err = el('div', 'err');
+  const remember = (k, v) => { d[k] = v; (S.drafts[key] = S.drafts[key] || {})[k] = v; stat.textContent = 'Unsaved changes'; };
+  const stat = el('div', 'saved', S.drafts[key] ? 'Unsaved changes' : (S.savedAt[s.id] ? 'Saved ' + S.savedAt[s.id] : ''));
+  const type = s.stop_type;
 
-  const nameIn = el('input'); nameIn.value = d.business_name; nameIn.placeholder = 'Business name';
+  // 1. what is this stop? (picked first; it decides what else the card shows)
+  const types = el('div', 'types');
+  TYPES.forEach(([k, label]) => {
+    const b = el('button', type === k ? 'on' : (!type && k === 'gas' && s.gas_hint ? 'hint' : ''), label); b.type = 'button';
+    b.onclick = () => { if (k !== type) saveCard(s.id, {stop_type: k}, err); };
+    types.append(b);
+  });
+  if (!type) edit.append(el('div', 'ask', 'What is this stop?' + (s.gas_hint ? ' (looks like a gas station)' : '')));
+  edit.append(types);
+
+  // name and address (with the business finder)
+  const nameIn = el('input'); nameIn.value = d.business_name;
+  nameIn.placeholder = {vendor: 'Vendor (supply shop)', gas: 'Station (optional)', office: 'Office', personal: 'Name (optional, e.g. Home)'}[type] || 'Business name';
   nameIn.oninput = () => { remember('business_name', nameIn.value); remember('known_site_id', null); };
   const addrIn = el('input'); addrIn.value = d.address; addrIn.placeholder = 'Address';
   addrIn.oninput = () => remember('address', addrIn.value);
-
-  // business finder
-  const find = el('button', null, 'Find business');
+  const find = el('button', null, type === 'gas' ? 'Find station' : 'Find business'); find.type = 'button';
   let panel = null;
   find.onclick = () => {
     if (panel) { panel.remove(); panel = null; candLayer.clearLayers(); return; }
@@ -536,13 +691,13 @@ function buildEdit(edit, s, i) {
     inp.placeholder = 'Search by name or address'; go.type = 'submit';
     const box = el('div');
     form.append(inp, go); panel.append(form, box);
-    const pick = c => {
-      panel.remove(); panel = null;  // choosing a business closes the list
+    const pick = c => {     // choosing a business closes the list and saves it
+      panel.remove(); panel = null;
       candLayer.clearLayers();
       remember('business_name', c.name); remember('address', c.address);
       remember('category', c.category);
       remember('known_site_id', c.source === 'known' ? c.known_site_id : null);
-      nameIn.value = c.name; addrIn.value = c.address;
+      saveCard(s.id, null, err);
     };
     form.onsubmit = e => { e.preventDefault(); loadCands(s, box, inp.value.trim(), pick); };
     find.after(panel);
@@ -551,10 +706,14 @@ function buildEdit(edit, s, i) {
 
   const arrIn = el('input'); arrIn.type = 'time'; arrIn.value = d.arrive;
   arrIn.oninput = () => remember('arrive', arrIn.value);
+  arrIn.onchange = () => saveCard(s.id, null, err);
   const depIn = el('input'); depIn.type = 'time'; depIn.value = d.depart;
   depIn.oninput = () => remember('depart', depIn.value);
+  depIn.onchange = () => saveCard(s.id, null, err);
   const times = el('div', 'two'); times.append(labeled('Arrived', arrIn), labeled('Departed', depIn));
+  [nameIn, addrIn].forEach(x => { x.onblur = () => laterSave(s.id, err); });
 
+  // notes & parts summary button (jobs, vendors, office)
   const flat = (s.notes || '').replace(/\s+/g, ' ').trim();
   const np = el('button', 'notesbtn'); np.type = 'button';
   const bits = [];
@@ -563,41 +722,39 @@ function buildEdit(edit, s, i) {
   if (nExp) bits.push(nExp + ' expense' + (nExp > 1 ? 's' : ''));
   if ((s.follow_ups || []).length) bits.push(s.follow_ups.length + ' follow-up' + (s.follow_ups.length > 1 ? 's' : ''));
   if (s.work_category) bits.push(s.work_category);
-  np.append(el('span', 'nb-t', 'Notes & parts ›'),
+  np.append(el('span', 'nb-t', (type === 'vendor' ? 'Notes, purchases & parts' : 'Notes & parts') + ' ›'),
             el('span', 'nb-m' + (flat ? '' : ' nb-empty'), flat ? flat.slice(0, 110) + (flat.length > 110 ? '…' : '') : 'No work notes yet'),
             el('span', 'nb-m', bits.join(' · ') || 'No parts yet'));
-  np.onclick = () => openSheet(s.id);
+  np.onclick = () => { flushCard(s.id); openSheet(s.id); };
 
-  const seg = el('div', 'seg');
-  const segBtns = ['Draft', 'Confirmed', 'Personal', 'Lunch', 'Traffic'].map(st => {
-    const b = el('button', d.status === st ? 'on' : '', st); b.type = 'button';
-    b.onclick = () => {
-      remember('status', st);
-      segBtns.forEach(x => x.classList.toggle('on', x.textContent === st));
-    };
-    return b;
-  });
-  segBtns.forEach(b => seg.append(b));
-
-  async function save() {
-    err.textContent = '';
-    const body = {};
-    ['business_name', 'address', 'arrive', 'depart', 'status', 'category']
-      .forEach(k => { if (d[k] !== s[k]) body[k] = d[k]; });
-    if (d.known_site_id !== s.known_site_id) body.known_site_id = d.known_site_id;
-    if (!Object.keys(body).length) { err.textContent = 'Nothing to save.'; return; }
-    await run(() => api('PATCH', '/api/stops/' + s.id, body), err, () => { delete S.drafts[key]; });
-  }
-
+  // 2. the one main action: Confirm (jobs, vendors, office), once the type has what it needs
   const acts = el('div', 'acts');
-  const saveB = el('button', 'primary', 'Save'); saveB.onclick = save;
-  const confB = el('button', null, 'Confirm');
-  confB.onclick = () => { remember('status', 'Confirmed'); segBtns.forEach(x => x.classList.toggle('on', x.textContent === 'Confirmed')); save(); };
-  const moreB = el('button', null, 'More ▾');
-  acts.append(saveB, confB, moreB);
+  if (CONFIRMABLE.includes(type)) {
+    const miss = stillNeeded(s, d);
+    if (s.status === 'Confirmed') {
+      acts.append(el('span', 'done', '✓ Confirmed'));
+    } else {
+      const confB = el('button', 'primary' + (miss.length ? ' notready' : ''), 'Confirm'); confB.type = 'button';
+      confB.onclick = () => {
+        if (!miss.length) return saveCard(s.id, {status: 'Confirmed'}, err);
+        err.textContent = 'Still needed: ' + miss.join(', ') + '.';
+        if (miss.some(m => m.includes('name'))) nameIn.focus();
+        else { flushCard(s.id); openSheet(s.id); }
+      };
+      acts.append(confB);
+      if (miss.length) acts.append(el('span', 'need', 'Needs ' + miss.join(', ')));
+    }
+  }
+  const moreB = el('button', 'morebtn', 'More ▾'); moreB.type = 'button';
+  acts.append(moreB);
   const more = el('div', 'more'); more.hidden = true;
   moreB.onclick = () => { more.hidden = !more.hidden; moreB.textContent = more.hidden ? 'More ▾' : 'More ▴'; };
 
+  if (s.status === 'Confirmed') {
+    const back = el('button', null, 'Back to Draft'); back.type = 'button';
+    back.onclick = () => saveCard(s.id, {status: 'Draft'}, err);
+    more.append(back);
+  }
   // split
   const splitRow = el('div', 'two'); splitRow.hidden = true;
   const splitIn = el('input'); splitIn.type = 'time';
@@ -639,10 +796,22 @@ function buildEdit(edit, s, i) {
   };
   more.append(del);
 
-  edit.append(seg, acts, more, splitRow, err);
-  if (s.status === 'Draft' || s.status === 'Confirmed') edit.append(np);
-  edit.append(labeled('Business', nameIn), labeled('Address', addrIn), find, times);
-  if (s.lat != null) edit.append(el('div', 'hint', 'Tip: tap this stop\'s pin on the map, then drag it to move the location.'));
+  edit.append(acts, more, splitRow, err);
+  // 3. the fields this type needs
+  if (!type) {
+    edit.append(times);
+  } else if (CONFIRMABLE.includes(type)) {
+    edit.append(labeled(type === 'vendor' ? 'Vendor' : 'Business', nameIn), labeled('Address', addrIn), find, times, np,
+                ...photoBox(s, err));
+  } else if (type === 'gas') {
+    edit.append(...fuelBox(s, err), ...photoBox(s, err), labeled('Station', nameIn), find, times);
+  } else if (type === 'personal') {
+    edit.append(labeled('Name', nameIn), times);
+  } else {
+    edit.append(times);
+  }
+  edit.append(stat);
+  if (s.lat != null && type) edit.append(el('div', 'hint', 'Tip: tap this stop\'s pin on the map, then drag it to move the location.'));
 }
 
 // ---- drive row ---------------------------------------------------------
@@ -769,12 +938,14 @@ function addForm() {
   const a = el('input'); a.type = 'time'; a.value = last ? last.depart : '09:00';
   const d = el('input'); d.type = 'time'; d.value = addMin(a.value, 30);
   const n = el('input'); n.placeholder = 'Business name (optional)';
+  const ty = el('select');
+  [['', 'Type: choose later']].concat(TYPES).forEach(([v, t]) => { const o = el('option', null, t); o.value = v; ty.append(o); });
   const err = el('div', 'err');
   const go = el('button', null, 'Add stop');
   go.onclick = () => run(() => api('POST', '/api/day/' + S.date + '/stops',
-    {arrive: a.value, depart: d.value, business_name: n.value}), err, () => { S.tool = null; });
+    {arrive: a.value, depart: d.value, business_name: n.value, stop_type: ty.value}), err, () => { S.tool = null; });
   const two = el('div', 'two'); two.append(labeled('Arrived', a), labeled('Departed', d));
-  f.append(el('div', 'hint', 'Add a stop that has no GPS data (e.g. a phone job).'), two, n, go, err);
+  f.append(el('div', 'hint', 'Add a stop that has no GPS data (a phone job, or a fill-up the phone missed).'), two, ty, n, go, err);
   return f;
 }
 

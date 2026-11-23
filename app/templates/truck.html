@@ -17,6 +17,12 @@
   .crow { display:grid; grid-template-columns:1fr 96px; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
   .crow input { width:100%; }
   .group h3 { margin:14px 0 4px; font-size:16px; }
+  .tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:8px 0; }
+  .tile { border:1px solid var(--line); border-radius:8px; padding:6px 8px; background:var(--bg); }
+  .tile b { display:block; font-size:18px; }
+  .fuellog { width:100%; border-collapse:collapse; font-size:13px; }
+  .fuellog td, .fuellog th { padding:4px; border-bottom:1px solid var(--line); text-align:right; }
+  .fuellog td:first-child, .fuellog th:first-child, .fuellog td:nth-child(2), .fuellog th:nth-child(2) { text-align:left; }
 </style>
 </head>
 <body>
@@ -33,10 +39,11 @@
   <label class="chk"><input type="checkbox" id="showoff"> Show removed items</label>
   <input id="filter" placeholder="Search by name, part number, category or vendor">
 
-  <h2>Count &amp; shopping</h2>
+  <h2>Count, shopping &amp; fuel</h2>
   <div class="row">
     <button type="button" id="countbtn">Count the truck</button>
     <button type="button" id="shopbtn">Shopping list</button>
+    <button type="button" id="fuelbtn">Fuel</button>
   </div>
   <div id="tools"></div>
 
@@ -66,8 +73,8 @@
       <button id="csvgo" type="button">Import CSV</button>
     </div>
     <div class="hint" style="margin-top:6px">
-      <a href="/api/parts/template.csv">Download template</a> ·
-      <a href="/api/parts/export.csv">Export current parts</a>.
+      <a href="/api/parts/template.csv" data-file="template">Download template</a> ·
+      <a href="/api/parts/export.csv" data-file="parts CSV">Export current parts</a>.
       Columns: <code>name</code> (required), <code>sku</code>, <code>type</code> (part, consumable or expense), <code>unit</code> (each, pair, pack, box, bag, case, roll, foot, gallon or pound; any other unit rejects the row),
       <code>unit_cost</code>, <code>billable</code>, <code>category</code>, <code>vendor</code>, <code>on_hand</code>, <code>reorder_at</code>, <code>pack_size</code>, <code>pack_unit</code>.
       Matching is by part number, else name. <b>Check file</b> shows what an import would do without changing anything. A filled <code>on_hand</code> sets the truck count and turns tracking on.

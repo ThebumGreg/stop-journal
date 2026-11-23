@@ -263,3 +263,51 @@ document.getElementById('csvgo').onclick = () => runCsv(false);
 document.getElementById('csvcheck').onclick = () => runCsv(true);
 
 load().catch(e => { listEl.textContent = 'Could not load parts (' + e.message + ').'; });
+
+// ---- fuel: fill-ups logged on Gas stops (day page) ----------------------------
+async function showFuel(range) {
+  range = range || 'month';
+  const today = new Date(), iso = d => d.toLocaleDateString('en-CA');
+  const from = {month: iso(new Date(today.getFullYear(), today.getMonth(), 1)),
+                d30: iso(new Date(today - 29 * 864e5)), year: iso(new Date(today.getFullYear(), 0, 1)), all: ''}[range];
+  tools.replaceChildren(el('div', 'hint', 'Loading…'));
+  const d = await api('GET', '/api/fuel' + (from ? '?from=' + from : ''));
+  const box = el('div', 'box');
+  const pick = el('div', 'row');
+  [['month', 'This month'], ['d30', 'Last 30 days'], ['year', 'This year'], ['all', 'All']].forEach(([k, t]) => {
+    const b = el('button', k === range ? 'on primary' : null, t); b.type = 'button';
+    b.onclick = () => showFuel(k).catch(e => { tools.textContent = e.message; });
+    pick.append(b);
+  });
+  const sm = d.summary, money = v => v == null ? '—' : '$' + v.toFixed(2);
+  const tiles = el('div', 'tiles');
+  [['Spent', money(sm.total)], ['Gallons', sm.gallons ? sm.gallons.toFixed(1) : '—'],
+   ['Avg $/gal', sm.avg_price_per_gallon == null ? '—' : '$' + sm.avg_price_per_gallon.toFixed(3)],
+   ['MPG', sm.mpg == null ? '—' : sm.mpg.toFixed(1)], ['Miles (odometer)', sm.miles || '—'],
+   ['Fuel $/mile', sm.cost_per_mile == null ? '—' : '$' + sm.cost_per_mile.toFixed(3)]].forEach(([k, v]) => {
+    const t = el('div', 'tile'); t.append(el('b', null, String(v)), el('span', 'hint', k)); tiles.append(t);
+  });
+  box.append(pick, tiles);
+  if (!d.fills.length) {
+    box.append(el('div', 'hint', 'No fill-ups yet. On the day page, open a stop, tap Gas, and enter gallons, total and the odometer.'));
+  } else {
+    const t = el('table', 'fuellog');
+    const hr = el('tr'); ['Date', 'Station', 'Gal', 'Total', '$/gal', 'Odometer', 'MPG'].forEach(h => hr.append(el('th', null, h)));
+    t.append(hr);
+    d.fills.forEach(f => {
+      const r = el('tr');
+      const a = el('a', null, f.date.slice(5) + ' ' + f.time); a.href = '/day/' + f.date;
+      const c0 = el('td'); c0.append(a);
+      r.append(c0, el('td', null, f.station || 'Gas'), el('td', null, f.gallons == null ? '' : f.gallons.toFixed(2)),
+               el('td', null, f.total == null ? '' : f.total.toFixed(2)),
+               el('td', null, f.price_per_gallon == null ? '' : f.price_per_gallon.toFixed(3)),
+               el('td', null, f.odometer == null ? '' : String(f.odometer)), el('td', null, f.mpg == null ? '' : f.mpg.toFixed(1)));
+      t.append(r);
+    });
+    box.append(t);
+    box.append(el('div', 'hint', 'MPG uses the odometer change since the previous fill-up, so fill the tank each time and enter the odometer. ' +
+      'A missed fill-up shows no MPG for the next one.'));
+  }
+  tools.replaceChildren(box);
+}
+document.getElementById('fuelbtn').onclick = () => showFuel().catch(e => { tools.textContent = e.message; });

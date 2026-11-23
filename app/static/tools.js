@@ -18,6 +18,11 @@ async function api(method, url, body) {
   return d;
 }
 
+// Sections that can be left out of an export; ticks are remembered on this phone.
+const SECTIONS = [['costs', 'Part and material costs'], ['expenses', 'Expenses'], ['fuel', 'Fuel'], ['photos', 'Receipts and photos'], ['materials', 'Non-billable materials'],
+  ['categories', 'Hours by category'], ['follow_ups', 'Follow-ups'], ['mileage', 'Mileage table'],
+  ['recap', 'Day recap (timesheet)']];
+
 function exportForm() {
   const f = el('div', 'box');
   const from = el('input'); from.type = 'date'; from.value = DATE;
@@ -26,26 +31,56 @@ function exportForm() {
   const info = el('div', 'hint', 'Checking…');
   const warn = el('div', 'box warnbox'); warn.hidden = true;
   const pdf = el('a', 'btn primary', 'Download PDF'), js = el('a', 'btn', 'Download JSON');
+  const zip = el('a', 'btn', 'Zip: PDF + photos');
+  zip.title = 'The PDF, the JSON and every receipt and photo in the report, filed by year/month/day';
   const dbg = el('a', 'btn', 'Debug data');
   dbg.title = 'Raw GPS points, detected stops and your edits for the “From” day (contains locations)';
-  const acts = el('div', 'acts'); acts.append(pdf, js, dbg);
-  const q = () => 'from=' + from.value + '&to=' + (to.value || from.value);
+  const acts = el('div', 'acts'); acts.append(pdf, zip, js, dbg);
+  pdf.dataset.file = 'PDF'; zip.dataset.file = 'zip'; js.dataset.file = 'JSON'; dbg.dataset.file = 'debug data';  // share sheet in home-screen mode (share.js)
+
+  // Include: ticks for each optional section, with two presets
+  let omit = [];
+  try { omit = JSON.parse(localStorage.getItem('export_omit') || '[]'); } catch (e) {}
+  const inc = el('details', 'box'); inc.append(el('summary', null, 'Include in the report'));
+  const incHint = el('div', 'hint');
+  const boxes = {};
+  const pre = el('div', 'acts');
+  const all = el('button', null, 'Include everything'); all.type = 'button';
+  all.onclick = () => { omit = []; syncBoxes(); };
+  pre.append(all);
+  inc.append(pre);
+  SECTIONS.forEach(([k, t]) => {
+    const l = el('label', 'hint'), c = el('input'); c.type = 'checkbox';
+    c.onchange = () => { omit = SECTIONS.map(x => x[0]).filter(x => !boxes[x].checked); syncBoxes(); };
+    boxes[k] = c; l.append(c, ' ' + t); inc.append(l);
+  });
+  inc.append(incHint);
+  function syncBoxes() {
+    SECTIONS.forEach(([k]) => { boxes[k].checked = !omit.includes(k); });
+    localStorage.setItem('export_omit', JSON.stringify(omit));
+    incHint.textContent = omit.length ? 'Left out: ' + SECTIONS.filter(x => omit.includes(x[0])).map(x => x[1]).join(', ') +
+      '. The report says so, so the reader does not take it for missing data.' : 'Everything is included.';
+    inc.querySelector('summary').textContent = 'Include in the report' + (omit.length ? ' (' + omit.length + ' left out)' : '');
+    setLinks();
+  }
+  const q = () => 'from=' + from.value + '&to=' + (to.value || from.value) + (omit.length ? '&omit=' + omit.join(',') : '');
   let blocked = false;
   const overBox = el('input'); overBox.type = 'checkbox';
   const over = el('label', 'hint'); over.append(overBox, ' Export anyway, leaving those out'); over.hidden = true;
   function setLinks() {
     const on = !blocked || overBox.checked;
-    for (const a of [pdf, js]) {
+    for (const a of [pdf, zip, js]) {
       a.classList.toggle('disabled', !on);
       a.setAttribute('aria-disabled', on ? 'false' : 'true');
     }
-    if (on) { pdf.href = '/api/export.pdf?' + q(); js.href = '/api/export.json?' + q(); }
-    else { pdf.removeAttribute('href'); js.removeAttribute('href'); }
+    if (on && !info.textContent.startsWith('Checking')) { pdf.href = '/api/export.pdf?' + q(); zip.href = '/api/export.zip?' + q(); js.href = '/api/export.json?' + q(); }
+    else { pdf.removeAttribute('href'); zip.removeAttribute('href'); js.removeAttribute('href'); }
+    if (window.resetFileLink) [pdf, zip, js].forEach(resetFileLink);
   }
   overBox.onchange = setLinks;
   async function refresh() {
     info.className = 'hint'; info.textContent = 'Checking…';
-    pdf.removeAttribute('href'); js.removeAttribute('href'); dbg.removeAttribute('href');
+    pdf.removeAttribute('href'); zip.removeAttribute('href'); js.removeAttribute('href'); dbg.removeAttribute('href');
     try {
       const c = await api('GET', '/api/export/check?' + q());
       const bits = [c.confirmed + ' confirmed stop' + (c.confirmed === 1 ? '' : 's') + ' will be included'];
@@ -70,7 +105,8 @@ function exportForm() {
   from.onchange = () => { if (to.value < from.value) to.value = from.value; refresh(); };
   to.onchange = refresh;
   f.append(el('div', 'hint', 'Only Confirmed stops are included in detail. Pick a range to export several days.'),
-           two, info, warn, over, acts);
+           two, inc, info, warn, over, acts);
+  syncBoxes();
   refresh();
   return f;
 }

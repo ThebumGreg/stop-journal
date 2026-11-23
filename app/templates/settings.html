@@ -75,7 +75,7 @@
         <div class="box">
           {% if backups %}
             {% for b in backups[:5] %}
-              <div class="help"><a href="/settings/backup/{{ b.name }}">{{ b.name }}</a> · {{ (b.size / 1024) | round | int }} KB · {{ b.mtime | int | ts_local }}</div>
+              <div class="help"><a href="/settings/backup/{{ b.name }}" data-file="backup">{{ b.name }}</a> · {{ (b.size / 1024) | round | int }} KB · {{ b.mtime | int | ts_local }}</div>
             {% endfor %}
             {% if backups | length > 5 %}<div class="help">…and {{ backups | length - 5 }} older.</div>{% endif %}
           {% else %}<div class="help">No backups yet.</div>{% endif %}

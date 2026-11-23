@@ -12,12 +12,20 @@ Single user. Your location data stays on your own server.
 - Detects stops and drives from OwnTracks Recorder data; every threshold is adjustable.
 - Suggests the business at each stop (your own known sites first, then OpenStreetMap, then Google
   only if you enable it) and learns from what you confirm.
-- Per stop: business, address, times, drag-to-move pin, **work performed**, **parts used**, status
-  (Draft / Confirmed / Personal). Split, merge, delete, or add a stop by hand.
+- Per stop: first pick **what the stop is** (Job, Vendor, Office, Gas, Lunch, Personal, Traffic); the card then shows only
+  what that type needs, and fields save on their own. Jobs, vendors and office stops have one **Confirm** button that says
+  what is still missing. Business, address, times, drag-to-move pin, **work performed**, **parts used**, **photos and
+  receipts**. Split, merge, delete, or add a stop by hand.
+- **Gas** stops log gallons, total and odometer (the time at the pump counts as drive time); the Truck page's **Fuel**
+  panel shows spend, gallons, average price, MPG and fuel cost per mile.
 - Saved **Places** (home, office, vendors) pre-fill and pre-mark matching stops.
 - **Truck parts and consumables**: a catalog with stock levels, fixed unit list and pack sizes (buy a bag of 25, use them one by one), vendor and category dropdowns, CSV import/export, reorder levels, non-billable
   consumables, a weekly **Count the truck** screen and a vendor-grouped **Shopping list**.
-- **Export** (own page, header link): a text-based PDF and a JSON twin for one day or a date range.
+- **Export** (own page, header link): a text-based PDF and a JSON twin for one day or a date range. **Include** ticks leave
+  out sections (part costs, expenses, fuel, receipts and photos, materials, hours by category, follow-ups, mileage, recap);
+  the report says what was left out. **Zip: PDF + photos** downloads the PDF, the JSON and every receipt and photo in the
+  report, filed as `photos/YYYY/MM/DD/stop-1-acme-receipt-1.jpg` (the PDF prints each picture's file name).
+  From the Home Screen app the files open the share sheet (Save to Files, Mail).
 - **Alerts** to your phone through Pushover (for example: no location data during work hours).
 - A **live status** box: where the phone is now and how long it has been there.
 - Sync, Confirm all known and Undo are under **Export & tools**. Once the day is ended, no more stops are added to it.
@@ -106,7 +114,9 @@ Everything is an environment variable (`.env`). Many of these can also be change
 
 ## Backup and restore
 
-The SQLite file in `/data` is the entire state (stops, edits, parts, places, settings).
+The SQLite file in `/data` holds the state (stops, edits, parts, places, settings). Photos and receipts are files next to
+it in `/data/photos/YYYY/MM/DD/` (by the stop's day, shrunk to 1600 px, location metadata removed); the database snapshots
+do not contain them, so back up the whole `/data` folder (at least `backups/` and `photos/`).
 
 - **Automatic**: once a day JobHub saves a consistent snapshot to `/data/backups/` (`jobhub-YYYY-MM-DD.db`) and
   keeps the newest 14 (Settings → Backups; `BACKUP_KEEP`). Settings also has **Back up now** and download links.
