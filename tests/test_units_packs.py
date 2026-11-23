@@ -80,7 +80,7 @@ def test_csv_round_trips_pack_columns(tmp_path):
     c, _ = make(tmp_path)
     part(c, name="Jack", pack_size="25", pack_unit="bag")
     out = c.get("/api/parts/export.csv").get_data(as_text=True)
-    assert out.splitlines()[0].endswith("pack_size,pack_unit") and "25,bag" in out
+    assert out.splitlines()[0].endswith("pack_size,pack_unit,bin") and "25,bag" in out
     again = import_csv(c, out)
     assert again["updated"] == 1 and not again["errors"]
     assert import_csv(c, c.get("/api/parts/template.csv").get_data(as_text=True))["skipped"] == 0

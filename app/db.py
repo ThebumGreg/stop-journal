@@ -217,6 +217,7 @@ MIGRATIONS = [
     ("photos", "path", "TEXT"),
     ("photos", "read_json", "TEXT"),
     ("route_cache", "seconds", "REAL"),
+    ("parts", "bin", "TEXT"),
 ]
 
 

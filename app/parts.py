@@ -7,7 +7,8 @@
 * Stock may go negative (the truck count is often behind reality); the UI flags it.
 
 CSV import format (header row required, order free, extra columns ignored):
-  name (required), sku, type, unit, unit_cost, billable, category, vendor, on_hand, reorder_at, pack_size, pack_unit
+  name (required), sku, type, unit, unit_cost, billable, category, vendor, on_hand, reorder_at, pack_size, pack_unit, bin
+  bin is where it lives on the truck ("Shelf 2", "Bin 14"); Count the truck is sorted by it.
   type is "part" (default), "consumable" (tape, gloves, solvent: used up, normally not billed;
   consumables default to not billable) or "expense" (parking, tolls, a purchase: money, not stock;
   never tracked or counted, not billable unless ticked).
@@ -18,16 +19,17 @@ unit is one of UNITS (a row with any other unit is rejected; common spellings li
 pack_size / pack_unit describe how the item is bought ("bag" of 25): stock is always counted in `unit`.
 """
 import csv
+import difflib
 import io
 import math
-import math
+import re
 import sqlite3
 import time
 
 from .errors import EditError
 
 COLUMNS = ["sku", "name", "type", "unit", "unit_cost", "billable", "category", "vendor", "on_hand",
-           "reorder_at", "pack_size", "pack_unit"]
+           "reorder_at", "pack_size", "pack_unit", "bin"]
 UNITS = {"ea": "Each", "pair": "Pair", "pack": "Pack", "box": "Box", "bag": "Bag", "case": "Case",
          "roll": "Roll", "ft": "Foot", "gal": "Gallon", "lb": "Pound"}
 UNIT_WORDS = {"each": "ea", "pc": "ea", "pcs": "ea", "piece": "ea", "pieces": "ea", "feet": "ft", "foot": "ft",
@@ -49,6 +51,7 @@ ALIASES = {
     "minimum": "reorder_at", "min_qty": "reorder_at", "par": "reorder_at",
     "group": "category", "kind": "type", "item_type": "type", "part_type": "type",
     "supplier": "vendor", "preferred_vendor": "vendor", "buy_from": "vendor",
+    "location": "bin", "shelf": "bin", "bin_location": "bin", "shelf_bin": "bin",
     "pack": "pack_size", "case_qty": "pack_size", "pack_qty": "pack_size", "buy_unit": "pack_unit",
 }
 MAX_ROWS = 20000
@@ -139,7 +142,7 @@ def part_dict(r):
             "category": r["category"] or "", "on_hand": r["on_hand"] or 0,
             "reorder_at": r["reorder_at"], "tracked": tracked, "active": bool(r["active"]),
             "kind": r["kind"] or "part", "vendor": r["vendor"] or "",
-            "pack_size": r["pack_size"], "pack_unit": r["pack_unit"] or "",
+            "pack_size": r["pack_size"], "pack_unit": r["pack_unit"] or "", "bin": r["bin"] or "",
             "low": bool(low), "negative": bool(tracked and (r["on_hand"] or 0) < 0)}
 
 
@@ -202,11 +205,11 @@ def create_part(conn, f, tracked=False):
         tracked = True
     cur = conn.execute(
         "INSERT INTO parts(sku,name,unit,unit_cost,billable,category,on_hand,reorder_at,tracked,active,"
-        "kind,vendor,pack_size,pack_unit) VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?)",
+        "kind,vendor,pack_size,pack_unit,bin) VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)",
         (sku, name, _unit(f.get("unit")), cost,
          1 if billable else 0, _text(f.get("category"), "Category", 80) or None,
          0 if on_hand is None else on_hand, reorder, 1 if tracked else 0, kind,
-         _text(f.get("vendor"), "Vendor", 80) or None, *_pack(f)))
+         _text(f.get("vendor"), "Vendor", 80) or None, *_pack(f), _text(f.get("bin"), "Shelf / bin", 40) or None))
     if on_hand:
         _log(conn, cur.lastrowid, on_hand, "initial")
     return cur.lastrowid
@@ -231,6 +234,8 @@ def update_part(conn, pid, f):
         upd["category"] = _text(f["category"], "Category", 80) or None
     if "vendor" in f:
         upd["vendor"] = _text(f["vendor"], "Vendor", 80) or None
+    if "bin" in f:
+        upd["bin"] = _text(f["bin"], "Shelf / bin", 40) or None
     if "pack_size" in f or "pack_unit" in f:
         size, unit = _pack({"pack_size": f.get("pack_size", p["pack_size"]),
                             "pack_unit": f.get("pack_unit", p["pack_unit"])})
@@ -381,15 +386,15 @@ def export_csv(conn):
                     _g(p["unit_cost"]), "yes" if p["billable"] else "no",
                     _safe(p["category"]), _safe(p["vendor"]),
                     _g(p["on_hand"]) if p["tracked"] else "", _g(p["reorder_at"]),
-                    _g(p["pack_size"]), p["pack_unit"]])
+                    _g(p["pack_size"]), p["pack_unit"], _safe(p["bin"])])
     return out.getvalue()
 
 
 def template_csv():
-    return ("sku,name,type,unit,unit_cost,billable,category,vendor,on_hand,reorder_at,pack_size,pack_unit\r\n"
-            "BV-050,1/2 in. brass ball valve,part,ea,8.75,yes,Plumbing,Ferguson,12,4,,\r\n"
-            "JACK-1,Telephone jack,part,ea,1.10,yes,Cabling,Graybar,40,10,25,bag\r\n"
-            "TAPE-PTFE,PTFE thread tape,consumable,roll,1.20,no,Plumbing,Home Depot,30,10,,\r\n")
+    return ("sku,name,type,unit,unit_cost,billable,category,vendor,on_hand,reorder_at,pack_size,pack_unit,bin\r\n"
+            "BV-050,1/2 in. brass ball valve,part,ea,8.75,yes,Plumbing,Ferguson,12,4,,,Shelf 2\r\n"
+            "JACK-1,Telephone jack,part,ea,1.10,yes,Cabling,Graybar,40,10,25,bag,Bin 4\r\n"
+            "TAPE-PTFE,PTFE thread tape,consumable,roll,1.20,no,Plumbing,Home Depot,30,10,,,Door\r\n")
 
 
 # ---- per-stop usage ----------------------------------------------------
@@ -531,7 +536,12 @@ def count_sheet(conn, kind=None):
             "SELECT COALESCE(-SUM(delta), 0) FROM inventory_log WHERE part_id=? "
             "AND reason IN ('used','return') AND ts > ?", (p["id"], last or 0)).fetchone()[0]
         out.append({**p, "last_counted": last, "used_since": round(used, 4)})
-    return out
+    return sorted(out, key=lambda p: (not p["bin"], _natural(p["bin"]), p["name"].lower()))   # walk the truck shelf by shelf
+
+
+def _natural(s):
+    """'Shelf 10' after 'Shelf 2'."""
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", (s or "").lower())]
 
 
 def apply_counts(conn, counts):
@@ -607,3 +617,36 @@ def history(conn, pid, limit=100):
     used = conn.execute("SELECT COALESCE(SUM(qty),0), COUNT(DISTINCT stop_id) FROM stop_parts WHERE part_id=?",
                         (pid,)).fetchone()
     return {"part": part_dict(p), "uses": uses, "log": log, "totals": {"used": used[0], "stops": used[1]}}
+
+
+# ---- possible duplicates ----------------------------------------------------------
+SIMILAR_AT = 0.82        # difflib ratio on normalized names
+
+
+def _norm_name(s):
+    s = (s or "").lower().replace('"', " in ").replace("inch", " in ")
+    return " ".join(re.findall(r"[a-z0-9/.]+", s))
+
+
+def similar(conn, name="", sku="", exclude=None, limit=5):
+    """Parts that may be the same thing: same part # (ignoring case, spaces and dashes), or a name that is nearly
+    the same ("1/2 ball valve" vs "1/2 in. ball valve"). Newest-used first is not needed: best match first."""
+    n, k = _norm_name(name), re.sub(r"[\s-]", "", (sku or "").lower())
+    out = []
+    for r in conn.execute("SELECT * FROM parts"):
+        if exclude and r["id"] == exclude:
+            continue
+        why, score = None, 0.0
+        if k and re.sub(r"[\s-]", "", (r["sku"] or "").lower()) == k:
+            why, score = "same part #", 2.0
+        elif n and len(n) >= 3:
+            other = _norm_name(r["name"])
+            ta, tb = set(n.split()) - {"in"}, set(other.split()) - {"in"}
+            ratio = max(difflib.SequenceMatcher(None, n, other).ratio(),            # typos
+                        difflib.SequenceMatcher(None, " ".join(sorted(ta)), " ".join(sorted(tb))).ratio())  # word order
+            same_words = len(ta) >= 2 and len(tb) >= 2 and (ta <= tb or tb <= ta)
+            if ratio >= SIMILAR_AT or same_words or (len(n) >= 6 and (n in other or other in n)):
+                why, score = "similar name", max(ratio, 0.9 if same_words else 0)
+        if why:
+            out.append((score, {**part_dict(r), "why": why}))
+    return [p for _, p in sorted(out, key=lambda x: -x[0])[:limit]]

@@ -223,9 +223,20 @@ function newPartForm(box, name, qty, s, err) {
     run(() => api('POST', '/api/stops/' + s.id + '/parts', body), err, () => { box.hidden = true; loadParts(); });
   };
   const acts = el('div', 'cardacts'); acts.append(ok, no);
-  box.append(g, acts);
+  const dup = el('div');
+  box.append(dup, g, acts);
   box.hidden = false;
   cost.focus();
+  api('GET', '/api/parts/similar?name=' + encodeURIComponent(name)).then(d => {
+    const ps = (d.parts || []).filter(p => p.active && p.kind !== 'expense');
+    if (!ps.length) return;
+    dup.append(el('div', 'hint', 'Did you mean one you already have?'));
+    ps.forEach(p => {
+      const b = el('button', 'quick', 'Use ' + p.name + (p.sku ? ' (' + p.sku + ')' : '')); b.type = 'button';
+      b.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/parts', {part_id: p.id, qty: qty()}), err, () => { box.hidden = true; loadParts(); });
+      dup.append(b);
+    });
+  }, () => {});
 }
 
 // ---- the stop sheet (slides up over the day) ------------------------------------

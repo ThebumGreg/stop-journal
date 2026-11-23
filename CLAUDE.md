@@ -260,10 +260,13 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 - Action plan for parts, in the order to build (1 and 2 built, 3-7 not yet):
   1. (built) New-part prompt on the job sheet: typing a part that is not in the catalog asks for unit and cost, so the PDF is never blank there.
   2. (built) Export warning for billable parts with no unit cost (same list as the other export warnings).
-  3. Bin / location field ("Shelf 2"); the truck count sheet sorts by it.
+  3. (built) Bin / location field ("Shelf 2", `parts.bin`, CSV column `bin`, aliases location/shelf); Count the truck sorts by it
+     (natural order, blank last) with a heading per shelf.
   4. Shopping list: "Mark bought" (adds the stock, in packs) and a share/copy text that pastes cleanly into Notes.
   5. Purchase log (phase 3): "+ Add stock" also records what was paid and from whom; last cost updates the part; consumables cost summary.
-  6. Possible-duplicate check when adding (similar name or part #).
+  6. (built) Possible-duplicate check (`parts.similar`, `GET /api/parts/similar?name&sku&exclude`: same part # ignoring case/spaces/
+     dashes, or names that are nearly the same, same words in any order, or contained): the new-part sheet warns with links, and
+     the stop sheet's new-part prompt offers "Use <existing part>".
   7. Install kits (phase 4): one tap adds a bundle of parts to a stop.
   8. (built: Google Vision) Read receipts: suggest fuel total/gallons and store totals; later an AI reader as option 3.
 
@@ -413,7 +416,7 @@ stop departed 12:21, and listed billable parts with no cost.
   `inventory_log`; `GET /api/parts/<id>/history`), **Stock** (#stock: Count the truck, Shopping list), **Fuel** (#fuel),
   **Import / export** (#data: parts CSV import with Check file, export, template, column list). Vendors and Kits tabs get added
   when built (no empty tabs).
-- Parts plan build order from here: shelf location + duplicate warning, Mark bought + share list, Vendors tab (one record per
+- Parts plan build order from here: Mark bought + share list, Vendors tab (one record per
   vendor), purchase log, install kits.
 
 ## Working agreements

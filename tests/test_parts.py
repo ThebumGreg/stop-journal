@@ -217,3 +217,17 @@ def test_part_page_history_and_truck_tabs(tmp_path):
     for tab in ('href="#parts"', 'href="#stock"', 'href="#fuel"', 'href="#data"'):
         assert tab in page
     assert ">Reports<" in page and "Import / export</a>" in page
+
+
+def test_bin_location_sorts_count_and_similar_parts(tmp_path):
+    from tests.test_export import make
+    c = make(tmp_path)
+    for name, b in [("Zip ties", "Shelf 10"), ("Ball valve 1/2 in.", "Shelf 2"), ("Wire nuts", "")]:
+        c.post("/api/parts", json={"name": name, "on_hand": "5", "bin": b, "sku": name[:3].upper() + "-1"})
+    assert [p["bin"] for p in c.get("/api/parts/count-sheet").json["parts"]] == ["Shelf 2", "Shelf 10", ""]
+    sim = c.get("/api/parts/similar?name=1/2 ball valve").json["parts"]
+    assert sim[0]["name"] == "Ball valve 1/2 in." and sim[0]["why"] == "similar name"
+    assert c.get("/api/parts/similar?sku=zip 1").json["parts"][0]["why"] == "same part #"
+    assert c.get("/api/parts/similar?name=Hammer").json["parts"] == []
+    csv = c.get("/api/parts/export.csv").data.decode()
+    assert csv.splitlines()[0].endswith(",bin") and "Shelf 10" in csv

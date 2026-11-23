@@ -529,6 +529,12 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return parts.part_dict(parts.get_part(conn, pid))
         return catalog(go)
 
+    @app.get("/api/parts/similar")
+    def parts_similar():
+        a = request.args
+        return catalog(lambda conn: {"parts": parts.similar(conn, a.get("name", ""), a.get("sku", ""),
+                                                            int(a["exclude"]) if a.get("exclude", "").isdigit() else None)})
+
     @app.get("/api/parts/<int:pid>/history")
     def parts_history(pid):
         return catalog(lambda conn: parts.history(conn, pid))

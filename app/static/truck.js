@@ -118,7 +118,7 @@ async function partsView() {
       const a = el('a', 'part'); a.href = '#part-' + p.id;
       const body = el('div', 'body');
       body.append(el('div', 'n', p.name),
-        el('div', 'm', [p.active ? '' : 'REMOVED', p.kind !== 'part' ? p.kind : '', p.sku, p.vendor, money(p.unit_cost),
+        el('div', 'm', [p.active ? '' : 'REMOVED', p.kind !== 'part' ? p.kind : '', p.sku, p.bin ? '📍 ' + p.bin : '', p.vendor, money(p.unit_cost),
           p.low ? 'LOW (reorder at ' + p.reorder_at + ')' : ''].filter(Boolean).join(' · ')));
       const qt = qtyText(p);
       a.append(body, el('div', qt.c, qt.t));
@@ -145,7 +145,7 @@ function newPartSheet() {
   F.kind.onchange = () => { bill.checked = F.kind.value === 'part'; };
   money_.append(lab('Counted in (unit)', F.unit = unitSel('ea')), lab('Unit cost', inp('unit_cost', '0.00', 'decimal')), bl);
   const stock = el('fieldset'); stock.append(el('legend', null, 'Truck stock (optional)'));
-  stock.append(lab('On the truck now', inp('on_hand', 'blank = do not track stock', 'decimal')),
+  stock.append(lab('Shelf / bin', inp('bin', 'e.g. Shelf 2')), lab('On the truck now', inp('on_hand', 'blank = do not track stock', 'decimal')),
                lab('Reorder at', inp('reorder_at', '', 'decimal')),
                lab('Comes in packs of', inp('pack_size', 'e.g. 25', 'decimal')), lab('Pack is a', F.pack_unit = packUnitSel('')));
   const err = el('div', 'err');
@@ -157,7 +157,7 @@ function newPartSheet() {
   save.onclick = async () => {
     err.textContent = '';
     const b = {billable: bill.checked, type: F.kind.value};
-    ['name', 'sku', 'vendor', 'category', 'unit', 'unit_cost', 'on_hand', 'reorder_at', 'pack_size', 'pack_unit'].forEach(k => { b[k] = F[k].value; });
+    ['name', 'sku', 'vendor', 'category', 'unit', 'unit_cost', 'on_hand', 'reorder_at', 'pack_size', 'pack_unit', 'bin'].forEach(k => { b[k] = F[k].value; });
     try {
       const p = await api('POST', '/api/parts', b);
       close();
@@ -165,7 +165,25 @@ function newPartSheet() {
     } catch (e) { err.textContent = e.message; }
   };
   const acts = el('div', 'row'); acts.append(save, cancel);
-  box.append(el('h2', null, 'New part'), basics, money_, stock, err, acts);
+  const dup = el('div');
+  const checkDup = async () => {
+    const name = F.name.value.trim(), sku = F.sku.value.trim();
+    if (!name && !sku) { dup.replaceChildren(); return; }
+    const d = await api('GET', '/api/parts/similar?name=' + encodeURIComponent(name) + '&sku=' + encodeURIComponent(sku)).catch(() => ({parts: []}));
+    dup.replaceChildren();
+    if (!d.parts.length) return;
+    const w = el('div', 'box warnbox');
+    w.append(el('div', null, 'You may already have this (' + d.parts[0].why + '):'));
+    d.parts.forEach(p => {
+      const a = el('a', null, p.name + (p.sku ? ' · ' + p.sku : '') + (p.active ? '' : ' (removed)')); a.href = '#part-' + p.id;
+      a.onclick = () => close();
+      const line = el('div'); line.append('• ', a, p.tracked ? ' · ' + p.on_hand + ' ' + p.unit : ''); w.append(line);
+    });
+    w.append(el('div', 'hint', 'Tap one to open it instead, or carry on if this really is a different part.'));
+    dup.append(w);
+  };
+  F.name.addEventListener('change', checkDup); F.sku.addEventListener('change', checkDup);
+  box.append(el('h2', null, 'New part'), basics, dup, money_, stock, err, acts);
   bg.append(box);
   document.body.append(bg);
   F.name.focus();
@@ -179,7 +197,7 @@ async function partPage(id) {
   const back = el('a', 'back', '‹ All parts'); back.href = '#parts';
   const head = el('div');
   head.append(el('h1', 'page-title', p.name),
-              el('div', 'hint', [p.active ? '' : 'REMOVED', KINDS.find(k => k[0] === p.kind)[1], p.sku ? 'Part # ' + p.sku : '',
+              el('div', 'hint', [p.active ? '' : 'REMOVED', KINDS.find(k => k[0] === p.kind)[1], p.sku ? 'Part # ' + p.sku : '', p.bin ? '📍 ' + p.bin : '',
                                  p.vendor, money(p.unit_cost) + (p.unit_cost != null ? ' / ' + p.unit : '')].filter(Boolean).join(' · ')));
   const err = el('div', 'err');
 
@@ -235,7 +253,7 @@ async function partPage(id) {
   const kind = kindSel(p.kind);
   grid.append(mk('name', 'Name', p.name), lab('Type', kind), mk('sku', 'Part #', p.sku), pick('unit', 'Unit', unitSel(p.unit)),
     mk('unit_cost', 'Unit cost', p.unit_cost, 'decimal'), pick('vendor', 'Vendor', vendorSel(p.vendor)),
-    pick('category', 'Category', categorySel(p.category)), mk('reorder_at', 'Reorder at', p.reorder_at, 'decimal'),
+    mk('bin', 'Shelf / bin', p.bin), pick('category', 'Category', categorySel(p.category)), mk('reorder_at', 'Reorder at', p.reorder_at, 'decimal'),
     mk('pack_size', 'Comes in packs of', p.pack_size, 'decimal'), pick('pack_unit', 'Pack is a', packUnitSel(p.pack_unit)));
   const bill = el('input'); bill.type = 'checkbox'; bill.checked = p.billable;
   const trk = el('input'); trk.type = 'checkbox'; trk.checked = p.tracked;
@@ -284,10 +302,12 @@ async function stockView() {
 async function countBox() {
   const rows = (await api('GET', '/api/parts/count-sheet')).parts;
   const box = el('div', 'box');
-  box.append(el('div', 'hint', 'Enter what is really on the truck. Only the lines you change are saved. “Used” is what stops logged since the last count.'));
+  box.append(el('div', 'hint', 'Enter what is really on the truck, shelf by shelf. Only the lines you change are saved. “Used” is what stops logged since the last count.'));
   const inputs = {};
   if (!rows.length) box.append(el('div', 'hint', 'No tracked items yet. Give items an “on truck” quantity or turn on tracking first.'));
+  let shelf = null;
   rows.forEach(p => {
+    if (p.bin !== shelf) { shelf = p.bin; box.append(el('h3', null, shelf ? '📍 ' + shelf : 'No shelf set')); }
     const r = el('div', 'crow');
     const l = el('div'); l.append(el('div', 'n', p.name),
       el('div', 'hint', ['expected ' + p.on_hand + ' ' + p.unit, 'used ' + p.used_since, 'counted ' + when(p.last_counted)].join(' · ')));
@@ -421,7 +441,7 @@ function dataView() {
   const cols = [['name', 'required'], ['sku', 'part number'], ['type', 'part, consumable or expense'],
     ['unit', 'each, pair, pack, box, bag, case, roll, foot, gallon or pound (any other unit rejects the row)'],
     ['unit_cost', ''], ['billable', 'yes / no'], ['category', ''], ['vendor', ''], ['on_hand', 'sets the truck count'],
-    ['reorder_at', ''], ['pack_size', 'e.g. 25'], ['pack_unit', 'bag, box…']];
+    ['reorder_at', ''], ['pack_size', 'e.g. 25'], ['pack_unit', 'bag, box…'], ['bin', 'shelf or bin on the truck, e.g. Shelf 2']];
   cols.forEach(([c, h]) => { const d = el('div', 'hint'); d.append(el('code', null, c), h ? ' – ' + h : ''); fmt.append(d); });
   box.append(imp, exp, fmt);
   view.replaceChildren(box);
