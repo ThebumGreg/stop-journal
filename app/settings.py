@@ -8,7 +8,7 @@ address, user and device can be picked on the Settings page.
 import secrets
 from dataclasses import replace
 
-SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user", "calendar_url", "receipt_key", "anthropic_key", "smtp_password")
+SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user", "calendar_url", "receipt_key", "anthropic_key", "smtp_password", "report_signing_key")
 DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
@@ -150,6 +150,10 @@ SPEC = [
         dict(key="smtp_host", label="Mail server", kind="text", help="smtp.gmail.com for Gmail."),
         dict(key="smtp_port", label="Mail server port", kind="int", lo=1, hi=65535,
              help="587 (STARTTLS) for Gmail; 465 uses SSL."),
+        dict(key="report_signing_key", label="Report signing key (optional)", kind="secret",
+             help="A long random phrase that only JobHub and your work AI agent know (give the agent the same phrase). "
+                  "Each emailed report then has a “Signature:” line: HMAC-SHA256 of the attached JSON file with this key, "
+                  "so the agent can reject a report that JobHub did not make. Write-only."),
         dict(key="calendar_invites", label="Put my stops on my work calendar", kind="choice", choices=["off", "on"],
              help="Each stop today is emailed as a calendar invite to the address above, so it shows on your Outlook "
                   "calendar (and to coworkers who can see it): type, customer name, address, ticket, times, finished. "

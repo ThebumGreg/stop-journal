@@ -95,7 +95,15 @@ def tech_text(t):
     return f"{name} <{email}>" if name and email else name or email or "(not set)"
 
 
-def body_for(rep, version, attached, skipped_photos=0):
+def signature(key, data):
+    """HMAC-SHA256 (hex) of the exact bytes of the attached JSON file. The agent recomputes it over the attachment as
+    received with the same key; no JSON re-formatting is involved."""
+    import hashlib
+    import hmac
+    return hmac.new(key.encode(), data, hashlib.sha256).hexdigest()
+
+
+def body_for(rep, version, attached, skipped_photos=0, sig=""):
     a, b = rep["date_from"], rep["date_to"]
     stops = [(d, s) for d in rep["days"] for s in d["stops"]]
     lines = [
@@ -107,6 +115,8 @@ def body_for(rep, version, attached, skipped_photos=0):
         "Report schema version: " + str(rep.get("schema_version", "1")),
         "Attached: " + ("; ".join(attached) if attached else "nothing (the summary below only)"),
     ]
+    if sig:
+        lines.append(f"Signature: hmac-sha256={sig} (of the attached JSON file)")
     if rep.get("omitted"):
         lines.append("Left out on purpose: " + ", ".join(o["label"] for o in rep["omitted"]))
     if skipped_photos:
@@ -132,8 +142,11 @@ def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo):
     version = 1 + conn.execute("SELECT COUNT(*) FROM email_log WHERE ok=1 AND date_from=? AND date_to=?",
                                (a, b)).fetchone()[0]
     files, attached, total, skipped = [], [], 0, 0
+    sig = ""
     if opts.get("json"):
         data = json.dumps(rep, indent=2, ensure_ascii=False).encode()
+        if cfg.report_signing_key:
+            sig = signature(cfg.report_signing_key, data)
         files.append((f"{name}.json", "application", "json", data)); attached.append(f"{name}.json (the data)")
         total += len(data)
     if opts.get("pdf"):
@@ -154,7 +167,7 @@ def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo):
         if n_photos:
             attached.append(f"{n_photos} receipt/photo picture{'s' if n_photos != 1 else ''}")
     subject = subject_for(rep, version)
-    msg = _message(cfg, subject, body_for(rep, version, attached, skipped))
+    msg = _message(cfg, subject, body_for(rep, version, attached, skipped, sig))
     for fname, main, sub, data in files:
         msg.add_attachment(data, maintype=main, subtype=sub, filename=fname)
     entry = {"ts": int(time.time()), "date_from": a, "date_to": b, "mail_to": cfg.mail_to, "subject": subject,

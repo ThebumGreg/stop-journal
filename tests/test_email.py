@@ -126,3 +126,23 @@ def test_settings_test_email(tmp_path):
     assert r["ok"] and SENT[0][1]["Subject"] == "JobHub test email"
     r = c.post("/settings/test-email", data={}).json
     assert not r["ok"]
+
+
+def test_signature_line_matches_the_attached_json(tmp_path):
+    import hashlib
+    import hmac
+    c = make(tmp_path)
+    setup_mail(tmp_path, report_signing_key="correct horse battery staple")
+    c.post(f"/api/export/email?from={D}", json={"json": True})
+    msg = SENT[0][1]
+    body = msg.get_body(("plain",)).get_content()
+    line = next(l for l in body.splitlines() if l.startswith("Signature: hmac-sha256="))
+    data = next(p for p in msg.iter_attachments() if p.get_filename().endswith(".json")).get_payload(decode=True)
+    want = hmac.new(b"correct horse battery staple", data, hashlib.sha256).hexdigest()
+    assert line.split("=", 1)[1].split()[0] == want
+    # no key: no signature line
+    SENT.clear()
+    from app import db
+    conn = db.connect(str(tmp_path)); conn.execute("DELETE FROM settings WHERE key='report_signing_key'"); conn.commit(); conn.close()
+    c.post(f"/api/export/email?from={D}", json={"json": True})
+    assert "Signature:" not in SENT[0][1].get_body(("plain",)).get_content()
