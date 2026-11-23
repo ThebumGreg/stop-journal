@@ -62,3 +62,15 @@ def test_watchdog_reports_a_stuck_request():
     text = "\n".join(logs.recent(80))
     assert "request still running after" in text and "POST /api/stops/16/parts" in text and "go.wait(5)" in text
     assert logs.check_stuck(now=time.monotonic() + 999) == 0                        # finished requests are forgotten
+
+
+def test_delete_sent_as_post_with_override(tmp_path):
+    c = make(tmp_path)
+    job = next(s for s in c.get(f"/api/day/{D}").json["stops"] if s["business_name"] == "Acme")
+    c.post(f"/api/stops/{job['id']}/parts", json={"name": "Widget", "qty": 1})
+    line = next(p for p in next(s for s in c.get(f"/api/day/{D}").json["stops"] if s["id"] == job["id"])["parts"])
+    r = c.post(f"/api/stop-parts/{line['id']}", headers={"X-Method-Override": "DELETE"})
+    assert r.status_code == 200
+    assert not next(s for s in c.get(f"/api/day/{D}").json["stops"] if s["id"] == job["id"])["parts"]
+    # an override only applies to POST, and only to DELETE / PUT / PATCH
+    assert c.get(f"/api/day/{D}", headers={"X-Method-Override": "DELETE"}).status_code == 200

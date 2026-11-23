@@ -718,3 +718,9 @@ D. Later / parked
   written when the reply is built. A request with a `jobhub.http` line but no `sent` line was not delivered by the server.
   Findings 2026-11-23 15:13-15:16: the server answered /health every 5 s (port and inside the container) while Firefox showed every
   request "blocked" ~60 s with status 0 (all 6 connections to the host busy waiting on earlier replies that never arrived).
+- **Root cause of the "site down for minutes" (2026-11-23)**: not JobHub. Right after an HTTP DELETE from the PC (192.168.5.2), the PC
+  could not reach the server (192.168.128.245, another subnet, so through the router) even with new connections (PowerShell probe
+  `000` from 15:24:06) while the server answered on Unraid itself; the browser capture shows the first DELETE answered and the next
+  request never connecting. Signature of a router intrusion-prevention rule blocking the sender after a DELETE. Fix in JobHub: pages
+  send DELETE and PUT as POST + `X-Method-Override` (`wireMethod`/`overrideHeader` in day.js, truck.js, places.js, tools.js, home.js);
+  a WSGI wrapper in create_app turns POST + X-Method-Override (DELETE/PUT/PATCH) back into that method. Keep it that way.

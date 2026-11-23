@@ -42,6 +42,17 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         else:
             client = RecorderClient(base, resolve=lambda: eff())
     app = Flask(__name__)
+    inner_wsgi = app.wsgi_app
+
+    def method_override(environ, start_response):
+        """POST + X-Method-Override: DELETE/PUT/PATCH is handled as that method. The pages send deletes this way because
+        some routers' intrusion prevention blocks a device for minutes after an HTTP DELETE."""
+        if environ.get("REQUEST_METHOD") == "POST":
+            m = (environ.get("HTTP_X_METHOD_OVERRIDE") or "").upper()
+            if m in ("DELETE", "PUT", "PATCH"):
+                environ["REQUEST_METHOD"] = m
+        return inner_wsgi(environ, start_response)
+    app.wsgi_app = method_override
     tz = ZoneInfo(base.app_tz)
     app.jinja_env.filters["ts_local"] = lambda t: datetime.fromtimestamp(t, tz).strftime("%b %-d, %-I:%M %p")
     app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,

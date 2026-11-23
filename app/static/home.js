@@ -39,8 +39,12 @@ function mapsUrls(p) {
   return {apple: 'https://maps.apple.com/?daddr=' + encodeURIComponent(dest) + '&dirflg=d',
           google: 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(dest)};
 }
+// DELETE and PUT are sent as POST with X-Method-Override: some routers' intrusion prevention blocks a device for minutes
+// after a DELETE (seen 2026-11-23). The server turns the header back into the real method.
+const wireMethod = m => (m === 'DELETE' || m === 'PUT') ? 'POST' : m;
+const overrideHeader = m => (m === 'DELETE' || m === 'PUT') ? {'X-Method-Override': m} : {};
 async function post(method, url, body) {
-  const r = await fetch(url, {method, headers: body ? {'Content-Type': 'application/json'} : {}, body: body ? JSON.stringify(body) : undefined});
+  const r = await fetch(url, {method: wireMethod(method), headers: {...(body ? {'Content-Type': 'application/json'} : {}), ...overrideHeader(method)}, body: body ? JSON.stringify(body) : undefined});
   if (r.status === 401) { location.href = '/login'; throw new Error('Login required'); }
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || 'Request failed (' + r.status + ')');

@@ -19,8 +19,12 @@ const when = ts => ts ? new Date(ts * 1000).toLocaleDateString([], {month: 'shor
 const whenFull = ts => new Date(ts * 1000).toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
 const niceDate = d => new Date(d + 'T12:00:00').toLocaleDateString([], {month: 'short', day: 'numeric', year: 'numeric'});
 
+// DELETE and PUT are sent as POST with X-Method-Override: some routers' intrusion prevention blocks a device for minutes
+// after a DELETE (seen 2026-11-23). The server turns the header back into the real method.
+const wireMethod = m => (m === 'DELETE' || m === 'PUT') ? 'POST' : m;
+const overrideHeader = m => (m === 'DELETE' || m === 'PUT') ? {'X-Method-Override': m} : {};
 async function api(method, url, body, raw) {
-  const r = await fetch(url, {method, headers: body && !raw ? {'Content-Type': 'application/json'} : {},
+  const r = await fetch(url, {method: wireMethod(method), headers: {...(body && !raw ? {'Content-Type': 'application/json'} : {}), ...overrideHeader(method)},
                               body: raw ? raw : body ? JSON.stringify(body) : undefined});
   if (r.status === 401) { location.href = '/login'; throw new Error('Login required'); }
   let d = null;

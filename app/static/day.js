@@ -33,10 +33,14 @@ const addMin = (hhmm, n) => {
 
 const jl = (level, msg) => { try { if (window.jhLog) window.jhLog(level, msg); } catch (e) { /* never break the page */ } };
 
+// DELETE and PUT are sent as POST with X-Method-Override: some routers' intrusion prevention blocks a device for minutes
+// after a DELETE (seen 2026-11-23). The server turns the header back into the real method.
+const wireMethod = m => (m === 'DELETE' || m === 'PUT') ? 'POST' : m;
+const overrideHeader = m => (m === 'DELETE' || m === 'PUT') ? {'X-Method-Override': m} : {};
 async function api(method, url, body) {
   let r;
   try {
-    r = await fetch(url, {method, headers: body ? {'Content-Type': 'application/json'} : {},
+    r = await fetch(url, {method: wireMethod(method), headers: {...(body ? {'Content-Type': 'application/json'} : {}), ...overrideHeader(method)},
                           body: body ? JSON.stringify(body) : undefined});
   } catch (e) { jl('warning', method + ' ' + url.split('?')[0] + ' did not reach the server (' + e.message + ')'); throw e; }
   if (r.status === 401) { location.href = '/login'; throw new Error('Login required'); }
