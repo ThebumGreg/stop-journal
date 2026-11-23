@@ -235,3 +235,5 @@ body.sheet-open { overflow:hidden; }
 .calrow { padding:8px 0; border-top:1px solid var(--line); }
 .calrow .n { font-weight:600; } .calrow .m { color:var(--muted); font-size:13px; }
 .calrow.link { cursor:pointer; } .calrow.missed .m { color:var(--warn); } .calrow.here .m { color:var(--acc); }
+.readhint { border:1px solid var(--acc); border-radius:8px; padding:8px; margin:6px 0; display:grid; gap:6px; }
+.readhint .n { font-weight:600; } .readhint .m { color:var(--muted); font-size:13px; }

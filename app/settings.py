@@ -8,7 +8,7 @@ address, user and device can be picked on the Settings page.
 import secrets
 from dataclasses import replace
 
-SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user", "calendar_url")
+SECRETS = ("recorder_auth", "google_places_key", "pushover_token", "pushover_user", "calendar_url", "receipt_key")
 DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
@@ -80,6 +80,16 @@ SPEC = [
              help="Only events with this word in the title, location, notes or category show up (on-site and on site "
                   "match too). Default onsite."),
     ]),
+    ("Receipts", [
+        dict(key="receipt_reader", label="Read receipts with", kind="choice", choices=["off", "google_vision"],
+             help="google_vision: each receipt photo is sent to Google Cloud Vision to read the total (and gallons and "
+                  "price on a fuel receipt). You always confirm before anything is filled in. The photo has no GPS. "
+                  "Free for the first 1000 a month."),
+        dict(key="receipt_key", label="Google key for receipts (optional)", kind="secret",
+             help="Blank = use the Google Places key. Its Google Cloud project needs “Cloud Vision API” enabled."),
+        dict(key="receipt_monthly_cap", label="Most receipts to read per month", kind="int", lo=0, hi=5000,
+             help="A spending safeguard. Google's free tier is 1000 a month."),
+    ]),
     ("Grammar check (LanguageTool)", [
         dict(key="languagetool_url", label="Grammar check server (LanguageTool)", kind="url",
              help="Your own LanguageTool container, for example http://192.168.1.10:8010. Only the note text is "
@@ -143,6 +153,7 @@ TABS = [
     ("Pushover", ["Notifications (Pushover)", "Alerts"]),
     ("Road distance", ["Road distance (OSRM)"]),
     ("Calendar", ["Calendar (Outlook)"]),
+    ("Receipts", ["Receipts"]),
     ("Grammar", ["Grammar check (LanguageTool)"]),
     ("General", ["Stop detection", "Backups"]),
 ]

@@ -215,6 +215,7 @@ MIGRATIONS = [
     ("known_sites", "default_status", "TEXT DEFAULT 'Draft'"),
     ("stops", "stop_type", "TEXT"),
     ("photos", "path", "TEXT"),
+    ("photos", "read_json", "TEXT"),
 ]
 
 

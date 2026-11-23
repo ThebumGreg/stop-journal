@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import photos
+from . import photos, receipts
 from . import report as reports
 from .config import Config
 from .places import PlacesError, UsageCounter, known, ranking
@@ -387,9 +387,40 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         f = request.files.get("file")
         def go(conn, cfg):
             date = service._stop(conn, sid)["date"]
-            photos.add(conn, cfg.data_dir, sid, f.read() if f else b"", request.form.get("kind", "receipt"),
-                       request.form.get("caption", ""))
+            kind = request.form.get("kind", "receipt")
+            pid, jpeg = photos.add(conn, cfg.data_dir, sid, f.read() if f else b"", kind, request.form.get("caption", ""))
+            if kind == "receipt" and cfg.receipt_reader in receipts.READERS:
+                receipts.read(conn, cfg, pid, jpeg)        # suggestions only; a failure is stored, never raised
             return payload(conn, cfg, date)
+        return with_conn(go)
+
+    @app.post("/api/photos/<int:pid>/read")
+    def photo_read(pid):
+        """Read a receipt again (or for the first time, e.g. one added before reading was switched on)."""
+        def go(conn, cfg):
+            r = conn.execute("SELECT s.date FROM photos p JOIN stops s ON s.id=p.stop_id WHERE p.id=?", (pid,)).fetchone()
+            if not r:
+                raise service.EditError("That picture is gone.")
+            jpeg = photos.get(conn, cfg.data_dir, pid)
+            if not jpeg:
+                raise service.EditError("The picture file is missing.")
+            receipts.read(conn, cfg, pid, jpeg)
+            return payload(conn, cfg, r["date"])
+        return with_conn(go)
+
+    @app.post("/api/photos/<int:pid>/dismiss-read")
+    def photo_dismiss_read(pid):
+        """Ignore a receipt's suggestion (kept as dismissed, so it is not offered again)."""
+        def go(conn, cfg):
+            r = conn.execute("SELECT p.read_json, s.date FROM photos p JOIN stops s ON s.id=p.stop_id WHERE p.id=?",
+                             (pid,)).fetchone()
+            if not r:
+                raise service.EditError("That picture is gone.")
+            d = json.loads(r["read_json"] or "{}")
+            d["dismissed"] = True
+            conn.execute("UPDATE photos SET read_json=? WHERE id=?", (json.dumps(d), pid))
+            conn.commit()
+            return payload(conn, cfg, r["date"])
         return with_conn(go)
 
     @app.get("/api/photos/<int:pid>.jpg")

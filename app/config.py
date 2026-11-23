@@ -42,6 +42,9 @@ class Config:
     alert_left_stop: str = "on"
     calendar_url: str = ""       # published ICS link (secret); "" = off
     calendar_keyword: str = "onsite"
+    receipt_reader: str = "off"       # off | google_vision (an AI reader can be added later)
+    receipt_key: str = ""             # blank = use the Google Places key
+    receipt_monthly_cap: int = 300
     routing_url: str = ""    # "" = off; from_env defaults to the public OSRM server
     languagetool_url: str = ""   # "" = grammar check off
     auto_sync_min: int = 2       # day page for today syncs this often while open; 0 = off
@@ -84,6 +87,9 @@ class Config:
             alert_left_stop=e("ALERT_LEFT_STOP", "on"),
             calendar_url=e("CALENDAR_URL", "").strip(),
             calendar_keyword=e("CALENDAR_KEYWORD", "onsite").strip() or "onsite",
+            receipt_reader=e("RECEIPT_READER", "off").strip() or "off",
+            receipt_key=e("RECEIPT_KEY", "").strip(),
+            receipt_monthly_cap=_int("RECEIPT_MONTHLY_CAP", 300),
             routing_url=e("ROUTING_URL", "https://router.project-osrm.org").strip().rstrip("/"),
             languagetool_url=e("LANGUAGETOOL_URL", "").strip().rstrip("/"),
             auto_sync_min=_int("AUTO_SYNC_MIN", 2),

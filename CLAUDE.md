@@ -265,6 +265,7 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   5. Purchase log (phase 3): "+ Add stock" also records what was paid and from whom; last cost updates the part; consumables cost summary.
   6. Possible-duplicate check when adding (similar name or part #).
   7. Install kits (phase 4): one tap adds a bundle of parts to a stop.
+  8. (built: Google Vision) Read receipts: suggest fuel total/gallons and store totals; later an AI reader as option 3.
 
 ## Notes: spell and grammar check (built)
 - The notes box sets spellcheck / autocorrect / autocapitalize explicitly (the iPhone keyboard does the spelling).
@@ -387,6 +388,13 @@ stop departed 12:21, and listed billable parts with no cost.
   missed; a matched stop whose name differs gets `calendar` {name, location, ticket}, shown as "📅 Use <name>" on the card and
   "Use calendar" in the sheet (fills name, address, ticket if empty; an untyped stop becomes a Job). Calendar errors only show a
   message (`calendar_error`), never break the day. Settings has "Test calendar". Address format: to be confirmed by the user.
+- **Receipt reading** (`app/receipts.py`, Settings → Receipts; `RECEIPT_READER` off | google_vision, `RECEIPT_KEY` blank = the
+  Google Places key, `RECEIPT_MONTHLY_CAP` 300, counted in `api_usage` provider "receipts"). On a receipt upload the reader runs once
+  and stores `photos.read_json` {ok, total, gallons, price_per_gallon, checks | error, dismissed}; plain photos are never sent.
+  Vision: DOCUMENT_TEXT_DETECTION, then `receipts.parse` (TOTAL/SALE line not subtotal/tax/change, GAL, PRICE/GAL, fills in the third
+  from the other two, `checks` = gallons x price within 2% of the total). The sheet shows "Receipt says …" with **Use these** (gas: PUT
+  fuel) or **Add $x as an expense** (other stops: expense "Store purchase"), Ignore (`/dismiss-read`), Try again (`/read`). Never
+  fills anything without a tap. An AI reader (option 3) is a future entry in `receipts.READERS` returning {text, fields}.
 - Not built yet: summary home page with time to the next appointment and ETA while driving (needs geocoding the event address;
   free OSRM has no traffic, Google Routes costs money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
   Drive); not built.

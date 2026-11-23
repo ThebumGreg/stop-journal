@@ -1007,8 +1007,52 @@ function photoBox(s, err) {
     return lab;
   };
   const row = el('div', 'acts'); row.append(add('receipt'), add('photo'));
-  return [box, row];
+  return [box, receiptHints(s, err), row];
 }
+
+// "Receipt says …": what the receipt reader found, as a suggestion. Nothing changes until you tap Use.
+const $ = n => '$' + Number(n).toFixed(2);
+function receiptHints(s, err) {
+  const box = el('div');
+  (s.photos || []).filter(p => p.kind === 'receipt' && p.read && !p.read.dismissed).forEach(p => {
+    const r = p.read;
+    const ignore = el('button', null, 'Ignore'); ignore.type = 'button';
+    ignore.onclick = () => run(() => api('POST', '/api/photos/' + p.id + '/dismiss-read'), err);
+    const hint = el('div', 'readhint');
+    if (!r.ok) {
+      const again = el('button', null, 'Try again'); again.type = 'button';
+      again.onclick = () => { again.textContent = 'Reading…'; run(() => api('POST', '/api/photos/' + p.id + '/read'), err); };
+      hint.append(el('div', 'm', 'Could not read the receipt: ' + r.error), btnRow(again, ignore));
+      box.append(hint); return;
+    }
+    const f = s.fuel || {};
+    if (s.stop_type === 'gas') {
+      if (f.total === r.total && (r.gallons == null || f.gallons === r.gallons)) return;      // already used
+      const bits = [r.total != null ? $(r.total) : '', r.gallons != null ? r.gallons + ' gal' : '',
+                    r.price_per_gallon != null ? '$' + r.price_per_gallon.toFixed(3) + '/gal' : ''].filter(Boolean);
+      const use = el('button', 'primary', 'Use these'); use.type = 'button';
+      use.onclick = () => {
+        const body = {};
+        if (r.total != null) body.total = r.total;
+        if (r.gallons != null) body.gallons = r.gallons;
+        run(() => api('PUT', '/api/stops/' + s.id + '/fuel', body), err);
+      };
+      hint.append(el('div', 'n', '🧾 Receipt says: ' + bits.join(' · ')),
+                  el('div', 'm', r.checks ? '✓ Gallons × price matches the total.' : 'Check these against the receipt before using them.'),
+                  btnRow(use, ignore));
+    } else {
+      if (r.total == null) return;
+      if ((s.parts || []).some(x => x.expense && Math.abs((x.unit_cost || 0) - r.total) < 0.005)) return;  // already added
+      const use = el('button', 'primary', 'Add ' + $(r.total) + ' as an expense'); use.type = 'button';
+      use.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/parts',
+                                        {name: 'Store purchase', type: 'expense', qty: 1, unit_cost: r.total}), err, () => { loadParts(); });
+      hint.append(el('div', 'n', '🧾 Receipt total: ' + $(r.total)), btnRow(use, ignore));
+    }
+    box.append(hint);
+  });
+  return box;
+}
+function btnRow(...b) { const d = el('div', 'cardacts'); d.append(...b); return d; }
 
 // The small area on the card for stops with no sheet: type buttons, times (and a name for Personal), stop tools.
 function buildEdit(edit, s) {

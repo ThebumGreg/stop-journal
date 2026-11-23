@@ -7,6 +7,7 @@ JPEG with no metadata (EXIF carries the GPS position and the phone model, which 
 The phone also shrinks the picture before sending it, so uploads stay quick on a weak signal.
 """
 import io
+import json
 import os
 import time
 
@@ -74,6 +75,7 @@ def add(conn, data_dir, stop_id, raw, kind="receipt", caption=""):
         raise EditError("Could not save the picture on the server (is the data folder writable?).")
     conn.execute("UPDATE photos SET path=? WHERE id=?", (rel, cur.lastrowid))
     conn.commit()
+    return cur.lastrowid, data
 
 
 def move_to_files(conn, data_dir):
@@ -90,9 +92,16 @@ def move_to_files(conn, data_dir):
 
 def for_day(conn, date):
     out = {}
-    for r in conn.execute("SELECT p.id, p.stop_id, p.kind, p.caption FROM photos p JOIN stops s ON s.id=p.stop_id "
-                          "WHERE s.date=? ORDER BY p.id", (date,)):
-        out.setdefault(r["stop_id"], []).append({"id": r["id"], "kind": r["kind"], "caption": r["caption"] or ""})
+    for r in conn.execute("SELECT p.id, p.stop_id, p.kind, p.caption, p.read_json FROM photos p "
+                          "JOIN stops s ON s.id=p.stop_id WHERE s.date=? ORDER BY p.id", (date,)):
+        read = None
+        if r["read_json"]:
+            try:
+                read = json.loads(r["read_json"])
+            except ValueError:
+                read = None
+        out.setdefault(r["stop_id"], []).append({"id": r["id"], "kind": r["kind"], "caption": r["caption"] or "",
+                                                 "read": read})
     return out
 
 
