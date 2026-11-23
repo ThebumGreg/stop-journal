@@ -423,6 +423,12 @@ stop departed 12:21, and listed billable parts with no cost.
   (Google Routes would cost money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
   Drive); not built.
 
+## Live part search (2026-11-23)
+- The stop sheet's Add part / Add expense boxes and the kit editor no longer use `<datalist>` (unreliable on iPhone). `liveSearch`
+  (day.js, truck.js) lists up to 8 matches under the box as you type: every word must appear in name, part #, shelf or bin; each
+  shows part #, shelf/bin and stock. Tapping a part adds it at once with the quantity in the box; an expense only fills the name
+  (it needs an amount). Typing a new name and tapping Add still opens the new-part prompt.
+
 ## Branches and relocations (2026-11-23)
 - A place is one spot. Several places can share a name: a vendor's branches, or a customer's old and new address (relocation
   jobs). `known.learn` gives a NEW place the stop's type (vendor/office) or the kind of a same-name vendor/office place

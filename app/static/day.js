@@ -136,7 +136,40 @@ async function loadCands(s, box, q, pick, google) {
   }
 }
 
-// ---- parts catalog (autocomplete) --------------------------------------
+// ---- live search: matches show under the box as you type (the iPhone's own suggestion list is unreliable) ----
+// Every word typed must appear in the name, part #, shelf or bin. Tap a match to pick it.
+function liveSearch(input, items, label, onPick, after) {
+  const box = el('div', 'live-res'); box.hidden = true;
+  input.setAttribute('autocomplete', 'off'); input.setAttribute('autocorrect', 'off');
+  const show = () => {
+    const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    box.replaceChildren();
+    if (!words.length) { box.hidden = true; return; }
+    const hits = items().filter(p => {
+      const hay = [p.name, p.sku, p.shelf, p.bin ? 'bin ' + p.bin : ''].join(' ').toLowerCase();
+      return words.every(w => hay.includes(w));
+    }).slice(0, 8);
+    hits.forEach(p => {
+      const b = el('button', 'live-hit'); b.type = 'button';
+      const [main, sub] = label(p);
+      b.append(el('span', 'n', main), sub ? el('span', 'm', sub) : '');
+      b.onmousedown = e => e.preventDefault();          // keep the keyboard up until the tap lands
+      b.onclick = () => { box.hidden = true; onPick(p); };
+      box.append(b);
+    });
+    box.hidden = !hits.length;
+  };
+  input.addEventListener('input', show);
+  input.addEventListener('focus', show);
+  input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 200));
+  (after || input).after(box);
+  return box;
+}
+const partLabel = p => [p.name, [p.sku, [p.shelf, p.bin ? 'bin ' + p.bin : ''].filter(Boolean).join(' · '),
+                                 p.tracked ? p.on_hand + ' ' + p.unit + ' on truck' : '', p.kind === 'consumable' ? 'consumable' : '']
+                                .filter(Boolean).join(' · ')];
+
+// ---- parts catalog --------------------------------------------------------
 const partList = document.createElement('datalist');
 partList.id = 'partlist';
 document.body.append(partList);
@@ -182,7 +215,7 @@ function partsBlock(s, err) {
     box.append(u);
   }
   const add = el('div', 'prow add');
-  const name = el('input'); name.setAttribute('list', 'partlist'); name.placeholder = 'Add part (name or part #)';
+  const name = el('input'); name.placeholder = 'Add part: start typing a name or part #';
   const qty = el('input'); qty.type = 'number'; qty.step = 'any'; qty.min = '0'; qty.value = '1'; qty.title = 'Quantity';
   const go = el('button', null, 'Add'); go.type = 'button';
   const fresh = el('div', 'newpart'); fresh.hidden = true;
@@ -196,6 +229,11 @@ function partsBlock(s, err) {
   name.addEventListener('input', () => { fresh.hidden = true; });
   add.append(name, qty, go);
   box.append(add, fresh);
+  // tap a match to add it straight away with the quantity in the box
+  liveSearch(name, () => S.parts.filter(p => p.active !== false && p.kind !== 'expense'), partLabel, p => {
+    name.value = '';
+    run(() => api('POST', '/api/stops/' + s.id + '/parts', {qty: qty.value, part_id: p.id}), err, () => { loadParts(); });
+  }, add);
   if ((S.kits || []).length) {          // a kit puts all its parts on the stop in one tap
     const kr = el('div', 'prow add');
     const ks = el('select');
@@ -352,7 +390,7 @@ function expensesBlock(s, err) {
     box.append(row);
   });
   const add = el('div', 'prow add');
-  const name = el('input'); name.setAttribute('list', 'explist'); name.placeholder = 'Expense (e.g. Parking)';
+  const name = el('input'); name.placeholder = 'Expense (e.g. Parking)';
   const amt = el('input'); amt.type = 'number'; amt.step = '0.01'; amt.min = '0'; amt.inputMode = 'decimal'; amt.placeholder = '$'; amt.title = 'Amount';
   const go = el('button', null, 'Add'); go.type = 'button';
   go.onclick = () => {
@@ -366,6 +404,9 @@ function expensesBlock(s, err) {
   };
   add.append(name, amt, go);
   box.append(add);
+  // an expense needs its own amount: a match only fills the name
+  liveSearch(name, () => S.parts.filter(p => p.kind === 'expense' && p.active !== false), p => [p.name, ''],
+             p => { name.value = p.name; amt.focus(); }, add);
   return box;
 }
 

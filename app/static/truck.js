@@ -64,6 +64,29 @@ function kindSel(cur) {
   return s;
 }
 
+// Matches under the box as you type (the iPhone's own suggestion list is unreliable). Every word must appear in the
+// name, part #, shelf or bin.
+function liveSearch(input, items, onPick, after) {
+  const box = el('div', 'live-res'); box.hidden = true;
+  input.setAttribute('autocomplete', 'off');
+  const show = () => {
+    const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    box.replaceChildren();
+    if (!words.length) { box.hidden = true; return; }
+    items().filter(p => words.every(w => [p.name, p.sku, p.shelf, p.bin].join(' ').toLowerCase().includes(w))).slice(0, 8).forEach(p => {
+      const b = el('button', 'live-hit'); b.type = 'button';
+      b.append(el('span', 'n', p.name), el('span', 'm', [p.sku, p.shelf, p.tracked ? p.on_hand + ' ' + p.unit : ''].filter(Boolean).join(' · ')));
+      b.onmousedown = e => e.preventDefault();
+      b.onclick = () => { box.hidden = true; onPick(p); };
+      box.append(b);
+    });
+    box.hidden = !box.childNodes.length;
+  };
+  input.addEventListener('input', show);
+  input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 200));
+  (after || input).after(box);
+}
+
 async function loadParts() {
   [PARTS, CH] = await Promise.all([
     api('GET', '/api/parts' + (SHOW_OFF ? '?all=1' : '')).then(r => r.parts),
@@ -629,19 +652,17 @@ async function kitPage(id) {
   const err = el('div', 'err');
   const name = el('input'); name.value = k.name; name.placeholder = 'e.g. Water heater install';
   const notes = el('input'); notes.value = k.notes; notes.placeholder = 'optional';
-  let dl = document.getElementById('partnames');
-  if (!dl) { dl = el('datalist'); dl.id = 'partnames'; document.body.append(dl); }
-  dl.replaceChildren(...PARTS.filter(p => p.kind !== 'expense').map(p => { const o = el('option'); o.value = p.name; if (p.sku) o.label = p.sku; return o; }));
   const rows = el('div');
   const lines = [];
   const addLine = it => {
     const r = el('div', 'crow'); r.style.gridTemplateColumns = '1fr 80px auto';
-    const n = el('input'); n.setAttribute('list', 'partnames'); n.value = it ? it.name : ''; n.placeholder = 'Part name or #';
+    const n = el('input'); n.value = it ? it.name : ''; n.placeholder = 'Start typing a part name or #';
     const q = el('input'); q.inputMode = 'decimal'; q.value = it ? it.qty : '1';
     const x = el('button', 'danger', '✕'); x.type = 'button';
     const line = {n, q, r};
     x.onclick = () => { r.remove(); lines.splice(lines.indexOf(line), 1); };
     r.append(n, q, x); rows.append(r); lines.push(line);
+    liveSearch(n, () => PARTS.filter(p => p.kind !== 'expense'), p => { n.value = p.name; q.focus(); }, r);
     if (it && it.short) r.append(el('div', 'hint low', 'only ' + it.on_hand + ' ' + it.unit + ' on the truck'));
   };
   k.items.forEach(addLine);
