@@ -596,7 +596,35 @@ def choices(conn):
             "units": [{"value": k, "label": v} for k, v in UNITS.items()]}
 
 
-REASON_LABEL = {"used": "Used on a stop", "return": "Back to the truck (removed from a stop)", "count": "Truck count",
+def mark_bought(conn, items, vendor=""):
+    """Shopping list → truck: add what was bought. items: [{id, packs} or {id, qty}] (packs for items bought in packs).
+    Each line is logged as "bought" with the vendor, so a later purchase log can build on it. One transaction."""
+    vendor = _text(vendor, "Vendor", 80)
+    if not items:
+        raise EditError("Nothing to mark as bought.")
+    done = []
+    for it in items:
+        p = get_part(conn, int(it.get("id") or 0))
+        packs = _num(it.get("packs"), "Packs", 0)
+        qty = _num(it.get("qty"), "Quantity", 0)
+        if packs:
+            if not p["pack_size"]:
+                raise EditError(f"{p['name']} has no pack size.")
+            qty = round(packs * p["pack_size"], 4)
+        if not qty:
+            continue
+        note = ("Bought at " + vendor if vendor and vendor != "No vendor set" else "Bought") + \
+               (f" ({packs:g} x {p['pack_unit'] or 'pack'} of {p['pack_size']:g})" if packs else "")
+        conn.execute("UPDATE parts SET tracked=1 WHERE id=?", (p["id"],))
+        move(conn, get_part(conn, p["id"]), qty, "bought", note=note)
+        done.append({"id": p["id"], "name": p["name"], "added": qty, "unit": p["unit"] or "ea"})
+    conn.commit()
+    if not done:
+        raise EditError("Enter how many you bought.")
+    return {"bought": done}
+
+
+REASON_LABEL = {"used": "Used on a stop", "bought": "Bought", "return": "Back to the truck (removed from a stop)", "count": "Truck count",
                 "restock": "Stock added", "adjust": "Stock removed", "import": "CSV import", "delete": "Stop deleted",
                 "redetect": "Stop re-detected"}
 

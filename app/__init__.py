@@ -529,6 +529,11 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return parts.part_dict(parts.get_part(conn, pid))
         return catalog(go)
 
+    @app.post("/api/parts/bought")
+    def parts_bought():
+        b = request.get_json(silent=True) or {}
+        return catalog(lambda conn: parts.mark_bought(conn, b.get("items") or [], b.get("vendor", "")))
+
     @app.get("/api/parts/similar")
     def parts_similar():
         a = request.args

@@ -262,7 +262,9 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   2. (built) Export warning for billable parts with no unit cost (same list as the other export warnings).
   3. (built) Bin / location field ("Shelf 2", `parts.bin`, CSV column `bin`, aliases location/shelf); Count the truck sorts by it
      (natural order, blank last) with a heading per shelf.
-  4. Shopping list: "Mark bought" (adds the stock, in packs) and a share/copy text that pastes cleanly into Notes.
+  4. (built) Shopping list: per line an editable amount (packs for pack items) and ✓, "✓ All bought" per vendor
+     (`POST /api/parts/bought {vendor, items:[{id, packs|qty}]}`, one transaction, logged as reason "bought" with "Bought at
+     <vendor>"), an Undo that removes it again, and **Share list** (iOS share sheet, else copy): a ☐ checklist by vendor.
   5. Purchase log (phase 3): "+ Add stock" also records what was paid and from whom; last cost updates the part; consumables cost summary.
   6. (built) Possible-duplicate check (`parts.similar`, `GET /api/parts/similar?name&sku&exclude`: same part # ignoring case/spaces/
      dashes, or names that are nearly the same, same words in any order, or contained): the new-part sheet warns with links, and
@@ -416,7 +418,7 @@ stop departed 12:21, and listed billable parts with no cost.
   `inventory_log`; `GET /api/parts/<id>/history`), **Stock** (#stock: Count the truck, Shopping list), **Fuel** (#fuel),
   **Import / export** (#data: parts CSV import with Check file, export, template, column list). Vendors and Kits tabs get added
   when built (no empty tabs).
-- Parts plan build order from here: Mark bought + share list, Vendors tab (one record per
+- Parts plan build order from here: Vendors tab (one record per
   vendor), purchase log, install kits.
 
 ## Working agreements

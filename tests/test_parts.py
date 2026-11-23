@@ -231,3 +231,20 @@ def test_bin_location_sorts_count_and_similar_parts(tmp_path):
     assert c.get("/api/parts/similar?name=Hammer").json["parts"] == []
     csv = c.get("/api/parts/export.csv").data.decode()
     assert csv.splitlines()[0].endswith(",bin") and "Shelf 10" in csv
+
+
+def test_mark_bought_from_shopping_list(tmp_path):
+    from tests.test_export import make
+    c = make(tmp_path)
+    nuts = c.post("/api/parts", json={"name": "Wire nuts", "on_hand": "3", "reorder_at": "10", "pack_size": "25",
+                                      "pack_unit": "bag", "vendor": "Graybar"}).json
+    tape = c.post("/api/parts", json={"name": "Tape", "on_hand": "1", "reorder_at": "2", "vendor": "Graybar"}).json
+    g = c.get("/api/parts/shopping").json["groups"][0]
+    assert g["vendor"] == "Graybar" and {i["name"] for i in g["items"]} == {"Wire nuts", "Tape"}
+    r = c.post("/api/parts/bought", json={"vendor": "Graybar", "items": [{"id": nuts["id"], "packs": 1}, {"id": tape["id"], "qty": 3}]})
+    assert r.status_code == 200 and [b["added"] for b in r.json["bought"]] == [25, 3]
+    assert c.get("/api/parts/shopping").json["groups"] == []
+    log = c.get(f"/api/parts/{nuts['id']}/history").json["log"][0]
+    assert log["reason"] == "Bought" and log["note"] == "Bought at Graybar (1 x bag of 25)"
+    assert c.post("/api/parts/bought", json={"items": [{"id": tape["id"], "qty": 0}]}).status_code == 400
+    assert c.post("/api/parts/bought", json={"items": [{"id": tape["id"], "packs": 1}]}).status_code == 400   # no pack size

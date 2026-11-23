@@ -331,27 +331,75 @@ async function countBox() {
   return box;
 }
 
+// Shopping list: grouped by vendor. Each line has the amount to buy (in packs when bought in packs) and ✓ Bought,
+// which adds it to the truck; "All bought" does the whole vendor. Share sends a clean checklist to Notes / Messages.
 async function shoppingBox() {
   const groups = (await api('GET', '/api/parts/shopping')).groups;
-  const box = el('div', 'box');
-  if (!groups.length) { box.append(el('div', 'ok', 'Nothing is at or below its reorder level.')); return box; }
-  let text = '';
+  const box = el('div');
+  const msg = el('div');
+  if (!groups.length) { box.append(el('div', 'box ok', 'Nothing is at or below its reorder level.')); return box; }
+  const lineText = it => (it.packs ? it.packs + ' ' + (it.pack_unit || 'pack') + (it.packs > 1 ? 's' : '') + ' of ' + it.pack_size
+                                   : it.suggest + ' ' + it.unit) + ' ' + it.name + (it.sku ? ' (#' + it.sku + ')' : '');
+  const share = el('button', 'primary', 'Share list'); share.type = 'button';
+  share.onclick = async () => {
+    const text = 'Shopping list ' + new Date().toLocaleDateString() + '\n\n' +
+      groups.map(g => g.vendor + '\n' + g.items.map(it => '☐ ' + lineText(it)).join('\n')).join('\n\n');
+    try {
+      if (navigator.share) await navigator.share({title: 'Shopping list', text});
+      else { await navigator.clipboard.writeText(text); share.textContent = 'Copied'; }
+    } catch (e) { if (e.name !== 'AbortError') { try { await navigator.clipboard.writeText(text); share.textContent = 'Copied'; } catch (x) { share.textContent = 'Share not available'; } } }
+  };
+  const top = el('div', 'row'); top.append(share, el('span', 'hint', 'Restocks to twice the reorder level, in whole packs.'));
+  box.append(top, msg);
+  const bought = async (vendor, items) => {
+    msg.replaceChildren();
+    try {
+      const d = await api('POST', '/api/parts/bought', {vendor, items});
+      const undo = el('button', null, 'Undo'); undo.type = 'button';
+      undo.onclick = async () => {
+        try {
+          for (const b of d.bought) await api('POST', '/api/parts/' + b.id + '/adjust', {delta: -b.added, note: 'Undo bought'});
+          stockView();
+        } catch (e) { msg.replaceChildren(el('div', 'err', e.message)); }
+      };
+      const ok = el('div', 'box ok');
+      ok.append('Added to the truck: ' + d.bought.map(b => b.added + ' ' + b.unit + ' ' + b.name).join(', ') + '. ', undo);
+      const keep = ok;
+      await stockView();                       // the list redraws without what was bought
+      const m = view.querySelector('.msgslot'); if (m) m.replaceChildren(keep);
+    } catch (e) { msg.replaceChildren(el('div', 'err', e.message)); }
+  };
+  msg.className = 'msgslot';
   groups.forEach(g => {
-    const w = el('div', 'group'); w.append(el('h3', null, g.vendor));
-    text += g.vendor + '\n';
+    const w = el('section', 'card');
+    const head = el('div', 'row');
+    head.append(el('h3', null, g.vendor));
+    const all = el('button', null, '✓ All bought'); all.type = 'button';
+    head.append(all);
+    w.append(head);
+    const inputs = [];
     g.items.forEach(it => {
-      const line = (it.packs ? it.packs + ' ' + (it.pack_unit || 'pack') + (it.packs > 1 ? 's' : '') + ' of ' + it.pack_size + ' (' + it.suggest + ' ' + it.unit + ')'
-                           : it.suggest + ' ' + it.unit) + ' × ' + it.name + (it.sku ? ' (' + it.sku + ')' : '');
-      w.append(el('div', null, line)); w.append(el('div', 'hint', 'have ' + it.on_hand + ', reorder at ' + it.reorder_at + (it.kind === 'consumable' ? ' · consumable' : '')));
-      text += '  ' + line + '\n';
+      const r = el('div', 'crow');
+      const l = el('div');
+      l.append(el('div', 'n', lineText(it)),
+               el('div', 'hint', 'have ' + it.on_hand + ' ' + it.unit + ', reorder at ' + it.reorder_at + (it.packs ? ' · ' + it.suggest + ' ' + it.unit : '') +
+                                 (it.kind === 'consumable' ? ' · consumable' : '')));
+      const q = el('input'); q.inputMode = 'decimal'; q.value = it.packs || it.suggest;
+      q.title = it.packs ? (it.pack_unit || 'pack') + 's bought' : it.unit + ' bought';
+      const b = el('button', null, '✓'); b.type = 'button'; b.title = 'Bought: add to the truck';
+      const body = () => it.packs ? {id: it.id, packs: q.value} : {id: it.id, qty: q.value};
+      b.onclick = () => bought(g.vendor, [body()]);
+      inputs.push(body);
+      const right = el('div', 'row'); right.style.flexWrap = 'nowrap';
+      q.style.width = '64px';
+      right.append(q, el('span', 'hint', it.packs ? (it.pack_unit || 'pack') + 's' : it.unit), b);
+      r.style.gridTemplateColumns = '1fr auto';
+      r.append(l, right);
+      w.append(r);
     });
+    all.onclick = () => bought(g.vendor, inputs.map(f => f()));
     box.append(w);
   });
-  box.append(el('div', 'hint', 'Suggested quantities restock to twice the reorder level.'));
-  const copy = el('button', null, 'Copy list'); copy.onclick = async () => {
-    try { await navigator.clipboard.writeText(text); copy.textContent = 'Copied'; } catch (e) { copy.textContent = 'Copy not available'; }
-  };
-  box.append(copy);
   return box;
 }
 
