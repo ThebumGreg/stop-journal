@@ -434,6 +434,16 @@ stop departed 12:21, and listed billable parts with no cost.
   (Google Routes would cost money: ask). Google Drive photo backup needs OAuth (an API key cannot write to
   Drive); not built.
 
+## Stop sheet polish (2026-11-23)
+- Section 1 folds once the stop has a name: one line "Type · name · address · 9:12–now" with ✎ Edit (Done); "Here now" and the
+  Appointment box stay outside the fold; Still needed links unfold it. Under the times: "Left follows the GPS" or "Left 3:45 was set
+  by you" + **Follow GPS again** (`POST /api/stops/<id>/follow-gps`, `service.follow_gps`: detected stops without times_edited;
+  clears depart_set and sets the departure to the detected visit that overlaps most; End Day follows like a typed departure).
+  Payload `depart_pinned`, `can_follow_gps`.
+- Part rows: name with the line total ("$17.50 ($8.75 each)"), − qty + (whole steps; typing any amount still works; − stops at 1,
+  ✕ removes), a labelled "Bill" switch.
+- With AI notes on, Check grammar (LanguageTool) is hidden: one writing helper.
+
 ## Tools and equipment (2026-11-23)
 - Purpose: document purchases of owned tools (about 100); no loans, no calibration, not linked to stops. `app/equipment.py`;
   tables `tools` (name, make, model, serial, category, purchased, price, vendor, warranty_until, location truck|shop|repair|lost|

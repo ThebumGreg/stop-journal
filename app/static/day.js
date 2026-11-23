@@ -193,15 +193,28 @@ function partsBlock(s, err) {
   const box = el('div');
   box.append(el('label', null, 'Parts used'));
   (s.parts || []).filter(p => !p.expense).forEach(p => {
-    const row = el('div', 'prow');
-    row.append(el('div', 'pn', p.name + (p.sku ? ' · ' + p.sku : '') + (p.unit && p.unit !== 'ea' ? ' (' + p.unit + ')' : '') + (p.consumable ? ' · consumable' : '')));
-    const q = el('input'); q.type = 'number'; q.step = 'any'; q.min = '0'; q.value = p.qty; q.title = 'Quantity';
-    q.onchange = () => run(() => api('PATCH', '/api/stop-parts/' + p.id, {qty: q.value}), err);
-    const b = el('input'); b.type = 'checkbox'; b.checked = p.billable; b.title = 'Billable';
+    const row = el('div', 'prow'); row.style.gridTemplateColumns = '1fr auto auto 36px';
+    const nm = el('div', 'pn');
+    nm.append(el('div', null, p.name + (p.sku ? ' · ' + p.sku : '') + (p.unit && p.unit !== 'ea' ? ' (' + p.unit + ')' : '') + (p.consumable ? ' · consumable' : '')),
+              el('div', 'lt', p.line_cost != null ? '$' + p.line_cost.toFixed(2) + (p.qty !== 1 ? ' (' + '$' + Number(p.unit_cost).toFixed(2) + ' each)' : '') : 'no price'));
+    // quantity: − and + for the usual whole-number change, or type any amount (feet of wire)
+    const setQty = v => run(() => api('PATCH', '/api/stop-parts/' + p.id, {qty: v}), err);
+    const qs = el('div', 'qtys');
+    const minus = el('button', null, '−'); minus.type = 'button'; minus.title = 'One less';
+    const q = el('input'); q.type = 'number'; q.step = 'any'; q.min = '0'; q.value = p.qty; q.title = 'Quantity'; q.inputMode = 'decimal';
+    const plus = el('button', null, '+'); plus.type = 'button'; plus.title = 'One more';
+    minus.onclick = () => { const v = Math.max(0, Math.round((Number(p.qty) - 1) * 1000) / 1000); if (v > 0) setQty(v); };
+    plus.onclick = () => setQty(Math.round((Number(p.qty) + 1) * 1000) / 1000);
+    q.onchange = () => setQty(q.value);
+    qs.append(minus, q, plus);
+    const bl = el('label', 'bill');
+    const b = el('input'); b.type = 'checkbox'; b.checked = p.billable;
     b.onchange = () => run(() => api('PATCH', '/api/stop-parts/' + p.id, {billable: b.checked}), err);
+    bl.append(b, 'Bill');
+    bl.title = 'Billable to the customer';
     const x = el('button', 'danger', '✕'); x.type = 'button'; x.title = 'Remove (returns to truck)';
     x.onclick = () => run(() => api('DELETE', '/api/stop-parts/' + p.id), err);
-    row.append(q, b, x);
+    row.append(nm, qs, bl, x);
     box.append(row);
   });
   if ((s.usual || []).length) {
@@ -497,7 +510,9 @@ function followBlock(s, err) {
 
 // Optional grammar check (LanguageTool): the button only appears when the server has one configured.
 let grammarOn = null;
-let aiOn = null;
+let aiOn = null, aiAsk = null;
+const aiStatus = () => aiOn !== null ? Promise.resolve(aiOn)
+  : (aiAsk = aiAsk || api('GET', '/api/ai/status').then(r => (aiOn = r.notes), () => (aiOn = false)));
 
 // ✨ Polish notes (Settings → AI): sends only this text to Claude and shows the cleaned-up version next to yours.
 // Nothing changes until you tap Use it.
@@ -526,8 +541,7 @@ function polishBlock(notes) {
     finally { btn.disabled = false; btn.textContent = '✨ Polish notes'; }
   };
   box.append(btn, out);
-  (aiOn === null ? api('GET', '/api/ai/status').then(r => (aiOn = r.notes), () => false) : Promise.resolve(aiOn))
-    .then(on => { btn.hidden = !on; });
+  aiStatus().then(on => { btn.hidden = !on; });
   return box;
 }
 function grammarBlock(notes) {
@@ -556,8 +570,10 @@ function grammarBlock(notes) {
   };
   btn.onclick = run;
   box.append(btn, out);
-  (grammarOn === null ? api('GET', '/api/grammar/status').then(r => (grammarOn = r.enabled), () => false) : Promise.resolve(grammarOn))
-    .then(on => { btn.hidden = !on; });
+  // one writing helper: with AI notes on, ✨ Polish notes does this job, so Check grammar steps aside
+  Promise.all([grammarOn === null ? api('GET', '/api/grammar/status').then(r => (grammarOn = r.enabled), () => false) : grammarOn,
+               aiStatus()])
+    .then(([on, ai_]) => { btn.hidden = !on || ai_; });
   return box;
 }
 
@@ -772,6 +788,7 @@ function openSheet(id) {
   sh.arr = arrIn; sh.dep = depIn;
   const times = el('div', 'two'); times.append(labeled('Arrived', arrIn), labeled('Left', depIn));
   sh.here = el('div');
+  sh.left = el('div', 'leftline');
   sh.cal = el('div');
   sh.useCal = c => {
     nameIn.value = c.name; v.business_name = c.name; v.known_site_id = null;
@@ -780,9 +797,18 @@ function openSheet(id) {
     if (c.category && !v.work_category) { v.work_category = c.category; if (sh.cat) sh.cat.value = c.category; }
     saveSheet();
   };
-  sec1.append(el('h3', null, '1 · What and where'), sh.types, sh.cal,
-              labeled(type === 'vendor' ? 'Vendor' : type === 'gas' ? 'Station' : 'Business', nameIn),
-              labeled('Address', addrIn), saved, find, times, sh.here);
+  // once the stop has a name, "what and where" folds into one line (✎ opens it); the sheet starts at the work
+  sh.what = el('div', 'what');
+  sh.what.append(sh.types, labeled(type === 'vendor' ? 'Vendor' : type === 'gas' ? 'Station' : 'Business', nameIn),
+                 labeled('Address', addrIn), saved, find, times, sh.left);
+  sh.what.hidden = !!s.business_name;
+  sh.sum = el('div', 'sumline');
+  sh.sumText = el('div', 'st');
+  const edit_ = el('button', 'quick', '✎ Edit'); edit_.type = 'button';
+  edit_.onclick = () => { sh.what.hidden = !sh.what.hidden; edit_.textContent = sh.what.hidden ? '✎ Edit' : 'Done'; };
+  sh.sumEdit = edit_;
+  sh.sum.append(sh.sumText, edit_);
+  sec1.append(el('h3', null, '1 · What and where'), sh.sum, sh.here, sh.cal, sh.what);
 
   // (2) the work
   const sec2 = el('section', 'sec');
@@ -878,6 +904,7 @@ function jumpTo(need) {
   const f = NEED_FIELD[need];
   const target = {name: sh.name, notes: sh.notes, cat: sh.cat, result: sh.res, fuel: sh.fuel, types: sh.types}[f];
   if (!target) return;
+  if (sh.what && sh.what.contains(target) && sh.what.hidden) { sh.what.hidden = false; sh.sumEdit.textContent = 'Done'; }
   target.scrollIntoView({block: 'center', behavior: 'smooth'});
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) setTimeout(() => target.focus(), 350);
   target.classList.add('pulse'); setTimeout(() => target.classList.remove('pulse'), 1600);
@@ -929,6 +956,23 @@ function refreshSheet() {
       plan.append(b);
     }
     sh.cal.append(plan);
+  }
+  sh.sumText.textContent = [TYPE_LABEL[s.stop_type], s.business_name || 'No name yet', s.address,
+                            s.arrive + '–' + (s.here_now ? 'now' : s.depart)].filter(Boolean).join(' · ');
+  sh.sum.hidden = !s.business_name;
+  if (!s.business_name) sh.what.hidden = false;
+  // "Left": following the GPS, or a time you set (with a way back)
+  sh.left.replaceChildren();
+  if (!s.here_now) {
+    if (s.depart_pinned) {
+      sh.left.append(el('span', 'hint', 'Left ' + s.depart + ' was set by you. '));
+      if (s.can_follow_gps) {
+        const fg = el('button', 'quick', 'Follow GPS again'); fg.type = 'button';
+        fg.title = 'Use the time the GPS shows you drove away';
+        fg.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/follow-gps'), sh.err);
+        sh.left.append(fg);
+      }
+    } else if (s.source === 'detected') sh.left.append(el('span', 'hint', 'Left follows the GPS (type a time to set it yourself).'));
   }
   sh.here.replaceChildren();
   if (s.here_now) {

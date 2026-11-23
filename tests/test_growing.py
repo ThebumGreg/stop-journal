@@ -85,3 +85,22 @@ def test_traffic_light_pause_is_ignored_but_a_real_short_stop_stays():
     d2.dwell(*B, t, 6, step=30)                 # ~6 minute stop
     items, _ = detect.detect(filter_accuracy(d2.points(), 100), CFG)
     assert [i["kind"] for i in items] == ["stop", "short"]
+
+
+def test_follow_gps_again_after_a_typed_departure(tmp_path):
+    from tests.test_export import D, make
+    c = make(tmp_path)
+    s = c.get(f"/api/day/{D}").json["stops"][0]
+    early = s["depart_ts"] - 1800
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    hhmm = datetime.fromtimestamp(early, ZoneInfo("America/Los_Angeles")).strftime("%H:%M")
+    r = c.patch(f"/api/stops/{s['id']}", json={"depart": hhmm}).json
+    t = next(x for x in r["stops"] if x["id"] == s["id"])
+    assert t["depart_pinned"] and t["can_follow_gps"] and t["depart_ts"] < s["depart_ts"]
+    r = c.post(f"/api/stops/{s['id']}/follow-gps").json
+    t = next(x for x in r["stops"] if x["id"] == s["id"])
+    assert not t["depart_pinned"] and t["depart_ts"] == s["depart_ts"]       # back to what the GPS says
+    m = c.post(f"/api/day/{D}/stops", json={"arrive": "13:30", "depart": "14:00", "business_name": "Phone job"}).json
+    mid = next(x for x in m["stops"] if x["business_name"] == "Phone job")["id"]
+    assert c.post(f"/api/stops/{mid}/follow-gps").status_code == 400       # added by hand: no GPS

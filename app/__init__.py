@@ -253,6 +253,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return jsonify(service.day_payload(conn, cfg, date))
         return with_conn(go)
 
+    @app.post("/api/stops/<int:sid>/follow-gps")
+    def stop_follow_gps(sid):
+        return mutate(service.follow_gps, sid)
+
     @app.post("/api/stops/<int:sid>/leave")
     def stop_leave(sid):
         return mutate(lambda conn, cfg: service.leave_now(conn, cfg, sid))

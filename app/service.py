@@ -666,6 +666,33 @@ def leave_now(conn, cfg, sid):
     return patch_stop(conn, cfg, sid, {"depart": fmt_time(cfg, now)})
 
 
+def follow_gps(conn, cfg, sid):
+    """Undo a typed departure (or Leaving now): the stop's "Left" follows the GPS again. The departure is set back to
+    where detection puts it now, and keeps growing on sync while you are there."""
+    s = _stop(conn, sid)
+    if s["source"] != "detected":
+        raise EditError("This stop was added by hand, so there is no GPS to follow.")
+    if s["times_edited"]:
+        raise EditError("This stop's times came from a split or merge; type the departure instead.")
+    date = s["date"]
+    conn.execute("UPDATE stops SET depart_set=0 WHERE id=?", (sid,))
+    items, _ = detect.detect(kept_points(conn, cfg, date), cfg)
+    best, best_o = None, 0
+    for it in items:                               # the detected visit that overlaps this stop the most
+        o = min(it["depart"], s["depart_utc"]) - max(it["arrive"], s["arrive_utc"])
+        if o > best_o:
+            best, best_o = it, o
+    if best:
+        depart = max(best["depart"], s["arrive_utc"] + 60)
+        if depart != s["depart_utc"] and _free(conn, date, sid, s["arrive_utc"], depart):
+            end_ts = day_marks(conn, cfg, date)["end_ts"]
+            conn.execute("UPDATE stops SET depart_utc=? WHERE id=?", (depart, sid))
+            if end_ts and end_ts == s["depart_utc"] and s["status"] not in OFF_CLOCK:
+                set_mark(conn, cfg, date, "end", ts=depart)
+    _finish(conn, cfg, date)
+    return date
+
+
 def last_category(conn, sid, name, site_id):
     """The work category last used for this business (saved place, else same name), or ''."""
     r = conn.execute(
@@ -1139,6 +1166,8 @@ def day_payload(conn, cfg, date, include_path=False):
         "status": r["status"] or "Draft", "known_site_id": r["known_site_id"],
         "hubspot_company_id": r["hubspot_company_id"] or "",
         "edited": bool(r["edited"]), "suggest": suggestion(conn, r),
+        "depart_pinned": bool(r["depart_set"] or r["times_edited"]),
+        "can_follow_gps": r["source"] == "detected" and not r["times_edited"] and bool(r["depart_set"]),
         "usual": parts.usual_for(conn, r) if r["status"] not in OFF_CLOCK + ("Traffic",) else [],
     } for r in _ordered(conn, date)]
     now = int(time.time())
