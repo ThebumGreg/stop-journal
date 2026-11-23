@@ -1,0 +1,15 @@
+Subject: JobHub Daily Summary 2026-11-18
+
+JobHub Daily Summary
+Dates: 2026-11-18
+Version: 1
+Confirmed stops: 3
+Report schema version: 1
+Attached: jobhub-daily-summary-2026-11-18.json (the data); jobhub-daily-summary-2026-11-18.pdf; 2 receipt/photo pictures
+
+Stops:
+- 2026-11-18 08:00-10:30 Sample Dental Office, 100 Example Ave, Los Angeles, CA 90012
+- 2026-11-18 11:06-11:31 Sample Supply House, 200 Vendor Way, Los Angeles, CA 90012
+- 2026-11-18 12:21-14:41 Sample Medical Clinic, 300 Example Blvd, Los Angeles, CA 90013
+
+Sent by JobHub after the technician checked the day. The JSON attachment holds every field; the PDF is the same report for people.
