@@ -222,15 +222,25 @@ async function partPage(id) {
     const q = qtyText(p);
     stockCard.append(el('div', 'stocknow ' + q.c, p.tracked ? p.on_hand + ' ' + p.unit : 'Not tracked'));
     if (p.tracked && p.reorder_at != null) stockCard.append(el('div', 'hint', 'Reorder at ' + p.reorder_at + (p.low ? ' (low now)' : '')));
+    if (p.last_cost != null) {
+      const margin = p.unit_cost != null && p.last_cost ? Math.round((p.unit_cost / p.last_cost - 1) * 100) : null;
+      stockCard.append(el('div', margin != null && margin < 0 ? 'err' : 'hint', 'Last paid ' + money(p.last_cost) + ' / ' + p.unit +
+        (p.unit_cost != null ? ' · you charge ' + money(p.unit_cost) + (margin != null ? ' (' + (margin >= 0 ? '+' : '') + margin + '%)' : '') : '')));
+    }
     const amt = el('input'); amt.inputMode = 'decimal'; amt.placeholder = 'amount';
     const note = el('input'); note.placeholder = 'note (optional)';
+    const paid = el('input'); paid.inputMode = 'decimal'; paid.placeholder = '$ paid in total (optional)';
+    const vend = vendorSel(p.vendor);
+    const buy = el('div', 'grid'); buy.append(lab('Paid (when adding stock)', paid), lab('Bought from', vend));
     const adj = body => async () => {
       err.textContent = '';
-      try { await api('POST', '/api/parts/' + p.id + '/adjust', Object.assign({note: note.value}, body())); route(); }
+      const b = Object.assign({note: note.value}, body());
+      if ((b.delta > 0 || b.packs) && paid.value.trim()) { b.paid = paid.value.trim().replace(/^\$/, ''); b.vendor = vend.value; }
+      try { await api('POST', '/api/parts/' + p.id + '/adjust', b); route(); }
       catch (e) { err.textContent = e.message; }
     };
     const row = el('div', 'row');
-    const add = el('button', null, '+ Add stock'); add.onclick = adj(() => ({delta: amt.value}));
+    const add = el('button', null, '+ Add stock'); add.onclick = adj(() => ({delta: Number(amt.value) || amt.value}));
     const rem = el('button', null, '− Remove stock'); rem.onclick = adj(() => ({delta: amt.value ? -Math.abs(Number(amt.value)) : ''}));
     const set = el('button', null, 'Set count to'); set.onclick = adj(() => ({set: amt.value}));
     row.append(amt, add);
@@ -241,7 +251,7 @@ async function partPage(id) {
       row.append(pk);
     }
     row.append(rem, set);
-    stockCard.append(row, note);
+    stockCard.append(row, buy, note);
     if (!p.tracked) stockCard.append(el('div', 'hint', 'Set a count to start tracking it on the truck.'));
   }
 
@@ -304,13 +314,13 @@ let STOCK = 'count';
 async function stockView() {
   const tabs = el('div', 'row tools');
   const out = el('div');
-  [['count', 'Count the truck'], ['shop', 'Shopping list']].forEach(([k, t]) => {
+  [['count', 'Count the truck'], ['shop', 'Shopping list'], ['buys', 'Purchases']].forEach(([k, t]) => {
     const b = el('button', STOCK === k ? 'on' : null, t); b.type = 'button';
     b.onclick = () => { STOCK = k; stockView().catch(e => { out.textContent = e.message; }); };
     tabs.append(b);
   });
   view.replaceChildren(tabs, out);
-  out.append(await (STOCK === 'count' ? countBox() : shoppingBox()));
+  out.append(await (STOCK === 'count' ? countBox() : STOCK === 'buys' ? purchasesBox() : shoppingBox()));
 }
 
 // Count the truck: shelf by shelf, bin by bin. Buttons along the top show one shelf at a time; what you type on
@@ -423,13 +433,16 @@ async function shoppingBox() {
                                  (it.kind === 'consumable' ? ' · consumable' : '')));
       const q = el('input'); q.inputMode = 'decimal'; q.value = it.packs || it.suggest;
       q.title = it.packs ? (it.pack_unit || 'pack') + 's bought' : it.unit + ' bought';
+      const paid = el('input'); paid.inputMode = 'decimal'; paid.placeholder = '$ paid'; paid.title = 'What you paid for this line (optional)';
+      paid.style.width = '72px';
       const b = el('button', null, '✓'); b.type = 'button'; b.title = 'Bought: add to the truck';
-      const body = () => it.packs ? {id: it.id, packs: q.value} : {id: it.id, qty: q.value};
+      const body = () => Object.assign(it.packs ? {id: it.id, packs: q.value} : {id: it.id, qty: q.value},
+                                       paid.value.trim() ? {paid: paid.value.trim().replace(/^\$/, '')} : {});
       b.onclick = () => bought(g.vendor, [body()]);
       inputs.push(body);
       const right = el('div', 'row'); right.style.flexWrap = 'nowrap';
       q.style.width = '64px';
-      right.append(q, el('span', 'hint', it.packs ? (it.pack_unit || 'pack') + 's' : it.unit), b);
+      right.append(q, el('span', 'hint', it.packs ? (it.pack_unit || 'pack') + 's' : it.unit), paid, b);
       r.style.gridTemplateColumns = '1fr auto';
       r.append(l, right);
       w.append(r);
@@ -437,6 +450,44 @@ async function shoppingBox() {
     all.onclick = () => bought(g.vendor, inputs.map(f => f()));
     box.append(w);
   });
+  return box;
+}
+
+// Purchases: what you paid for stock, by vendor and by type, for a date range.
+let BUYS = 'month';
+async function purchasesBox() {
+  const today = new Date(), iso = d => d.toLocaleDateString('en-CA');
+  const from = {month: iso(new Date(today.getFullYear(), today.getMonth(), 1)), d30: iso(new Date(today - 29 * 864e5)),
+                year: iso(new Date(today.getFullYear(), 0, 1)), all: ''}[BUYS];
+  const d = await api('GET', '/api/purchases' + (from ? '?from=' + from : ''));
+  const box = el('div');
+  const pick = el('div', 'chips');
+  [['month', 'This month'], ['d30', 'Last 30 days'], ['year', 'This year'], ['all', 'All']].forEach(([k, t]) => {
+    const b = el('button', k === BUYS ? 'on' : null, t); b.type = 'button';
+    b.onclick = () => { BUYS = k; stockView(); };
+    pick.append(b);
+  });
+  const tiles = el('div', 'tiles');
+  [['Spent', money(d.total) || '$0.00'], ['Parts', money(d.by_kind.part || 0)], ['Consumables', money(d.by_kind.consumable || 0)]].forEach(([k, v]) => {
+    const t = el('div', 'tile'); t.append(el('b', null, v), el('span', 'hint', k)); tiles.append(t);
+  });
+  box.append(pick, tiles);
+  if (d.unpriced) box.append(el('div', 'hint', d.unpriced + ' purchase' + (d.unpriced === 1 ? '' : 's') + ' without a price (not in the totals).'));
+  if (d.by_vendor.length) {
+    const bv = el('section', 'card'); bv.append(el('h2', null, 'By vendor'));
+    d.by_vendor.forEach(v => { const a = el('a', 'hrow'); a.href = vendorHref(v.vendor); a.append(v.vendor + ' · ' + money(v.total)); bv.append(a); });
+    box.append(bv);
+  }
+  const list = el('section', 'card'); list.append(el('h2', null, 'Purchases (' + d.purchases.length + ')'));
+  if (!d.purchases.length) list.append(el('div', 'hint', 'Nothing bought in this period. Mark items bought on the Shopping list, or add stock with a price on a part.'));
+  d.purchases.forEach(x => {
+    const a = el('a', 'hrow'); a.href = '#part-' + x.part_id;
+    a.append(el('div', null, whenFull(x.ts) + ' · +' + x.qty + ' ' + x.unit + ' ' + x.name),
+             el('div', 'm', [x.vendor, x.total != null ? money(x.total) + (x.each != null ? ' (' + money(x.each) + ' / ' + x.unit + ')' : '') : 'no price',
+                             x.kind === 'consumable' ? 'consumable' : ''].filter(Boolean).join(' · ')));
+    list.append(a);
+  });
+  box.append(list);
   return box;
 }
 
@@ -465,7 +516,8 @@ async function vendorPage(name) {
   const i = d.info;
   const head = el('div');
   head.append(el('h1', 'page-title', d.name), el('div', 'hint', [d.totals.parts + ' parts', d.locations.length + ' location' + (d.locations.length === 1 ? '' : 's'),
-    d.totals.visits ? d.totals.visits + ' visits' : '', d.totals.expenses ? money(d.totals.expenses) + ' in receipts' : ''].filter(Boolean).join(' · ')));
+    d.totals.visits ? d.totals.visits + ' visits' : '', d.totals.purchased ? money(d.totals.purchased) + ' bought' : '',
+    d.totals.expenses ? money(d.totals.expenses) + ' in receipts' : ''].filter(Boolean).join(' · ')));
 
   // contact card
   const info = el('section', 'card');
@@ -519,8 +571,13 @@ async function vendorPage(name) {
     vis.append(a);
   });
   const buys = el('details', 'card');
-  buys.append(el('summary', null, 'Bought from the shopping list (' + d.bought.length + ')'));
-  d.bought.forEach(b => buys.append(el('div', 'hrow', whenFull(b.ts) + ' · +' + b.qty + ' ' + b.unit + ' ' + b.name)));
+  buys.append(el('summary', null, 'Purchases (' + d.purchases.length + ')' + (d.totals.purchased ? ' · ' + money(d.totals.purchased) : '')));
+  d.purchases.forEach(x => {
+    const a = el('a', 'hrow'); a.href = '#part-' + x.part_id;
+    a.append(el('div', null, whenFull(x.ts) + ' · +' + x.qty + ' ' + x.unit + ' ' + x.name),
+             el('div', 'm', x.total != null ? money(x.total) + (x.each != null ? ' (' + money(x.each) + ' / ' + x.unit + ')' : '') : 'no price'));
+    buys.append(a);
+  });
 
   // edit
   const ed = el('details', 'card');

@@ -143,6 +143,7 @@ def part_dict(r):
             "reorder_at": r["reorder_at"], "tracked": tracked, "active": bool(r["active"]),
             "kind": r["kind"] or "part", "vendor": r["vendor"] or "",
             "pack_size": r["pack_size"], "pack_unit": r["pack_unit"] or "", "shelf": r["shelf"] or "", "bin": r["bin"] or "",
+            "last_cost": r["last_cost"],
             "low": bool(low), "negative": bool(tracked and (r["on_hand"] or 0) < 0)}
 
 
@@ -278,7 +279,8 @@ def move(conn, part, delta, reason, sp_id=None, note=""):
     _log(conn, part["id"], delta, reason, sp_id, note)
 
 
-def adjust(conn, pid, delta=None, set_to=None, note="", packs=None):
+def adjust(conn, pid, delta=None, set_to=None, note="", packs=None, paid=None, vendor=""):
+    """Change stock. When stock is added with `paid` (the total for what was added), it is a purchase."""
     p = get_part(conn, pid)
     packs = _num(packs, "Packs")
     if packs is not None:             # received whole packs: add pack_size units for each
@@ -294,8 +296,24 @@ def adjust(conn, pid, delta=None, set_to=None, note="", packs=None):
     else:
         reason = "restock" if delta > 0 else "adjust"
     conn.execute("UPDATE parts SET tracked=1 WHERE id=?", (pid,))
-    move(conn, get_part(conn, pid), delta, reason, note=_text(note, "Note", 200))
+    paid = _num(paid, "Paid", 0)
+    if paid is not None and delta > 0 and set_to is None:
+        vendor = _text(vendor, "Vendor", 80) or p["vendor"] or ""
+        note = note or ("Bought at " + vendor if vendor else "Bought")
+        move(conn, get_part(conn, pid), delta, "bought", note=_text(note, "Note", 200))
+        record_purchase(conn, p, delta, paid, vendor, note)
+    else:
+        move(conn, get_part(conn, pid), delta, reason, note=_text(note, "Note", 200))
     conn.commit()
+
+
+def record_purchase(conn, p, qty, total, vendor="", note=""):
+    """One line of the purchase log. The part's last_cost becomes what was paid per unit (its Unit cost, the price in
+    reports, is left alone)."""
+    conn.execute("INSERT INTO purchases(part_id, ts, vendor, qty, total, note) VALUES (?,?,?,?,?,?)",
+                 (p["id"], int(time.time()), vendor or None, qty, total, note or None))
+    if total is not None and qty:
+        conn.execute("UPDATE parts SET last_cost=? WHERE id=?", (round(total / qty, 4), p["id"]))
 
 
 # ---- CSV ---------------------------------------------------------------
@@ -638,7 +656,9 @@ def mark_bought(conn, items, vendor=""):
                (f" ({packs:g} x {p['pack_unit'] or 'pack'} of {p['pack_size']:g})" if packs else "")
         conn.execute("UPDATE parts SET tracked=1 WHERE id=?", (p["id"],))
         move(conn, get_part(conn, p["id"]), qty, "bought", note=note)
-        done.append({"id": p["id"], "name": p["name"], "added": qty, "unit": p["unit"] or "ea"})
+        paid = _num(it.get("paid"), f"Paid for {p['name']}", 0)
+        record_purchase(conn, p, qty, paid, "" if vendor == "No vendor set" else vendor, note)
+        done.append({"id": p["id"], "name": p["name"], "added": qty, "unit": p["unit"] or "ea", "paid": paid})
     conn.commit()
     if not done:
         raise EditError("Enter how many you bought.")
@@ -699,3 +719,33 @@ def similar(conn, name="", sku="", exclude=None, limit=5):
         if why:
             out.append((score, {**part_dict(r), "why": why}))
     return [p for _, p in sorted(out, key=lambda x: -x[0])[:limit]]
+
+
+# ---- purchase log ---------------------------------------------------------------
+def purchases(conn, start_ts=None, end_ts=None, vendor=None, part_id=None, limit=500):
+    """Purchases newest first, with totals by vendor and by type (parts vs consumables)."""
+    q = "SELECT pu.*, p.name, p.unit, p.kind, p.sku FROM purchases pu JOIN parts p ON p.id=pu.part_id WHERE 1=1"
+    args = []
+    if start_ts:
+        q += " AND pu.ts >= ?"; args.append(start_ts)
+    if end_ts:
+        q += " AND pu.ts < ?"; args.append(end_ts)
+    if vendor:
+        q += " AND lower(trim(COALESCE(pu.vendor,'')))=lower(trim(?))"; args.append(vendor)
+    if part_id:
+        q += " AND pu.part_id=?"; args.append(part_id)
+    rows = conn.execute(q + " ORDER BY pu.ts DESC, pu.id DESC LIMIT ?", (*args, limit)).fetchall()
+    items = [{"id": r["id"], "ts": r["ts"], "part_id": r["part_id"], "name": r["name"], "sku": r["sku"] or "",
+              "unit": r["unit"] or "ea", "kind": r["kind"] or "part", "vendor": r["vendor"] or "", "qty": r["qty"],
+              "total": r["total"], "each": round(r["total"] / r["qty"], 4) if r["total"] is not None and r["qty"] else None,
+              "note": r["note"] or ""} for r in rows]
+    by_vendor, by_kind = {}, {}
+    for it in items:
+        if it["total"] is None:
+            continue
+        v = it["vendor"] or "No vendor"
+        by_vendor[v] = round(by_vendor.get(v, 0) + it["total"], 2)
+        by_kind[it["kind"]] = round(by_kind.get(it["kind"], 0) + it["total"], 2)
+    return {"purchases": items, "total": round(sum(by_vendor.values()), 2),
+            "by_vendor": sorted(({"vendor": k, "total": v} for k, v in by_vendor.items()), key=lambda x: -x["total"]),
+            "by_kind": by_kind, "unpriced": sum(1 for it in items if it["total"] is None)}

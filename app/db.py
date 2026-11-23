@@ -130,6 +130,18 @@ CREATE TABLE IF NOT EXISTS stops (
   times_edited INTEGER DEFAULT 0
 );
 
+-- purchases: what was paid for stock (shopping list "Bought", or + Add stock with a price)
+CREATE TABLE IF NOT EXISTS purchases (
+  id INTEGER PRIMARY KEY,
+  part_id INTEGER NOT NULL,
+  ts INTEGER NOT NULL,
+  vendor TEXT,
+  qty REAL NOT NULL,
+  total REAL,
+  note TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_purchases_part ON purchases(part_id);
+
 -- vendor details (one row per vendor name; the name links parts.vendor and vendor places)
 CREATE TABLE IF NOT EXISTS vendors (
   id INTEGER PRIMARY KEY,
@@ -228,6 +240,7 @@ MIGRATIONS = [
     ("known_sites", "link_id", "INTEGER"),
     ("known_sites", "old_address", "INTEGER"),
     ("parts", "shelf", "TEXT"),
+    ("parts", "last_cost", "REAL"),
 ]
 
 

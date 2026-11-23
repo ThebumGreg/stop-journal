@@ -71,11 +71,12 @@ def detail(conn, cfg, name):
             bought.append({"ts": r["ts"], "part_id": r["part_id"], "name": r["name"], "qty": r["delta"],
                            "unit": r["unit"] or "ea", "note": r["note"] or ""})
     shop = next((g for g in parts.shopping_list(conn) if _key(g["vendor"]) == k), None)
+    pu = parts.purchases(conn, vendor=display, limit=50)
     return {"name": display, "info": _info(conn, display),
             "locations": [known.site_dict(x) for x in sites],
             "parts": ps, "low": shop["items"] if shop else [],
-            "visits": visits, "totals": dict(totals, expenses=round(spent or 0, 2), parts=len(ps)),
-            "bought": bought}
+            "visits": visits, "totals": dict(totals, expenses=round(spent or 0, 2), parts=len(ps), purchased=pu["total"]),
+            "bought": bought, "purchases": pu["purchases"]}
 
 
 def save(conn, name, f):
@@ -90,6 +91,7 @@ def save(conn, name, f):
     if _key(new) != _key(old) or new != old:
         conn.execute("UPDATE parts SET vendor=? WHERE lower(trim(vendor))=?", (new, _key(old)))
         conn.execute("UPDATE known_sites SET name=? WHERE kind='vendor' AND lower(trim(name))=?", (new, _key(old)))
+        conn.execute("UPDATE purchases SET vendor=? WHERE lower(trim(vendor))=?", (new, _key(old)))
         mine = conn.execute("SELECT * FROM vendors WHERE name=?", (old,)).fetchone()
         theirs = conn.execute("SELECT * FROM vendors WHERE name=?", (new,)).fetchone()
         if mine and theirs and _key(new) != _key(old):      # merging: keep their details, fill gaps from mine

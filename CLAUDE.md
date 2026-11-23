@@ -268,7 +268,12 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
   4. (built) Shopping list: per line an editable amount (packs for pack items) and ✓, "✓ All bought" per vendor
      (`POST /api/parts/bought {vendor, items:[{id, packs|qty}]}`, one transaction, logged as reason "bought" with "Bought at
      <vendor>"), an Undo that removes it again, and **Share list** (iOS share sheet, else copy): a ☐ checklist by vendor.
-  5. Purchase log (phase 3): "+ Add stock" also records what was paid and from whom; last cost updates the part; consumables cost summary.
+  5. (built) Purchase log (`purchases` table: part, ts, vendor, qty in units, total, note). Recorded by shopping-list Bought (optional
+     "$ paid" per line) and by + Add stock / + Add pack with "Paid" + "Bought from" (`adjust(..., paid, vendor)` logs reason
+     "bought"). The part's `last_cost` = total / qty; its `unit_cost` (the price in reports) is NOT changed; the part page shows
+     "Last paid $x · you charge $y (+z%)" (red if below cost). `GET /api/purchases?from&to&vendor&part`: list, total, by_vendor,
+     by_kind (part / consumable), unpriced count. Truck → Stock → Purchases (ranges, tiles, by vendor, list); vendor pages show
+     their purchases and total; vendor rename updates purchases.
   6. (built) Possible-duplicate check (`parts.similar`, `GET /api/parts/similar?name&sku&exclude`: same part # ignoring case/spaces/
      dashes, or names that are nearly the same, same words in any order, or contained): the new-part sheet warns with links, and
      the stop sheet's new-part prompt offers "Use <existing part>".
@@ -440,7 +445,7 @@ stop departed 12:21, and listed billable parts with no cost.
   (directions), visits across branches, shopping-list purchases, receipts total (expenses at its stops), Edit. `PUT /api/vendors
   {name, rename, ...}`: rename updates parts and vendor places; renaming onto an existing vendor merges (their details kept,
   gaps filled). Part pages link to their vendor.
-- Parts plan build order from here: purchase log, install kits.
+- Parts plan build order from here: install kits.
 
 ## Working agreements
 - Ask the user before choosing Google Places over OSM, and before anything that costs money.

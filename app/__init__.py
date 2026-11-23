@@ -529,6 +529,22 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return parts.part_dict(parts.get_part(conn, pid))
         return catalog(go)
 
+    @app.get("/api/purchases")
+    def purchases_list():
+        a = request.args
+
+        def go(conn, cfg):
+            for k in ("from", "to"):
+                if a.get(k):
+                    check_date(a[k])
+            tzinfo = ZoneInfo(cfg.app_tz)
+            ts = lambda d: int(datetime.fromisoformat(d).replace(tzinfo=tzinfo).timestamp()) if d else None
+            end = a.get("to")
+            end_ts = ts(end) + 86400 if end else None
+            return jsonify(parts.purchases(conn, ts(a.get("from")), end_ts, a.get("vendor") or None,
+                                           int(a["part"]) if a.get("part", "").isdigit() else None))
+        return with_conn(go)
+
     @app.post("/api/parts/bought")
     def parts_bought():
         b = request.get_json(silent=True) or {}
@@ -558,7 +574,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         b = request.get_json(silent=True) or {}
 
         def go(conn):
-            parts.adjust(conn, pid, b.get("delta"), b.get("set"), b.get("note", ""), b.get("packs"))
+            parts.adjust(conn, pid, b.get("delta"), b.get("set"), b.get("note", ""), b.get("packs"),
+                         b.get("paid"), b.get("vendor", ""))
             return parts.part_dict(parts.get_part(conn, pid))
         return catalog(go)
 

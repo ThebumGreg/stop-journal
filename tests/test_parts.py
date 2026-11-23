@@ -263,3 +263,26 @@ def test_mark_bought_from_shopping_list(tmp_path):
     assert log["reason"] == "Bought" and log["note"] == "Bought at Graybar (1 x bag of 25)"
     assert c.post("/api/parts/bought", json={"items": [{"id": tape["id"], "qty": 0}]}).status_code == 400
     assert c.post("/api/parts/bought", json={"items": [{"id": tape["id"], "packs": 1}]}).status_code == 400   # no pack size
+
+
+def test_purchase_log_last_cost_and_totals(tmp_path):
+    from tests.test_export import make
+    c = make(tmp_path)
+    nuts = c.post("/api/parts", json={"name": "Wire nuts", "on_hand": "3", "reorder_at": "10", "pack_size": "25",
+                                      "pack_unit": "bag", "vendor": "Graybar", "unit_cost": "0.50"}).json
+    tape = c.post("/api/parts", json={"name": "Tape", "type": "consumable", "on_hand": "1", "vendor": "Home Depot"}).json
+    c.post("/api/parts/bought", json={"vendor": "Graybar", "items": [{"id": nuts["id"], "packs": 2, "paid": "12.50"}]})
+    r = c.post(f"/api/parts/{tape['id']}/adjust", json={"delta": 4, "paid": "8", "vendor": "Home Depot"}).json
+    assert r["on_hand"] == 5 and r["last_cost"] == 2.0
+    c.post(f"/api/parts/{tape['id']}/adjust", json={"delta": 1})                 # no price: not a purchase
+    p = c.get(f"/api/parts/{nuts['id']}/history").json["part"]
+    assert p["last_cost"] == 0.25 and p["unit_cost"] == 0.5                      # the billing price is left alone
+    d = c.get("/api/purchases").json
+    assert d["total"] == 20.5 and d["by_kind"] == {"part": 12.5, "consumable": 8.0}
+    assert [v["vendor"] for v in d["by_vendor"]] == ["Graybar", "Home Depot"]
+    assert d["purchases"][0]["each"] == 2.0 and len(d["purchases"]) == 2
+    assert c.get("/api/purchases?vendor=graybar").json["total"] == 12.5
+    assert c.get("/api/vendors/detail?name=Graybar").json["totals"]["purchased"] == 12.5
+    assert c.get("/api/purchases?from=junk").status_code == 400
+    c.post("/api/parts/bought", json={"vendor": "Graybar", "items": [{"id": nuts["id"], "packs": 1}]})   # price optional
+    assert c.get("/api/purchases").json["unpriced"] == 1
