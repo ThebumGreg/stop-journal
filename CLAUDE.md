@@ -699,3 +699,7 @@ D. Later / parked
 - **Part search** (day.js and truck.js `liveSearch`): picks on pointerup (finger-up, not if the finger moved 12+ px), click as a
   fallback, once; the list stays while touched and hides 400 ms after blur. Ranked: name starts with the text, then all words in
   the name, then anywhere (sku, vendor_item, qbo_item, shelf, bin); 12 shown in a scrolling list with "n more matches".
+- After a finger-up pick, `swallowNextClick()` eats the browser's following click (the list is gone, so it would land on a
+  link or ✕ underneath and navigate mid-request: Firefox "NetworkError when attempting to fetch resource"). Static files are
+  served with `SEND_FILE_MAX_AGE_DEFAULT=0` (no-cache) so phones and desktops use updated scripts at once. Tested with
+  Playwright (Firefox mouse + touch, iPhone 13 WebKit) using the container: add by search, quantities, no navigation.

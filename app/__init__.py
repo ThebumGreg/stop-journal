@@ -45,7 +45,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     tz = ZoneInfo(base.app_tz)
     app.jinja_env.filters["ts_local"] = lambda t: datetime.fromtimestamp(t, tz).strftime("%b %-d, %-I:%M %p")
     app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
-                      MAX_CONTENT_LENGTH=4 * 1024 * 1024)
+                      MAX_CONTENT_LENGTH=4 * 1024 * 1024,
+                      SEND_FILE_MAX_AGE_DEFAULT=0)   # browsers re-check the page scripts, so an update is used at once
 
     def eff():
         """Env defaults with Settings-page overrides applied (read per request)."""

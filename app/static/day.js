@@ -148,6 +148,14 @@ async function loadCands(s, box, q, pick, google) {
 
 // ---- live search: matches show under the box as you type (the iPhone's own suggestion list is unreliable) ----
 // Every word typed must appear in the name, part #, shelf or bin. Tap a match to pick it.
+// After a pick on finger-up, the browser still sends a click. The list is gone by then, so the click would land on
+// whatever is underneath (a link, the ✕ of a part) and could navigate away mid-request. Swallow that one click.
+function swallowNextClick() {
+  const stop = e => { e.preventDefault(); e.stopPropagation(); };
+  document.addEventListener('click', stop, {capture: true, once: true});
+  setTimeout(() => document.removeEventListener('click', stop, {capture: true}), 700);
+}
+
 function liveSearch(input, items, label, onPick, after) {
   const box = el('div', 'live-res'); box.hidden = true;
   input.setAttribute('autocomplete', 'off'); input.setAttribute('autocorrect', 'off');
@@ -168,7 +176,9 @@ function liveSearch(input, items, label, onPick, after) {
       b.onmousedown = e => e.preventDefault();          // keep the keyboard up until the tap lands
       // iPhone: pick on finger-up (a click can arrive late or not at all with the keyboard open); a drag is a scroll
       let x0 = 0, y0 = 0, done = false;
-      const pick = (e, how) => { if (done) return; done = true; if (e) e.preventDefault(); touching = false; box.hidden = true;
+      const pick = (e, how) => { if (done) return; done = true; if (e) e.preventDefault(); touching = false;
+                                 if (how !== 'click') swallowNextClick();     // the click after finger-up must not land under the list
+                                 box.hidden = true;
                                  jl('debug', 'search pick "' + p.name + '" (#' + p.id + ') by ' + how); onPick(p); };
       b.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; jl('debug', 'search touch on "' + p.name + '"'); });
       b.addEventListener('pointerup', e => {

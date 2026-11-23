@@ -66,6 +66,14 @@ function kindSel(cur) {
 
 // Matches under the box as you type (the iPhone's own suggestion list is unreliable). Every word must appear in the
 // name, part #, shelf or bin.
+// After a pick on finger-up, the browser still sends a click. The list is gone by then, so the click would land on
+// whatever is underneath (a link, the ✕ of a part) and could navigate away mid-request. Swallow that one click.
+function swallowNextClick() {
+  const stop = e => { e.preventDefault(); e.stopPropagation(); };
+  document.addEventListener('click', stop, {capture: true, once: true});
+  setTimeout(() => document.removeEventListener('click', stop, {capture: true}), 700);
+}
+
 function liveSearch(input, items, onPick, after) {
   const box = el('div', 'live-res'); box.hidden = true;
   input.setAttribute('autocomplete', 'off');
@@ -88,7 +96,7 @@ function liveSearch(input, items, onPick, after) {
       b.append(el('span', 'n', p.name), el('span', 'm', [p.sku, p.shelf, p.tracked ? p.on_hand + ' ' + p.unit : ''].filter(Boolean).join(' · ')));
       b.onmousedown = e => e.preventDefault();
       let x0 = 0, y0 = 0, done = false;
-      const pick = e => { if (done) return; done = true; if (e) e.preventDefault(); touching = false; box.hidden = true; onPick(p); };
+      const pick = e => { if (done) return; done = true; if (e) { e.preventDefault(); swallowNextClick(); } touching = false; box.hidden = true; onPick(p); };
       b.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; });
       b.addEventListener('pointerup', e => { if (Math.abs(e.clientX - x0) < 12 && Math.abs(e.clientY - y0) < 12) pick(e); });
       b.onclick = () => pick();
