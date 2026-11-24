@@ -2,7 +2,9 @@
 from datetime import datetime, timezone
 
 import math
+import re
 
+from .. import address as addr
 from ..errors import EditError
 from ..geo import haversine_m
 from .base import Candidate
@@ -10,6 +12,9 @@ from .base import Candidate
 KINDS = ("client", "home", "office", "vendor")
 KIND_LABEL = {"client": "Client", "home": "Home", "office": "Office", "vendor": "Vendor"}
 DEFAULT_STATUS = {"home": "Personal"}       # everything else starts as Draft (review me)
+
+ADDR_COLS = {"line1": "addr_line1", "line2": "addr_line2", "city": "addr_city", "state": "addr_state", "zip": "addr_zip"}
+EMAIL = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
 
 DEFAULT_SITE_RADIUS_M = 100
 MERGE_NAME_RADIUS_M = 150  # same name within this distance = same site
@@ -77,6 +82,8 @@ def learn(conn, name, address, lat, lon, category="", radius_m=None, kind=None):
                 "UPDATE known_sites SET times_confirmed=?, last_confirmed=?, "
                 "lat=?, lon=?, address=COALESCE(NULLIF(?, ''), address) WHERE id=?",
                 (n, now, nlat, nlon, address or "", r["id"]))
+            if address and address != (r["address"] or ""):
+                split_address(conn, r["id"])
             conn.commit()
             return r["id"]
     kind = kind if kind in ("vendor", "office") else branch_kind(conn, name)
@@ -84,8 +91,43 @@ def learn(conn, name, address, lat, lon, category="", radius_m=None, kind=None):
         "INSERT INTO known_sites(name,address,lat,lon,radius_m,category,kind,"
         "times_confirmed,last_confirmed) VALUES (?,?,?,?,?,?,?,1,?)",
         (name, address, lat, lon, radius_m or DEFAULT_SITE_RADIUS_M, category, kind, now))
+    split_address(conn, cur.lastrowid)
     conn.commit()
     return cur.lastrowid
+
+
+# ---- the address in parts (street, suite, city, state, ZIP) ----------------------------------------------------
+def split_address(conn, sid):
+    """Store the place's one-line address split into parts (after the line changed without parts being typed)."""
+    r = conn.execute("SELECT address FROM known_sites WHERE id=?", (sid,)).fetchone()
+    if r:
+        p = addr.split(r["address"] or "")
+        conn.execute("UPDATE known_sites SET " + ", ".join(f"{c}=?" for c in ADDR_COLS.values()) + " WHERE id=?",
+                     (*[p[k] for k in ADDR_COLS], sid))
+
+
+def fill_address_parts(conn):
+    """Once per place: split the addresses saved before the parts existed (2026-11-24)."""
+    ids = [r["id"] for r in conn.execute("SELECT id FROM known_sites WHERE addr_line1 IS NULL")]
+    for sid in ids:
+        split_address(conn, sid)
+    if ids:
+        conn.commit()
+    return len(ids)
+
+
+def address_parts(r):
+    """{line1, line2, city, state, zip} of a known_sites row ('' for each part not known)."""
+    if r["addr_line1"] is None:                       # not split yet
+        return addr.split(r["address"] or "")
+    return {k: r[c] or "" for k, c in ADDR_COLS.items()}
+
+
+def billing_email(v):
+    v = str(v if v is not None else "").strip()
+    if v and (len(v) > 200 or not EMAIL.match(v)):
+        raise EditError("The billing email does not look like an email address.")
+    return v or None
 
 
 # ---- managing places (home / office / vendors / clients) -------------------
@@ -96,7 +138,9 @@ def site_dict(r):
             "default_status": r["default_status"] or "Draft",
             "times_confirmed": r["times_confirmed"] or 0, "last_confirmed": r["last_confirmed"],
             "link_id": r["link_id"], "old_address": bool(r["old_address"]),
-            "hubspot_company_id": r["hubspot_company_id"] or ""}
+            "hubspot_company_id": r["hubspot_company_id"] or "",
+            "address_parts": address_parts(r), "qbo_customer_id": r["qbo_customer_id"] or "",
+            "billing_email": r["billing_email"] or ""}
 
 
 def list_sites(conn, kind="", q=""):
@@ -133,8 +177,21 @@ def _fields(f, partial):
         if len(name) > 200:
             raise EditError("The name is too long.")
         out["name"] = name
-    if "address" in f:
+    if any(k in f for k in ADDR_COLS):              # typed in parts: the one-line address is made from them
+        parts = {k: str(f.get(k) or "").strip()[:120] for k in ADDR_COLS}
+        parts["state"] = parts["state"].upper() if len(parts["state"]) == 2 else parts["state"]
+        out.update({c: parts[k] for k, c in ADDR_COLS.items()})
+        out["address"] = addr.join(parts)[:300]
+    elif "address" in f:
         out["address"] = str(f["address"] or "").strip()[:300]
+        out.update({c: v for c, v in zip(ADDR_COLS.values(), addr.split(out["address"]).values())})
+    if "qbo_customer_id" in f:
+        q = str(f["qbo_customer_id"] or "").strip()
+        if len(q) > 40:
+            raise EditError("The QuickBooks customer ID is too long.")
+        out["qbo_customer_id"] = q or None
+    if "billing_email" in f:
+        out["billing_email"] = billing_email(f["billing_email"])
     if "category" in f:
         out["category"] = str(f["category"] or "").strip()[:80]
     if not partial or "kind" in f:
@@ -264,6 +321,11 @@ def create_site(conn, f):
         "times_confirmed) VALUES (?,?,?,?,?,?,?,?,0)",
         (v["name"], v.get("address", ""), v["lat"], v["lon"], v.get("radius_m", DEFAULT_SITE_RADIUS_M),
          v.get("category", ""), v["kind"], v["default_status"]))
+    extra = {k: v[k] for k in (*ADDR_COLS.values(), "qbo_customer_id", "billing_email", "hubspot_company_id") if k in v}
+    if extra:
+        _update(conn, cur.lastrowid, extra)
+    else:
+        split_address(conn, cur.lastrowid)
     conn.commit()
     return cur.lastrowid
 

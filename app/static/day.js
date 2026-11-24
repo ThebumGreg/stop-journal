@@ -461,7 +461,8 @@ function boughtBlock(s, err) {
 // departure: that keeps following the GPS until you type it or tap Leaving now, so you can finish before driving off.
 const CATS = ['Time & Material', 'Quoted project', 'White-label migration', 'Internal operations',
               'Administrative', 'Customer outreach', 'Training'];
-const RESULTS = [['complete', 'Complete'], ['return', 'Return visit'], ['waiting', 'Waiting (parts or customer)']];
+const RESULTS = [['complete', 'Complete'], ['return', 'Return visit'], ['waiting_parts', 'Waiting for parts'],
+                 ['waiting_customer', 'Waiting for customer']];
 const FIELDS = ['business_name', 'address', 'category', 'known_site_id', 'arrive', 'depart',
                 'notes', 'work_category', 'ticket', 'qbo_estimate', 'ticket_action', 'visit_result'];
 const TYPES = [['job', 'Job'], ['vendor', 'Vendor'], ['office', 'Office'], ['gas', 'Gas'],
@@ -1116,7 +1117,7 @@ function restoreDraft(s) {
 function paintResult() {
   if (!sh.resBtns) return;
   sh.resBtns.forEach(([k, b]) => b.classList.toggle('on', sheet.vals.visit_result === k));
-  sh.dueBox.hidden = !['return', 'waiting'].includes(sheet.vals.visit_result);
+  sh.dueBox.hidden = !['return', 'waiting_parts', 'waiting_customer'].includes(sheet.vals.visit_result);
 }
 
 function jumpTo(need) {
@@ -1298,13 +1299,19 @@ function showInvoicePreview(pv, s, d, err) {
   const pdfT = tick('PDF', true), picT = tick('Photos (' + r.photos.length + ')', r.photos.length > 0);
   if (!r.photos.length) picT.disabled = true;
   pv.append(el('div', 'm', 'The JSON is always attached.'), ticks);
+  // the billing email the customer gives on site (optional): remembered for this place and filled in next time
+  const bill = el('input'); bill.type = 'email'; bill.value = d.billing_email || ''; bill.placeholder = 'optional';
+  bill.autocapitalize = 'off'; bill.autocomplete = 'off'; bill.spellcheck = false;
+  pv.append(labeled('Customer billing email', bill),
+            el('div', 'hint', 'Only if the customer gives one now. It is saved for this place.'));
   if (!d.ready) pv.append(el('div', 'warn', '⚠ Email is not set up yet (Settings → Email).'));
   const send = el('button', 'primary wide', 'Send to ' + (d.to || 'your agent')); send.type = 'button';
   const cancel = el('button', 'wide', 'Cancel'); cancel.type = 'button';
   cancel.onclick = () => { pv.hidden = true; pv.previousSibling.hidden = false; };
   send.onclick = () => {
     send.disabled = true; send.textContent = 'Sending…';
-    run(() => api('POST', '/api/stops/' + s.id + '/invoice-request', {pdf: pdfT.checked, photos: picT.checked}), err,
+    run(() => api('POST', '/api/stops/' + s.id + '/invoice-request',
+                  {pdf: pdfT.checked, photos: picT.checked, invoice_to_email: bill.value.trim()}), err,
         () => { jl('info', 'invoice request sent'); }).finally(() => { send.disabled = false; });
   };
   pv.append(send, cancel, el('div', 'hint', 'Labor is sent as time on site; your agent applies the rates, creates the invoice and handles payment.'));

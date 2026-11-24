@@ -9,11 +9,11 @@
   },
   "date": "2026-11-18",
   "report_key": "2026-11-18",
-  "stop_uid": "b3aaf285-bbd0-4486-a247-55d1bc138353",
+  "stop_uid": "1f0563fe-d5c9-47ab-9572-b78a8d2888f1",
   "stop_number": 1,
   "customer": {
     "business_name": "Sample Dental Office",
-    "address": "100 Example Ave, Los Angeles, CA 90012",
+    "address": "100 Example Ave, Suite 210, Los Angeles, CA 90012",
     "hubspot_company_id": "18200000001"
   },
   "hubspot_ticket": "24681357913",
@@ -51,7 +51,7 @@
       "unit_cost": 0.45,
       "line_cost": 63.0,
       "billable": true,
-      "qbo_item": "",
+      "qbo_item": "Cable Cat6 Blue (ft)",
       "notes": ""
     },
     {
@@ -96,5 +96,6 @@
     }
   ],
   "request_version": 1,
-  "sent_at": "2026-11-23T22:39-08:00"
+  "sent_at": "2026-11-24T12:03-08:00",
+  "invoice_to_email": ""
 }

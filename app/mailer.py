@@ -11,7 +11,8 @@ The message is made easy for an agent to pick up:
 - Subject `JobHub Daily Summary 2026-11-23` (a range: `... 2026-11-19 to 2026-11-23`); a second send of the same
   dates adds ` (update 2)`, and the body says it replaces the earlier one.
 - The body starts with fixed `Key: value` lines (Dates, Version, Confirmed stops, Attached), then a short stop list.
-- Attachments: the JSON (the data, schema version 1), the PDF, and optionally the pictures (named as in the report).
+- Attachments: the JSON (the data: format 1, or format 2 per Settings → Email → Message format), the PDF, and
+  optionally the pictures (named as in the report).
 """
 import json
 import logging
@@ -105,7 +106,7 @@ def signature(key, data):
     return hmac.new(key.encode(), data, hashlib.sha256).hexdigest()
 
 
-def body_for(rep, version, attached, skipped_photos=0, sig=""):
+def body_for(rep, version, attached, skipped_photos=0, sig="", message_id=""):
     a, b = rep["date_from"], rep["date_to"]
     stops = [(d, s) for d in rep["days"] for s in d["stops"]]
     lines = [
@@ -114,9 +115,11 @@ def body_for(rep, version, attached, skipped_photos=0, sig=""):
         "Technician: " + tech_text(rep.get("technician")),
         f"Version: {version}" + (" (replaces the earlier email for these dates)" if version > 1 else ""),
         f"Confirmed stops: {len(stops)}",
-        "Report schema version: " + str(rep.get("schema_version", "1")),
+        "Report schema version: " + ("2" if message_id else str(rep.get("schema_version", "1"))),
         "Attached: " + ("; ".join(attached) if attached else "nothing (the summary below only)"),
     ]
+    if message_id:
+        lines.append(f"Message ID: {message_id}")
     if sig:
         lines.append(f"Signature: hmac-sha256={sig} (of the attached JSON file)")
     if rep.get("omitted"):
@@ -134,46 +137,59 @@ def body_for(rep, version, attached, skipped_photos=0, sig=""):
     return "\n".join(lines) + "\n"
 
 
-def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo):
-    """Build and send the report email. opts: {pdf, json, photos}. Returns the log entry dict. Raises MailError."""
+def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo, build_v2=None):
+    """Build and send the report email. opts: {pdf, json, photos}. Returns the log entry dict. Raises MailError.
+    rep is the format-1 report (the PDF and the body come from it). build_v2(revision, supersedes, message_id) ->
+    (message, [(attachment, photo id)]) makes the JSON format 2 instead (app/message_v2.py)."""
+    from . import message_v2
     if not cfg.mail_to:
         raise MailError("Add the address to send to in Settings → Email.")
     if not (opts.get("pdf") or opts.get("json")):
         raise MailError("Tick the PDF or the JSON (or both) to attach.")
     a, b = rep["date_from"], rep["date_to"]
-    version = 1 + conn.execute("SELECT COUNT(*) FROM email_log WHERE ok=1 AND date_from=? AND date_to=?",
-                               (a, b)).fetchone()[0]
-    files, attached, total, skipped = [], [], 0, 0
+    version, supersedes = message_v2.daily_revision(conn, a, b)
+    mid = message_v2.new_id()
+    pics = [(p.get("attachment") or attachment_name(p["file"]), p["id"]) for d in rep["days"] for p in d.get("photos") or []]
+    data_obj = rep
+    if build_v2:
+        data_obj, pics = build_v2(version, supersedes, mid)
+        name = message_v2.daily_stem(a, b, version)
+    files, attached, skipped = [], [], 0
     sig = ""
+    total = len(json.dumps(data_obj, ensure_ascii=False).encode()) if opts.get("json") else 0
+    if opts.get("pdf"):
+        total += len(pdf_bytes)
+    images, sent_names = [], set()
+    if opts.get("photos"):
+        for fname, pid in pics:
+            img = load_photo(pid)
+            if not img:
+                continue
+            if total + len(img) > MAX_ATTACH_BYTES:
+                skipped += 1
+                continue
+            images.append((fname, "image", "jpeg", img)); sent_names.add(fname)
+            total += len(img)
+    if build_v2:                      # format 2 says, per photo, whether its picture is attached to this email
+        for d in data_obj["days"]:
+            for p in d["photos"]:
+                p["attached"] = p["attachment"] in sent_names
     if opts.get("json"):
-        data = json.dumps(rep, indent=2, ensure_ascii=False).encode()
+        data = json.dumps(data_obj, indent=2, ensure_ascii=False).encode()
         if cfg.report_signing_key:
             sig = signature(cfg.report_signing_key, data)
         files.append((f"{name}.json", "application", "json", data)); attached.append(f"{name}.json (the data)")
-        total += len(data)
     if opts.get("pdf"):
         files.append((f"{name}.pdf", "application", "pdf", pdf_bytes)); attached.append(f"{name}.pdf")
-        total += len(pdf_bytes)
-    n_photos = 0
-    if opts.get("photos"):
-        for day in rep["days"]:
-            for p in day.get("photos") or []:
-                img = load_photo(p["id"])
-                if not img:
-                    continue
-                if total + len(img) > MAX_ATTACH_BYTES:
-                    skipped += 1
-                    continue
-                files.append((p.get("attachment") or attachment_name(p["file"]), "image", "jpeg", img))
-                total += len(img); n_photos += 1
-        if n_photos:
-            attached.append(f"{n_photos} receipt/photo picture{'s' if n_photos != 1 else ''}")
+    files += images
+    if images:
+        attached.append(f"{len(images)} receipt/photo picture{'s' if len(images) != 1 else ''}")
     subject = subject_for(rep, version)
-    msg = _message(cfg, subject, body_for(rep, version, attached, skipped, sig))
+    msg = _message(cfg, subject, body_for(rep, version, attached, skipped, sig, mid if build_v2 else ""))
     for fname, main, sub, data in files:
         msg.add_attachment(data, maintype=main, subtype=sub, filename=fname)
     entry = {"ts": int(time.time()), "date_from": a, "date_to": b, "mail_to": cfg.mail_to, "subject": subject,
-             "version": version, "attached": "; ".join(attached)}
+             "version": version, "attached": "; ".join(attached), "format": "2" if build_v2 else "1"}
     try:
         send(cfg, msg)
     except MailError as e:
@@ -182,14 +198,15 @@ def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo):
                      "VALUES (?,?,?,?,?,?,0,?,?)", (entry["ts"], a, b, cfg.mail_to, subject, version, str(e), entry["attached"]))
         conn.commit()
         raise
-    conn.execute("INSERT INTO email_log(ts,date_from,date_to,mail_to,subject,version,ok,error,attached) "
-                 "VALUES (?,?,?,?,?,?,1,NULL,?)", (entry["ts"], a, b, cfg.mail_to, subject, version, entry["attached"]))
+    conn.execute("INSERT INTO email_log(ts,date_from,date_to,mail_to,subject,version,ok,error,attached,message_id,schema) "
+                 "VALUES (?,?,?,?,?,?,1,NULL,?,?,?)", (entry["ts"], a, b, cfg.mail_to, subject, version, entry["attached"],
+                                                     mid, entry["format"]))
     conn.commit()
-    log.info("report emailed: %s (%s)%s", subject, entry["attached"], ", signed" if sig else "")
+    log.info("report emailed: %s (%s), format %s%s", subject, entry["attached"], entry["format"], ", signed" if sig else "")
     return {**entry, "skipped_photos": skipped}
 
 
 def history(conn, date_from, date_to, limit=10):
     return [dict(r) for r in conn.execute(
-        "SELECT ts, mail_to, subject, version, ok, error, attached FROM email_log WHERE date_from=? AND date_to=? "
+        "SELECT ts, mail_to, subject, version, ok, error, attached, schema AS format FROM email_log WHERE date_from=? AND date_to=? "
         "ORDER BY id DESC LIMIT ?", (date_from, date_to, limit))]

@@ -97,7 +97,7 @@ def notice(cfg, ev, eta, now, note=""):
             "calendar_event_uid": ev.get("uid") or ""}
 
 
-def body(n, sig=""):
+def body(n, sig="", message_id=""):
     lines = ["JobHub Late Notice: the technician is running late for an on-site appointment.",
              "Please let the customer know. Details are in the attached JSON.", "",
              f"Technician: {mailer.tech_text(n['technician'])}",
@@ -108,6 +108,8 @@ def body(n, sig=""):
              f"New arrival time: {n['new_eta']} (about {n['minutes_late']} min late, {n['eta_method']})"]
     if n["note"]:
         lines.append(f"Note from the technician: {n['note']}")
+    if message_id:
+        lines += ["Message format: 2", f"Message ID: {message_id}"]
     if sig:
         lines.append(f"Signature: hmac-sha256={sig} (of the attached JSON file)")
     return "\n".join(lines) + "\n"
@@ -129,22 +131,33 @@ def send(conn, cfg, date, uid, now, live, search, note=""):
         raise ValueError("You are already there.")
     if eta["late_min"] <= 0:
         raise ValueError(f"You are on time now (arriving about {eta['arrive']}): nothing was sent.")
+    from . import message_v2 as v2
     n = notice(cfg, ev, eta, now, note)
-    data = json.dumps(n, indent=2, ensure_ascii=False).encode()
-    sig = mailer.signature(cfg.report_signing_key, data) if cfg.report_signing_key else ""
-    subject = f"JobHub Late Notice {n['hubspot_ticket'] or n['customer'] or ev['start']}"
-    msg = mailer._message(cfg, subject, body(n, sig))
-    msg.replace_header("To", to)
+    revision, supersedes = v2.previous(conn, "late_notices", "event_uid=?", (uid,))
+    mid = v2.new_id()
     stamp = datetime.fromtimestamp(ev["start_ts"], ZoneInfo(cfg.app_tz)).strftime("%Y-%m-%d-%H%M")
-    msg.add_attachment(data, maintype="application", subtype="json", filename=f"jobhub-late-notice-{stamp}.json")
+    if cfg.message_format == "2":
+        stop_uid = next((s["uid"] for s in service.day_payload(conn, cfg, date)["stops"] if s["id"] == ev.get("stop_id")), "")
+        data = json.dumps(v2.late_notice(conn, cfg, ev, eta, now, note, stop_uid, revision, supersedes, mid),
+                          indent=2, ensure_ascii=False).encode()
+        subject = v2.subject("late_notice", date, n["customer"], revision)
+        fname = v2.file_stem("late_notice", date, stamp[11:], revision) + ".json"
+    else:
+        data = json.dumps(n, indent=2, ensure_ascii=False).encode()
+        subject = f"JobHub Late Notice {n['hubspot_ticket'] or n['customer'] or ev['start']}"
+        fname = f"jobhub-late-notice-{stamp}.json"
+    sig = mailer.signature(cfg.report_signing_key, data) if cfg.report_signing_key else ""
+    msg = mailer._message(cfg, subject, body(n, sig, mid if cfg.message_format == "2" else ""))
+    msg.replace_header("To", to)
+    msg.add_attachment(data, maintype="application", subtype="json", filename=fname)
     ok, err = True, None
     try:
         mailer.send(cfg, msg)
     except mailer.MailError as e:
         ok, err = False, str(e)
-    conn.execute("INSERT INTO late_notices(ts,date,event_uid,minutes_late,eta_ts,mail_to,ok,error,note) "
-                 "VALUES (?,?,?,?,?,?,?,?,?)", (int(time.time()), date, uid, eta["late_min"], eta["arrive_ts"], to,
-                                                1 if ok else 0, err, n["note"] or None))
+    conn.execute("INSERT INTO late_notices(ts,date,event_uid,minutes_late,eta_ts,mail_to,ok,error,note,message_id) "
+                 "VALUES (?,?,?,?,?,?,?,?,?,?)", (int(time.time()), date, uid, eta["late_min"], eta["arrive_ts"], to,
+                                                  1 if ok else 0, err, n["note"] or None, mid if ok else None))
     conn.commit()
     if not ok:
         log.warning("late notice not sent: %s", err)

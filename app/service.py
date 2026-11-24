@@ -62,7 +62,15 @@ WORK_CATEGORIES = {
     "Customer outreach": "non_billable", "Training": "non_billable",
 }
 VISIT_RESULTS = {"complete": "Complete", "return": "Return visit needed",
-                 "waiting": "Waiting (parts or customer)"}
+                 "waiting_parts": "Waiting for parts", "waiting_customer": "Waiting for customer"}
+# "waiting" (parts or customer, before the split on 2026-11-24) is read as waiting for parts (db migration, old Undo)
+VISIT_ALIASES = {"waiting": "waiting_parts"}
+OPEN_RESULTS = ("return", "waiting_parts", "waiting_customer")     # the job is not done: the next visit continues it
+
+
+def visit_code(v):
+    v = (v or "").strip()
+    return VISIT_ALIASES.get(v, v)
 
 
 
@@ -684,7 +692,7 @@ def patch_stop(conn, cfg, sid, f):
             raise EditError("The job or ticket reference is too long (80 characters at most).")
         upd["ticket"] = t or None
     if "visit_result" in f:
-        vr = str(f["visit_result"] or "").strip()
+        vr = visit_code(str(f["visit_result"] or ""))
         if vr and vr not in VISIT_RESULTS:
             raise EditError("Choose one of the listed visit results.")
         upd["visit_result"] = vr or None
@@ -828,7 +836,7 @@ def previous_result(conn, sid, name, site_id, date):
         "SELECT visit_result FROM stops WHERE id!=? AND status='Confirmed' AND date<=? "
         "AND ((? IS NOT NULL AND known_site_id=?) OR (?!='' AND lower(business_name)=lower(?))) "
         "ORDER BY date DESC, arrive_utc DESC LIMIT 1", (sid, date, site_id, site_id, name or "", name or "")).fetchone()
-    return (r["visit_result"] or "") if r else ""
+    return visit_code(r["visit_result"]) if r else ""
 
 
 def last_category(conn, sid, name, site_id):
@@ -1084,7 +1092,7 @@ def followups_for_day(conn, date):
     out = {}
     for r in conn.execute("SELECT f.* FROM follow_ups f JOIN stops s ON s.id=f.stop_id WHERE s.date=? "
                           "ORDER BY f.id", (date,)):
-        out.setdefault(r["stop_id"], []).append({"id": r["id"], "text": r["text"],
+        out.setdefault(r["stop_id"], []).append({"id": r["id"], "uid": r["uid"] or "", "text": r["text"],
                                                   "owner": r["owner"] or "", "due": r["due"] or ""})
     return out
 
@@ -1340,8 +1348,8 @@ def day_payload(conn, cfg, date, include_path=False):
         # a visit after one that ended "return visit" / "waiting" is most likely the same job
         "ticket_action_default": "" if r["ticket_action"] or r["ticket"] or r["status"] in OFF_CLOCK + ("Traffic",) else (
             "continue" if previous_result(conn, r["id"], r["business_name"], r["known_site_id"], r["date"])
-            in ("return", "waiting") else ""),
-        "visit_result": r["visit_result"] or "",
+            in OPEN_RESULTS else ""),
+        "visit_result": visit_code(r["visit_result"]),
         "category_hint": "" if r["work_category"] else last_category(
             conn, r["id"], r["business_name"], r["known_site_id"]),
         "stop_type": stop_type(r, site_kind.get(r["known_site_id"]) or ""),
@@ -1499,7 +1507,7 @@ def fuel_stats(conn, cfg, date_from=None, date_to=None):
 
 
 # ---- finishing a stop ------------------------------------------------------
-FOLLOW_UP_FOR = {"return": "Return visit", "waiting": "Waiting on parts or customer"}
+FOLLOW_UP_FOR = {"return": "Return visit", "waiting_parts": "Waiting on parts", "waiting_customer": "Waiting on customer"}
 
 
 def stop_needs(row, stype, category_hint="", fuel=None):
@@ -1544,7 +1552,7 @@ def finish_stop(conn, cfg, sid, f):
     need = stop_needs(s, stype, hint, fuel)
     if need:
         raise EditError("Still needed: " + ", ".join(need) + ".")
-    text = FOLLOW_UP_FOR.get(s["visit_result"]) if stype == "job" else None
+    text = FOLLOW_UP_FOR.get(visit_code(s["visit_result"])) if stype == "job" else None
     if text and not conn.execute("SELECT 1 FROM follow_ups WHERE stop_id=? AND text=?", (sid, text)).fetchone():
         add_followup(conn, cfg, sid, {"text": text, "owner": "Me", "due": f.get("due") or ""})
     if stype != "gas" and s["status"] != "Confirmed":
@@ -1623,7 +1631,7 @@ def _visit(conn, cfg, r, site_kind=""):
             "depart": fmt_time(cfg, r["depart_utc"]), "minutes": round((r["depart_utc"] - r["arrive_utc"]) / 60),
             "stop_type": t, "type_label": STOP_TYPES.get(t, ""), "status": r["status"] or "Draft",
             "business_name": r["business_name"] or "",
-            "work_category": r["work_category"] or "", "visit_result": VISIT_RESULTS.get(r["visit_result"] or "", ""),
+            "work_category": r["work_category"] or "", "visit_result": VISIT_RESULTS.get(visit_code(r["visit_result"]), ""),
             "ticket": r["ticket"] or "",
             "summary": first[:140] + ("…" if len(first) > 140 or len(notes.splitlines()) > 1 else ""),
             "parts": conn.execute("SELECT COUNT(*) FROM stop_parts WHERE stop_id=? AND COALESCE(kind,'part')!='expense'",
@@ -1764,7 +1772,7 @@ def calendar_for_day(cfg, date, stops, now):
             taken.add(best["id"])
             e["state"] = "here" if best.get("here_now") else "done"
             cat = next((c for c in WORK_CATEGORIES if c.lower() == (ev.get("category") or "").strip().lower()), "")
-            best["calendar"] = {"name": ev["name"], "location": ev["location"], "ticket": ev["ticket"],
+            best["calendar"] = {"uid": ev.get("uid") or "", "name": ev["name"], "location": ev["location"], "ticket": ev["ticket"],
                                 "estimate": ev.get("estimate", ""),
                                 "start": e["start"], "end": e["end"], "contact": ev.get("contact", ""),
                                 "work": ev.get("work", ""), "category": cat,

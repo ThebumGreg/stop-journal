@@ -1,0 +1,54 @@
+{
+  "schema_version": "2",
+  "type": "late_notice",
+  "message_id": "36eb4f11-a5fb-4fd3-b6ed-cb977ff4932d",
+  "subject_key": "AAMkSample123@1795543200",
+  "revision": 1,
+  "supersedes": null,
+  "sent_at": "2026-11-18T11:52:00-08:00",
+  "timezone": "America/Los_Angeles",
+  "app": {
+    "name": "JobHub",
+    "version": "2.0.0"
+  },
+  "technician": {
+    "name": "Sample Technician",
+    "email": "tech@work.example"
+  },
+  "omitted": [],
+  "customer": {
+    "business_name": "Sample Medical Clinic",
+    "hubspot_company_id": "18200000002",
+    "qbo_customer_id": "",
+    "service_address": {
+      "line1": "300 Example Blvd",
+      "line2": "",
+      "city": "Los Angeles",
+      "state": "CA",
+      "zip": "90013",
+      "formatted": "300 Example Blvd, Los Angeles, CA 90013",
+      "latitude": 34.0230457039227,
+      "longitude": -118.15243070204251
+    },
+    "site_contact": "Front desk 555-0142"
+  },
+  "job": {
+    "category": "Quoted project",
+    "billing": "project",
+    "hubspot_ticket_id": "362600000002",
+    "ticket_action": "use",
+    "qbo_estimate_number": "2210",
+    "tech_typed_reference": ""
+  },
+  "stop_uid": "",
+  "appointment": {
+    "calendar_event_uid": "AAMkSample123@1795543200",
+    "start": "2026-11-18T12:00:00-08:00",
+    "end": "2026-11-18T14:00:00-08:00",
+    "new_eta": "2026-11-18T12:21:00-08:00",
+    "minutes_late": 21,
+    "eta_method": "road_route"
+  },
+  "contact_from_calendar": "Front desk 555-0142",
+  "note_for_customer": "Stuck in traffic on the 110"
+}

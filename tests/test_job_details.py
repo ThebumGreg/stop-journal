@@ -57,7 +57,8 @@ def test_follow_up_crud_and_validation(tmp_path):
     r = c.post(f"/api/stops/{sid}/follow-ups", json={"text": "Order valve", "owner": "Me", "due": "2026-11-25"})
     assert r.status_code == 200
     fu = next(x for x in r.json["stops"] if x["id"] == sid)["follow_ups"]
-    assert fu == [{"id": fu[0]["id"], "text": "Order valve", "owner": "Me", "due": "2026-11-25"}]
+    assert fu == [{"id": fu[0]["id"], "uid": fu[0]["uid"], "text": "Order valve", "owner": "Me", "due": "2026-11-25"}]
+    assert len(fu[0]["uid"]) == 36
     assert c.post(f"/api/stops/{sid}/follow-ups", json={"text": "  "}).status_code == 400
     assert c.post(f"/api/stops/{sid}/follow-ups", json={"text": "x", "due": "25/11"}).status_code == 400
     r = c.patch(f"/api/follow-ups/{fu[0]['id']}", json={"owner": "Dana", "due": ""})

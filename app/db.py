@@ -341,7 +341,30 @@ MIGRATIONS = [
     ("purchases", "stop_id", "INTEGER"),
     ("stops", "ticket_action", "TEXT"),
     ("stops", "from_receipt", "INTEGER DEFAULT 0"),
+    # message format v2 (docs/sample-report/README.md): stable IDs on every item the agent may update
+    ("stop_parts", "uid", "TEXT"),
+    ("follow_ups", "uid", "TEXT"),
+    ("photos", "uid", "TEXT"),
+    ("purchases", "uid", "TEXT"),
+    # a place's address in parts (the agent bills and matches on the suite), QuickBooks customer, billing email
+    ("known_sites", "addr_line1", "TEXT"),
+    ("known_sites", "addr_line2", "TEXT"),
+    ("known_sites", "addr_city", "TEXT"),
+    ("known_sites", "addr_state", "TEXT"),
+    ("known_sites", "addr_zip", "TEXT"),
+    ("known_sites", "qbo_customer_id", "TEXT"),
+    ("known_sites", "billing_email", "TEXT"),
+    # every email sent gets a message_id (v2 envelope; `supersedes` points at the previous one)
+    ("email_log", "message_id", "TEXT"),
+    ("email_log", "schema", "TEXT"),
+    ("invoice_requests", "message_id", "TEXT"),
+    ("invoice_requests", "billed_through_ts", "INTEGER"),
+    ("invoice_requests", "invoice_to_email", "TEXT"),
+    ("late_notices", "message_id", "TEXT"),
 ]
+
+# Tables whose rows carry a stable uid (filled by a trigger on insert; Undo re-inserts rows WITH their uid).
+UID_TABLES = ("stops", "stop_parts", "follow_ups", "photos", "purchases")
 
 
 # A random UUID (version 4 form) in SQL, so every way a stop is created gets one (see the trigger below).
@@ -355,12 +378,16 @@ def _migrate(conn):
         cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if col not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
-    # stops.uid: a stable ID for the report (stop numbers shift when stops are added, merged or split). Filled by a
-    # trigger on every insert that has none (Undo re-inserts rows WITH their uid, so it is restored); existing rows once.
-    conn.execute(f"UPDATE stops SET uid={UUID_SQL} WHERE uid IS NULL")
-    conn.execute(f"CREATE TRIGGER IF NOT EXISTS stops_uid AFTER INSERT ON stops WHEN NEW.uid IS NULL "
-                 f"BEGIN UPDATE stops SET uid={UUID_SQL} WHERE id=NEW.id; END")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_stops_uid ON stops(uid)")
+    # uid: a stable ID for the report (stop numbers shift when stops are added, merged or split; part lines, follow-ups,
+    # photos and purchases are found again by the agent through it). Filled by a trigger on every insert that has none
+    # (Undo re-inserts rows WITH their uid, so it is restored); existing rows once.
+    for t in UID_TABLES:
+        conn.execute(f"UPDATE {t} SET uid={UUID_SQL} WHERE uid IS NULL")
+        conn.execute(f"CREATE TRIGGER IF NOT EXISTS {t}_uid AFTER INSERT ON {t} WHEN NEW.uid IS NULL "
+                     f"BEGIN UPDATE {t} SET uid={UUID_SQL} WHERE id=NEW.id; END")
+        conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{t}_uid ON {t}(uid)")
+    # "Waiting (parts or customer)" was split in two (2026-11-24): old answers become "Waiting for parts"
+    conn.execute("UPDATE stops SET visit_result='waiting_parts' WHERE visit_result='waiting'")
     conn.commit()
 
 
@@ -374,6 +401,7 @@ def connect(data_dir):
     photos.move_to_files(conn, data_dir)
     from .places import known       # one-time data repair: vendor branches saved as clients
     known.repair_vendor_branches(conn)
+    known.fill_address_parts(conn)  # one-time: addresses saved before they were kept in parts
     from . import parts as parts_mod  # one-time: the first "Shelf / bin" field splits into Shelf and Bin
     parts_mod.split_shelf_bin(conn)
     return conn

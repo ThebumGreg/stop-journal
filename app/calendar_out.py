@@ -60,8 +60,8 @@ def event_for(s, now):
     title = TITLE_PREFIX + (name or label) + (f" ({label})" if name and t not in ("job", "") else "")
     if finished:
         title = TITLE_PREFIX + "✓ " + title[len(TITLE_PREFIX):]
-    vr = service.VISIT_RESULTS.get(s.get("visit_result") or "")
-    if vr and s.get("visit_result") != "complete":
+    vr = service.VISIT_RESULTS.get(service.visit_code(s.get("visit_result")))
+    if vr and service.visit_code(s.get("visit_result")) != "complete":
         title += " · " + vr
     lines = [f"Type: {label}"]
     if s.get("ticket"):

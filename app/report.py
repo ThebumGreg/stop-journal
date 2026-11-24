@@ -102,7 +102,7 @@ def _timesheet(stops, drives, lunch_paid=True):
 
     def add(ts, inn, out, kind, text, secs, paid):
         rows.append((ts, {"in": inn, "out": out, "type": kind, "description": text,
-                          "minutes": round(secs / 60), "paid": paid}))
+                          "minutes": round(secs / 60), "paid": paid, "_start": ts, "_end": ts + secs}))
 
     LUNCH, BREAK = "Lunch", "Clocked out (personal break)"
     for s in stops:
@@ -148,8 +148,18 @@ def _timesheet(stops, drives, lunch_paid=True):
     return [r for _, r in sorted(rows, key=lambda x: x[0])]
 
 
-def build_day(payload, cfg):
-    """payload: service.day_payload() for one date."""
+def _public(obj):
+    """Drop the private keys (starting with _) that build_day keeps for message format v2."""
+    if isinstance(obj, dict):
+        return {k: _public(v) for k, v in obj.items() if not (isinstance(k, str) and k.startswith("_"))}
+    if isinstance(obj, list):
+        return [_public(v) for v in obj]
+    return obj
+
+
+def build_day(payload, cfg, keep_src=False):
+    """payload: service.day_payload() for one date. keep_src: also keep the private `_` keys (timestamps, the source
+    stop with its line/photo/follow-up uids) that app/message_v2.py builds the v2 objects from; v1 never has them."""
     tz = ZoneInfo(cfg.app_tz)
     stops, drives = payload["stops"], payload["drives"]
     status = {s["id"]: s["status"] for s in stops}
@@ -192,7 +202,8 @@ def build_day(payload, cfg):
                                             "visit_result": s["visit_result"],
                                             "work_category": s["work_category"], "photos": list(s.get("photos") or [])})
             m["gaps"].append({"kind": stops[cur + 1]["status"], "from": left["depart"], "to": nxt["arrive"],
-                              "secs": nxt["arrive_ts"] - left["depart_ts"]})
+                              "secs": nxt["arrive_ts"] - left["depart_ts"],
+                              "from_ts": left["depart_ts"], "to_ts": nxt["arrive_ts"]})
             m["notes"].append(nxt["notes"])
             m["parts"] += nxt["parts"]
             m["follow_ups"] += nxt["follow_ups"]
@@ -210,13 +221,14 @@ def build_day(payload, cfg):
     for s in stops:
         if s["id"] in absorbed:
             continue
-        lunch, breaks = [], []
+        lunch, breaks, gaps = [], [], []
         if s["id"] in merged:
             m = merged[s["id"]]
             lunch = [{"from": g["from"], "to": g["to"], "minutes": round(g["secs"] / 60)}
                      for g in m["gaps"] if g["kind"] == "Lunch"]
             breaks = [{"from": g["from"], "to": g["to"], "minutes": round(g["secs"] / 60)}
                       for g in m["gaps"] if g["kind"] == "Personal"]
+            gaps = m["gaps"]
             s = dict(s, depart=m["depart"], depart_ts=m["depart_ts"], parts=m["parts"],
                      notes="\n\n".join(n for n in m["notes"] if n),
                      minutes=m["minutes"], follow_ups=m["follow_ups"], ticket=m["ticket"], qbo_estimate=m["qbo_estimate"],
@@ -229,7 +241,8 @@ def build_day(payload, cfg):
                 "Not confirmed" + (" (short stop)" if s["kind"] == "short" else "")
             # End Day: only when the day ended matters (the time spent at home afterwards means nothing)
             excluded.append({"arrival": s["arrive"], "departure": "" if reason == "End Day" else s["depart"],
-                             "reason": reason})
+                             "reason": reason, "_start": s["arrive_ts"],
+                             "_end": None if reason == "End Day" else s["depart_ts"]})
             continue
         d = drive_into.get(s["id"])
         counted = bool(d and d.get("counts", status.get(d["from_stop_id"]) not in ("Personal", "Lunch")))
@@ -267,7 +280,7 @@ def build_day(payload, cfg):
             "hubspot_ticket": (s["ticket"] or "").strip().lstrip("#").strip(),
             "ticket_action": _ticket_action(s),
             "qbo_estimate": s.get("qbo_estimate") or "",
-            "visit_result": service.VISIT_RESULTS.get(s["visit_result"], ""),
+            "visit_result": service.VISIT_RESULTS.get(service.visit_code(s["visit_result"]), ""),
             "work_performed": s["notes"],
             "parts_used": used,
             "consumables_used": consumed,
@@ -283,6 +296,7 @@ def build_day(payload, cfg):
             "invoice_request": ({k: s["invoice_request"][k] for k in ("version", "sent_at", "billed_through",
                                                                       "time_on_site_minutes")}
                                 if s.get("invoice_request") else None),
+            "_src": s, "_gaps": gaps, "_drive": d,
         })
         pic_from.append((f"Stop {len(out_stops)}, {s['business_name'] or 'no name'}, {s['arrive']}",
                          f"stop-{len(out_stops)}-{_slug(s['business_name'])}", s.get("photos") or []))
@@ -323,15 +337,15 @@ def build_day(payload, cfg):
         for k, p in enumerate(ps, 1):
             # the same name the picture has in the zip export: photos/YYYY/MM/DD/stop-1-acme-receipt-1.jpg
             f = f"photos/{y}/{mo}/{dd}/{stem.strip('-')}-{p['kind']}-{k}.jpg"
-            pics.append({"id": p["id"], "kind": p["kind"], "caption": p["caption"],
+            pics.append({"id": p["id"], "kind": p["kind"], "caption": p["caption"], "_src": p,
                          "file": f, "attachment": attachment_name(f),
                          "label": f"{'Receipt' if p['kind'] == 'receipt' else 'Photo'}: {where}" +
                                   (f". {p['caption']}" if p["caption"] else "")})
     fuel = [{"arrival": s["arrive"], "departure": s["depart"], "station": s["business_name"] or "",
-             "added_from_receipt": bool(s.get("from_receipt")),
+             "added_from_receipt": bool(s.get("from_receipt")), "_src": s,
              **{k: (s.get("fuel") or {}).get(k) for k in ("gallons", "total", "price_per_gallon", "odometer")}}
             for s in stops if s.get("stop_type") == "gas" and s["status"] == "Traffic"]
-    return {"date": payload["date"], "report_key": payload["date"],
+    day = {"date": payload["date"], "report_key": payload["date"], "_marks": marks, "_end_day": end_day,
             "day_start": marks.get("start", ""), "day_end": marks.get("end", ""),
             "summary": {"on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops),
                         "billable_on_site_minutes": sum(s["time_on_site_minutes"] for s in out_stops
@@ -352,6 +366,7 @@ def build_day(payload, cfg):
             "mileage": mil,
             "end_day": end_day and {k: end_day[k] for k in ("time", "kind", "place", "miles_to_home", "method", "counted")},
             "stops": out_stops, "excluded": excluded}
+    return day if keep_src else _public(day)
 
 
 def _line_text(p):
@@ -436,7 +451,7 @@ def warnings(report):
                 if s["category"] in ESTIMATE_CATEGORIES and not s["qbo_estimate"]:
                     out.append(f"{who}: no QuickBooks estimate # (a {s['category']} job).")
             if s["billing"] != "non_billable" and not s["visit_result"]:
-                out.append(f"{who}: no visit result (complete, return visit or waiting).")
+                out.append(f"{who}: no visit result (complete, return visit, waiting for parts or for the customer).")
             dv = s["drive_from_previous_stop"] or {}
             if dv.get("estimated"):
                 nd = dv["no_location_data"]

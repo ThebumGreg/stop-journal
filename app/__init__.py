@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import ai, equipment, invoice_request, kits, late, logs, mailer, photos, receipt_inbox, receipts, summary, vendors
+from . import ai, equipment, invoice_request, kits, late, logs, mailer, message_v2, photos, receipt_inbox, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .geo import haversine_m
@@ -270,8 +270,19 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
 
     @app.get("/api/export.json")
     def export_json():
+        """The JSON report. ?format=2 (or Message format 2 in Settings) gives the format the agent reads from emails,
+        as the next send would be numbered (revision)."""
         def go(conn, cfg):
             rep = build_report(conn, cfg)
+            if (request.args.get("format") or cfg.message_format) == "2":
+                a, z = rep["date_from"], rep["date_to"]
+                rev, sup = message_v2.daily_revision(conn, a, z)
+                msg, _ = message_v2.daily_summary(conn, cfg, reports.date_range(a, z), lambda c, cf, d: ensure_day(c, cf, d),
+                                                  reports.parse_omit(request.args.get("omit")), rev, sup,
+                                                  datetime.now(ZoneInfo(cfg.app_tz)).timestamp())
+                return Response(json.dumps(msg, indent=2, ensure_ascii=False), mimetype="application/json",
+                                headers={"Content-Disposition": f"{'inline' if request.args.get('inline') else 'attachment'}; "
+                                                                f"filename={message_v2.daily_stem(a, z, rev)}.json"})
             return download(json.dumps(rep, indent=2, ensure_ascii=False), "application/json", rep, "json")
         return with_conn(go)
 
@@ -298,9 +309,16 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             name = f"jobhub-daily-summary-{a}" if a == z else f"jobhub-daily-summary-{a}_to_{z}"
             load = lambda pid: photos.get(conn, cfg.data_dir, pid)
             body = pdf.render(rep, load) if b.get("pdf") else b""
+            fmt = str(b.get("format") or cfg.message_format)        # "2": the agent's test day before switching
+            v2 = None
+            if fmt == "2":
+                omit = reports.parse_omit(request.args.get("omit"))
+                v2 = lambda rev, sup, mid: message_v2.daily_summary(conn, cfg, reports.date_range(a, z),
+                                                                    lambda c, cf, d: ensure_day(c, cf, d), omit, rev, sup,
+                                                                    datetime.now(ZoneInfo(cfg.app_tz)).timestamp(), mid)
             try:
                 sent = mailer.send_report(conn, cfg, rep, name, body,
-                                          {k: bool(b.get(k)) for k in ("pdf", "json", "photos")}, load)
+                                          {k: bool(b.get(k)) for k in ("pdf", "json", "photos")}, load, v2)
             except mailer.MailError as e:
                 raise service.EditError(str(e))
             return jsonify(ok=True, **sent, history=mailer.history(conn, a, z))
@@ -312,7 +330,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         def go(conn, cfg):
             req, warn, _ = invoice_request.build(conn, cfg, sid)
             return jsonify(request=req, warnings=warn, to=cfg.mail_to, ready=mailer.enabled(cfg),
-                           history=invoice_request.history(conn, req["stop_uid"], cfg.app_tz))
+                           history=invoice_request.history(conn, req["stop_uid"], cfg.app_tz),
+                           billing_email=invoice_request.billing_email_for(conn, sid), format=cfg.message_format)
         return with_conn(go)
 
     @app.post("/api/stops/<int:sid>/invoice-request")
@@ -322,7 +341,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         def go(conn, cfg):
             load = lambda pid: photos.get(conn, cfg.data_dir, pid)
             try:
-                invoice_request.send(conn, cfg, sid, {k: bool(b.get(k)) for k in ("pdf", "photos")},
+                invoice_request.send(conn, cfg, sid, {**{k: bool(b.get(k)) for k in ("pdf", "photos")},
+                                                      "invoice_to_email": str(b.get("invoice_to_email") or "")},
                                      lambda req, pics: pdf.render_invoice_request(req, pics, load), load)
             except mailer.MailError as e:
                 raise service.EditError(str(e))
@@ -334,7 +354,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         def go(conn, cfg):
             start = request.args.get("from", "")
             dates = reports.date_range(start, request.args.get("to") or start)
-            return jsonify(on=bool(cfg.mail_to), ready=mailer.enabled(cfg), to=cfg.mail_to,
+            return jsonify(on=bool(cfg.mail_to), ready=mailer.enabled(cfg), to=cfg.mail_to, format=cfg.message_format,
                            history=mailer.history(conn, dates[0], dates[-1]))
         return with_conn(go)
 

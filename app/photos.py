@@ -92,7 +92,7 @@ def move_to_files(conn, data_dir):
 
 def for_day(conn, date):
     out = {}
-    for r in conn.execute("SELECT p.id, p.stop_id, p.kind, p.caption, p.read_json FROM photos p "
+    for r in conn.execute("SELECT p.id, p.uid, p.stop_id, p.kind, p.caption, p.created, p.read_json FROM photos p "
                           "JOIN stops s ON s.id=p.stop_id WHERE s.date=? ORDER BY p.id", (date,)):
         read = None
         if r["read_json"]:
@@ -100,8 +100,8 @@ def for_day(conn, date):
                 read = json.loads(r["read_json"])
             except ValueError:
                 read = None
-        out.setdefault(r["stop_id"], []).append({"id": r["id"], "kind": r["kind"], "caption": r["caption"] or "",
-                                                 "read": read})
+        out.setdefault(r["stop_id"], []).append({"id": r["id"], "uid": r["uid"] or "", "kind": r["kind"],
+                                                 "caption": r["caption"] or "", "created": r["created"], "read": read})
     return out
 
 

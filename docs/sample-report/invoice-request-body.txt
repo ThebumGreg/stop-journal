@@ -5,15 +5,16 @@ Labor is documented as time on site; apply the company's labor rates and rules.
 
 Technician: Sample Technician <tech@work.example>
 Customer: Sample Dental Office
-Address: 100 Example Ave, Los Angeles, CA 90012
+Address: 100 Example Ave, Suite 210, Los Angeles, CA 90012
 HubSpot company ID: 18200000001
 HubSpot ticket: 24681357913
 QuickBooks estimate: (none)
 Date: 2026-11-18
 Labor: 08:00 to 10:30, 150 min
 Visit result: Complete
+Customer billing email: (not given)
 Version: 1
-Stop ID: b3aaf285-bbd0-4486-a247-55d1bc138353
+Stop ID: 1f0563fe-d5c9-47ab-9572-b78a8d2888f1
 Parts:
   140 ft x Cat 6 cable (C6-1000-BLU) $0.45 each
   4 ea x Keystone jack Cat 6 - white (KJ-C6-W) $6.50 each

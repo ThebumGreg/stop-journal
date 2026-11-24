@@ -94,16 +94,20 @@ function exportForm() {
     c.onchange = () => { mopts[k] = c.checked; localStorage.setItem('email_opts', JSON.stringify(mopts)); };
     l.append(c, ' ' + t); mticks.append(l);
   });
+  // format 2 (the agent's new message format) for one send, before switching in Settings → Email (never remembered)
+  const v2Lab = el('label', 'hint'), v2Box = el('input'); v2Box.type = 'checkbox';
+  v2Lab.append(v2Box, ' Send as format 2 (test for the agent)'); v2Lab.hidden = true;
   const send = el('button', 'primary', 'Email report');
   const mailMsg = el('div', 'hint');
   const mailLog = el('div', 'hint');
-  mail.append(mailHead, mticks, send, mailMsg, mailLog);
+  mail.append(mailHead, mticks, v2Lab, send, mailMsg, mailLog);
   let mailTo = '';
   function showLog(h) {
     mailLog.replaceChildren();
     (h || []).slice(0, 5).forEach(x => {
       const t = new Date(x.ts * 1000).toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
       mailLog.append(el('div', x.ok ? null : 'err', (x.ok ? '✓ Sent ' : '✗ Failed ') + t + ' · ' + x.subject +
+        (x.ok && x.format === '2' ? ' · format 2' : '') +
         (x.ok ? (x.attached ? ' · ' + x.attached : '') : ' · ' + (x.error || ''))));
     });
   }
@@ -116,8 +120,10 @@ function exportForm() {
         const a = el('a', null, 'Settings → Email'); a.href = '/settings'; mailHead.append(a, ' to email the report to your work address.');
         send.disabled = true; mticks.hidden = true;
       } else {
-        mailHead.textContent = 'Sends the report to ' + m.to + ' (with the Include choices above).';
+        mailHead.textContent = 'Sends the report to ' + m.to + ' (with the Include choices above).' +
+          (m.format === '2' ? ' Message format 2.' : '');
         send.disabled = false; mticks.hidden = false;
+        v2Lab.hidden = m.format === '2';
       }
       showLog(m.history);
     } catch (e) { mailHead.textContent = e.message; }
@@ -128,7 +134,9 @@ function exportForm() {
     if (!confirm('Email the report for ' + dates + ' to ' + mailTo + '?')) return;
     send.disabled = true; mailMsg.className = 'hint'; mailMsg.textContent = 'Sending…';
     try {
-      const r = await api('POST', '/api/export/email?' + q(), {...mopts, anyway: overBox.checked});
+      const r = await api('POST', '/api/export/email?' + q(),
+                          {...mopts, anyway: overBox.checked, ...(v2Box.checked ? {format: '2'} : {})});
+      v2Box.checked = false;
       mailMsg.className = 'ok';
       mailMsg.textContent = 'Sent to ' + r.mail_to + ': “' + r.subject + '”.' +
         (r.skipped_photos ? ' ' + r.skipped_photos + ' photo(s) were too large for one email and were left off.' : '');

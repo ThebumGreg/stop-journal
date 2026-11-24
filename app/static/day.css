@@ -217,8 +217,10 @@ body.sheet-open { overflow:hidden; }
 .sheet .sec { display:grid; gap:10px; padding-top:6px; border-top:1px solid var(--line); }
 .sheet .sec:first-of-type { border-top:0; }
 .sheet .sec h3 { margin:6px 0 0; font-size:15px; }
-.sheet .res { display:flex; }
-.sheet .res button { flex:1; font-size:14px; }
+/* visit result: four answers in one row, two rows on a phone (Complete, Return visit / Waiting for parts, for customer) */
+.sheet .res { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
+.sheet .res button, .sheet .res button:first-child, .sheet .res button:last-child { font-size:14px; border-radius:8px; }
+@media (max-width: 600px) { .sheet .res { grid-template-columns:1fr 1fr; } }
 .sheet .needs { font-size:14px; }
 .sheet .needs .link { border:0; background:none; padding:0; min-height:0; color:var(--err); text-decoration:underline; font:inherit; font-weight:600; }
 .sheet .ready { color:var(--ok); font-weight:600; }

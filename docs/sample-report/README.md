@@ -11,9 +11,58 @@ A made-up day (all names, addresses and coordinates are invented) that uses ever
 | `jobhub-daily-summary-2026-11-18.json` | The data. **The agent should use this, not the PDF.** |
 | `jobhub-daily-summary-2026-11-18.pdf` | The same report for people. |
 
+## Message format 2 (`v2/`)
+Built to the agent's spec "JobHub message format, schema version 2" (with its section 8 answers, 2026-11-24). JobHub
+sends format 1 until **Settings → Email → Message format** is set to 2; **Email report → "Send as format 2 (test)"**
+sends one day in format 2 first, for the agent to check. Format 2 samples (the same made-up day):
+
+| File | What it is |
+|---|---|
+| `v2/daily-summary-sample.json` + `v2/daily-summary-body.txt` | Daily summary (`type` daily_summary). The PDF is unchanged (format 1 above). |
+| `v2/invoice-request-sample.json` + `v2/invoice-request-body.txt` | Invoice request (`type` invoice_request) for the Time & Material stop, sent before the summary, so the summary's stop has `invoice_request`. |
+| `v2/late-notice-sample.json` + `v2/late-notice-body.txt` | Late notice (`type` late_notice) for a made-up 12:00 appointment at the clinic. |
+
+As built, in the spec's terms:
+- **Envelope** on every JSON: as specified. `subject_key` is the date (a range: `2026-11-19_2026-11-23`), the
+  `stop_uid` (invoice request) or the `calendar_event_uid` (late notice). `revision` counts successful sends of that
+  key; the subject's "(update N)" is N = `revision`. `supersedes` is the previous send's `message_id` (`null` when that
+  send was format 1 or there was none). `app.version` starts at 2.0.0. The body has `Message ID:` and
+  `Message format: 2` lines; `Signature:` is over the JSON bytes as before.
+- **Attachment names**: `jobhub-daily-summary-<date>-r<rev>.json` / `.pdf`,
+  `jobhub-invoice-request-<date>-stop-<n>-<customer>-r<rev>.json`, `jobhub-late-notice-<date>-<HHMM>-r<rev>.json`;
+  pictures `photo-<photo_uid>.jpg`. Each Photo has `attached` (true when its picture is attached to this email).
+- **Customer**: `service_address` comes from the saved place (the technician can type street, suite, city, state, ZIP
+  on Places), else the stop's one-line address is split; `formatted` is always the full line. `latitude`/`longitude`
+  are the stop's position (`null` when coordinates are left out). `site_contact` is the calendar appointment's contact.
+- **Job**: `hubspot_ticket_id` only when the value is all digits and 9+ long (links are reduced to the ID); anything
+  else is `tech_typed_reference` with `hubspot_ticket_id` "" and `ticket_action` from the technician's choice
+  (default `find`).
+- **Stop**: additions `calendar_event_uid` (the matched appointment, "" if none; joins a late notice to its visit).
+  `visit_result`: `complete`, `return_visit`, `waiting_parts`, `waiting_customer` (answers from before the split are
+  `waiting_parts`), "" when not set. `breaks` lists lunch (`paid` per the lunch setting) and personal breaks (unpaid)
+  taken in the middle of one visit; never billable.
+- **Line**: `unit_price`/`amount` are the price charged; `unit_cost` is what JobHub knows we pay per unit (the parts
+  list's purchase cost or the last price paid; for an expense, the expense itself). Documentation only.
+  Additions: `qbo_item_name` (the QuickBooks product/service name from the import; `qbo_item_id` is "" because the
+  QuickBooks export has no item ID), and on `stock` lines `amount_paid` (what was paid for the line; `unit_price` and
+  `amount` are "" because stock is never charged). `receipt_photo_uid` is filled for expense and stock lines when the
+  stop has exactly one receipt picture.
+- **Daily summary**: `records_to_update` and top-level `follow_ups` are gone; act on `days[].stops[]`. Additions:
+  `totals.stops_confirmed` / `stops_excluded`, `end_day.time` / `miles_to_home`, `fuel[].stop_uid`. `excluded[].end`
+  is "" for the End Day stop. Omitted sections are empty (`[]`, `""`, `null`), never missing; `omitted` lists the keys
+  `costs`, `expenses`, `fuel`, `photos`, `materials`, `categories`, `follow_ups`, `mileage`, `recap`, `coordinates`.
+- **Invoice request**: `stop` is the same Stop object as in the daily summary. When sent while still on site
+  (`still_on_site` true), the Stop's `departure` and `time_on_site_minutes` run to `billed_through` (the moment of
+  sending); the later daily summary has the real departure, so compare and flag, never re-invoice. Additions:
+  `invoice_to_email` (the billing email the customer gave on site, "" if none; JobHub remembers it for that place) and
+  `photos` (Photo objects of the stop).
+- **Late notice**: as specified. `stop_uid` is "" (the visit does not exist yet when it is sent). The customer's
+  company ID and address parts come from a saved client place with the appointment's name and street; otherwise only
+  the calendar's text (`formatted`, the rest "").
+
 ## The day in the sample
 1. Home (Personal) → Start day 07:38.
-2. **Sample Dental Office** (HubSpot company 18200000001): Time & Material, HubSpot ticket 24681357913 (pasted as a link), Complete; 140 ft Cat 6 cable, 4 keystone jacks (billable parts),
+2. **Sample Dental Office**, Suite 210 (HubSpot company 18200000001, QuickBooks customer 58): Time & Material, HubSpot ticket 24681357913 (pasted as a link), Complete; 140 ft Cat 6 cable, 4 keystone jacks (billable parts),
    zip ties (non-billable material), $12 parking (expense) with its receipt, one photo.
 3. Fill-up at Sample Fuel Station (counted as drive time; fuel table).
 4. **Sample Supply House** (vendor stop: Internal operations, not billable).

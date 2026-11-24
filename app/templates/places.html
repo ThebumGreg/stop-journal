@@ -23,6 +23,9 @@
   .visit::after { content:'›'; float:right; margin-top:-34px; color:var(--muted); font-size:20px; }
   .editplace > summary { cursor:pointer; padding:8px 0; color:var(--acc); font-weight:600; }
   .editplace[open] { display:grid; gap:10px; }
+  .editplace .sub { font-weight:600; margin-bottom:-4px; }
+  .grid.addr { grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); }
+  .grid.addr > :first-child { grid-column:1 / -1; }
 </style>
 </head>
 <body>

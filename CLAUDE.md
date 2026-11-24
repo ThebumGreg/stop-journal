@@ -26,7 +26,9 @@ and add or update a section there when you build something. This file holds only
   out of the repo: use the scratchpad.
 - Settings are environment variables with Settings-page overrides (`app/config.py`, `app/settings.py` SPEC/TABS).
   Secrets are write-only (`settings.SECRETS`).
-- The report JSON is schema version "1": only ever ADD fields, never rename or remove (the agent depends on them).
+- Agent JSON comes in two formats: "1" (report, invoice request, late notice) and "2" (`app/message_v2.py`, the agent's
+  spec, chosen by Settings → Email → Message format). Within a format only ever ADD fields, never rename or remove
+  (the agent depends on them). Format 1 is removed only after the user confirms the agent runs on 2.
 - The database column for "Work performed" is `stops.notes`; user-facing text and the JSON key say Work performed /
   `work_performed`.
 
@@ -68,7 +70,9 @@ and add or update a section there when you build something. This file holds only
   `catalog` = run + JSON); method override wrapper; request logging; error handler with a reference code.
 - `app/service.py`: the day (detect/sync/apply places, stop edits, finish, merge/split/undo, drives and time rules,
   calendar matching, day payload). `app/detect.py`, `points.py`, `recorder.py`, `live.py`: GPS to stops.
-- `app/report.py` (JSON report, warnings, omit), `app/pdf.py` (ReportLab PDFs), `app/pdfview.py` (PDF pages as images),
+- `app/report.py` (JSON report format 1, warnings, omit; `build_day(keep_src=True)` feeds format 2),
+  `app/message_v2.py` (format 2: envelope, Customer/Job/Stop/Line/Photo, all three messages), `app/address.py` (US
+  address split/join), `app/version.py`, `app/pdf.py` (ReportLab PDFs), `app/pdfview.py` (PDF pages as images),
   `app/mailer.py` (Gmail, report email, signature), `app/invoice_request.py`, `app/late.py`, `app/calendar_out.py`
   (invites), `app/calendar_feed.py` (Outlook ICS in), `app/summary.py` (Home page, shared ETA `summary.eta`).
 - `app/parts.py` (catalog, stock, purchases, Bought here, CSV and QuickBooks import), `kits.py`, `vendors.py`,
@@ -95,7 +99,11 @@ A. User status: deployed through the router fix; test invite works; Anthropic ke
    Testing next: calendar invites over a work day, Outlook appointments, the phone app, Bought here, running late, Send
    for invoice (checklist 7, 7b, 7c). User to do: parts clean-up, HubSpot company IDs CSV, QuickBooks parts import.
 
-B. Built 2026-11-23: Bought here, delete parts permanently, running late, Send for invoice (Time & Material only;
+B. Built 2026-11-24: message format 2 (agent's spec; setting, test send, samples in docs/sample-report/v2/), stable
+   uids on lines/follow-ups/photos/purchases, address parts + QuickBooks customer ID + billing email on places,
+   Waiting split into parts/customer, billing email on Send for invoice. Next: user tests (checklist 7d), agent checks
+   a real format 2 day, user switches the setting; remove format 1 a week later when the user says so.
+   Built 2026-11-23: Bought here, delete parts permanently, running late, Send for invoice (Time & Material only;
    labor documented as minutes, the agent prices it and handles invoice, payment and trip charges), clean-up
    (dead code, README, this file split, weekly trim).
 

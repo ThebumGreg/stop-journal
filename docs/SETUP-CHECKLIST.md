@@ -86,6 +86,19 @@ Work down the list. Items marked **Tell Claude** are results to report back. Tic
 - [ ] Give your agent `invoice-request-sample.json` / `.pdf` / `invoice-request-body.txt` and the README section
       "Invoice requests" first, and have it describe the invoice it would create before it creates real ones.
 
+## 7d. Message format 2 (built 2026-11-24)
+- [ ] Places → Edit place for your regular customers: check **Street / Suite / City / State / ZIP** (filled in from the
+      old address line; add the suite), and the optional **QuickBooks customer ID** and **Billing email**.
+- [ ] A job's Finish step now has **Waiting for parts** and **Waiting for customer** (old "Waiting" answers became
+      Waiting for parts: change any that were really waiting on the customer).
+- [ ] Send for invoice: the preview has **Customer billing email** (optional, remembered for that place).
+- [ ] Give your agent `docs/sample-report/v2/` and the README section "Message format 2".
+- [ ] Reports → Email report with **Send as format 2 (test)** ticked for one real day; the agent checks it.
+- [ ] When the agent is happy: Settings → Email → **Message format: 2**. After a week with no format 1 emails, tell
+      Claude to remove format 1.
+- [ ] Office: put the HubSpot ticket **link** on the calendar appointment's `Ticket:` line (short numbers like 1043
+      can't be looked up in HubSpot).
+
 ## 8. Work AI agent
 - [ ] Give it `docs/sample-report/` (the .eml, the JSON and README.md). Ask it to describe what it would write to HubSpot,
       without writing anything.

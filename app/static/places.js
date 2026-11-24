@@ -177,7 +177,19 @@ function row(p, inGroup) {
   head.onclick = () => { if (open.has(p.id)) open.delete(p.id); else open.add(p.id); toggle(); };
 
   const name = el('input'); name.value = p.name;
-  const addr = el('input'); addr.value = p.address;
+  // the address in parts: the agent bills and matches on the suite (the one-line address is made from these)
+  const ap = p.address_parts || {};
+  const af = {};
+  [['line1', 'Street'], ['line2', 'Suite / unit'], ['city', 'City'], ['state', 'State'], ['zip', 'ZIP']].forEach(([k]) => {
+    af[k] = el('input'); af[k].value = ap[k] || '';
+  });
+  af.line2.placeholder = 'e.g. Suite 100'; af.state.maxLength = 20; af.state.autocapitalize = 'characters';
+  af.zip.inputMode = 'numeric'; af.zip.maxLength = 10;
+  const addrGrid = el('div', 'grid addr');
+  addrGrid.append(lab('Street', af.line1), lab('Suite / unit', af.line2), lab('City', af.city), lab('State', af.state),
+                  lab('ZIP', af.zip));
+  const addrBox = el('div');
+  addrBox.append(addrGrid, el('div', 'hint', 'Reports send the address in these parts. Add the suite: invoices are matched on it.'));
   const kind = el('select');
   Object.entries(KIND).forEach(([v, t]) => { const o = el('option', null, t); o.value = v; kind.append(o); });
   kind.value = p.kind;
@@ -190,6 +202,11 @@ function row(p, inGroup) {
   const hs = el('input'); hs.value = p.hubspot_company_id || ''; hs.inputMode = 'numeric'; hs.placeholder = 'e.g. 18234567890';
   const hsWrap = lab('HubSpot company ID', hs);
   hsWrap.append(el('div', 'hint', 'The digits in the company’s HubSpot URL. Reports carry it so the right company is updated.'));
+  const qbo = el('input'); qbo.value = p.qbo_customer_id || ''; qbo.placeholder = 'optional';
+  const bill = el('input'); bill.type = 'email'; bill.value = p.billing_email || ''; bill.placeholder = 'optional';
+  bill.autocapitalize = 'off';
+  hsWrap.append(lab('QuickBooks customer ID', qbo), lab('Billing email', bill),
+                el('div', 'hint', 'Billing email: filled in for you on Send for invoice. QuickBooks keeps the customer’s own; this is only what was given on site.'));
   hsWrap.hidden = kind.value !== 'client';
   // link to another place (a customer's old and new address, or two names for one customer)
   const linkSel = el('select');
@@ -211,8 +228,10 @@ function row(p, inGroup) {
   save.onclick = async () => {
     err.textContent = '';
     try {
-      const body = {name: name.value, address: addr.value, kind: kind.value, default_status: status.value,
-                    radius_m: radius.value, old_address: oldBox.checked, hubspot_company_id: hs.value};
+      const body = {name: name.value, kind: kind.value, default_status: status.value,
+                    radius_m: radius.value, old_address: oldBox.checked, hubspot_company_id: hs.value,
+                    qbo_customer_id: qbo.value, billing_email: bill.value};
+      Object.entries(af).forEach(([k, i]) => { body[k] = i.value; });
       if (linkSel.value !== (mates.length ? String(mates[0].id) : '')) body.link_to = linkSel.value || null;
       await api('PATCH', '/api/places/' + p.id, body);
       await load();
@@ -226,7 +245,7 @@ function row(p, inGroup) {
   };
   const acts = el('div', 'row'); acts.append(save, del);
   const form = el('details', 'editplace');
-  form.append(el('summary', null, 'Edit place'), grid, lab('Address', addr), hsWrap, linkBox, acts, err);
+  form.append(el('summary', null, 'Edit place'), grid, el('div', 'sub', 'Address'), addrBox, hsWrap, linkBox, acts, err);
   edit.append(hist, form);
   wrap.append(head, edit);
   if (!edit.hidden) loadHistory(hist, p);

@@ -739,3 +739,36 @@ stop departed 12:21, and listed billable parts with no cost.
 - Clean-up the same day: removed the unused part-name datalists (replaced by the live search) and the old
   `POST /api/known-sites` route (tests use `POST /api/places`); dev venv re-synced to `requirements.txt`; README brought up to
   date; CLAUDE.md reduced to rules, code map and plan, with this file holding the feature history.
+
+## Message format 2 (built 2026-11-24, the agent's spec)
+- Why: the three emails (daily summary, invoice request, late notice) each had their own shapes for the same things.
+  The agent asked for one envelope and shared objects (Customer, Job, Stop, Line, Follow-up, Photo); its spec plus our
+  answers are summarised in `docs/sample-report/README.md` "Message format 2". The spec itself is the user's (it holds
+  real names): not in the repo.
+- `app/message_v2.py` builds every format 2 object from `report.build_day(payload, cfg, keep_src=True)`: build_day keeps
+  private `_` keys (timestamps, the merged source stop with its line/photo/follow-up uids, the gaps of a same-site
+  lunch) and strips them unless `keep_src`, so format 1 output is unchanged and both formats share one calculation.
+- Setting `message_format` (Settings → Email, `MESSAGE_FORMAT`, default "1"). Email report has a one-off "Send as
+  format 2 (test)" (body `format: "2"`); `/api/export.json?format=2` downloads it (numbered as the next send).
+- Revisions: `message_v2.previous(conn, table, where)` counts successful sends (email_log by dates, invoice_requests by
+  stop_uid, late_notices by event uid) and returns the last `message_id` for `supersedes`. Every send now stores a
+  `message_id` (also format 1, so a later format 2 send can point at it).
+- Stable uids: `stop_parts`, `follow_ups`, `photos`, `purchases` got `uid` columns with the same insert trigger as
+  `stops.uid` (`db.UID_TABLES`). Undo re-inserts whole rows (uid included); merge and re-detect move rows, so uids stay.
+- Address parts: `known_sites.addr_line1/2, addr_city, addr_state, addr_zip` (+ `qbo_customer_id`, `billing_email`).
+  `app/address.py` splits a one-line US address (suite/unit/# to line 2, state names to codes, ", USA" dropped) and
+  joins parts back. Typing parts on Places rebuilds the one-line address; a changed one-line address re-splits. Places
+  saved before were split once on startup (`known.fill_address_parts`).
+- Visit result "Waiting (parts or customer)" split into `waiting_parts` / `waiting_customer` (user decision); old
+  "waiting" rows are migrated on connect and `service.visit_code` maps the old value (old Undo snapshots).
+- Ticket rule (agent): a HubSpot ticket ID is all digits and 9+ long; anything else is `tech_typed_reference`.
+- Invoice request: still allowed on site (user decision; the agent compares with the daily summary). In format 2 the
+  Stop's departure/minutes run to `billed_through` when still on site. Optional billing email on the preview
+  (`invoice_to_email`), saved on the place when sent (user agreed; QuickBooks keeps the real one, to be reviewed when
+  invoices are sent automatically).
+- Our purchase cost (`lines[].unit_cost`) is sent for documentation only (user decision: margin is worked out in
+  QuickBooks/HubSpot later); "Leave out: costs" blanks every money field on lines.
+- Photos say `attached` (true only when the picture is attached to that email).
+- Changeover: samples in `docs/sample-report/v2/`; the user sends one real test day; then the setting goes to 2; format 1
+  is removed after a week without format 1 emails (ask the user first).
+

@@ -45,7 +45,7 @@ INSTRUCTIONS = [
     "Category is one of seven: Time & Material (billed hourly), Quoted project and White-label migration (hours "
     "tracked against the project), and Internal operations, Administrative, Customer outreach and Training "
     "(non-billable). HubSpot ticket # is the service ticket number; QuickBooks estimate # is the estimate the job was "
-    "quoted on (quoted projects and migrations). Visit result says whether the job is complete, needs a return visit, or is waiting on parts or the "
+    "quoted on (quoted projects and migrations). Visit result says whether the job is complete, needs a return visit, or is waiting on parts or on the "
     "customer. Hours by category adds up on-site time only. A dash means nothing was entered.",
     "Follow-ups: what is still open, who owns it and when it is due. Create a task for each one.",
     "Drive from previous stop: the mileage leg that ends at this stop, from Home, Client, Office or Vendor (the kind of "

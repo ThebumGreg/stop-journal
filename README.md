@@ -136,6 +136,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `ALERT_LATE`, `ALERT_LATE_MIN` | on, 10 | "running late" alert when the drive time says you will reach an on-site appointment this many minutes after it starts |
 | `MAIL_TO`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `SMTP_HOST`, `SMTP_PORT` | | Gmail for reports, invites, late notices and invoice requests (see Email reports) |
 | `LATE_NOTICE_TO` | blank (= `MAIL_TO`) | where **Tell the customer** sends late notices (your agent's address) |
+| `MESSAGE_FORMAT` | `1` | JSON layout of every email to the agent: `1`, or `2` (one envelope and shared objects; switch after the agent checked a test day) |
 | `REPORT_SIGNING_KEY` | | optional shared phrase; emails then carry an HMAC signature of the attached JSON |
 | `CALENDAR_INVITES`, `CALENDAR_INVITE_MIN` | off, 10 | put today's stops on your Outlook calendar as invites |
 | `CALENDAR_URL`, `CALENDAR_KEYWORD` | , onsite | published Outlook (ICS) link and the word that marks on-site appointments |
@@ -152,7 +153,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 ## Email reports (Gmail)
 
 For a work AI agent that updates HubSpot from your mailbox: Reports page → **Email report** sends the JSON (every field,
-schema version 1) and the PDF, optionally the receipts and photos, to your work address. Subject
+schema version 1, or 2 per Settings → Email → Message format) and the PDF, optionally the receipts and photos, to your work address. Subject
 `JobHub Daily Summary 2026-11-23`; sending the same dates again adds `(update 2)` and the body says it replaces the
 earlier one. The body starts with `Dates:`, `Version:`, `Confirmed stops:` and `Attached:` lines and a short stop list.
 
@@ -181,6 +182,11 @@ and a guide for the agent are in `docs/sample-report/` (regenerate with `python 
   `invoice_request` {version, sent_at, billed_through, time_on_site_minutes}: the agent must not invoice them again.
 - Two more emails go to the agent, only when you tap: `JobHub Invoice Request <date> – <customer>` and
   `JobHub Late Notice <ticket>`. Their formats and samples are in `docs/sample-report/README.md`.
+- **Message format 2** (Settings → Email → Message format, `MESSAGE_FORMAT`): the agent's newer layout for all three
+  emails: one envelope (`message_id`, `revision`, `supersedes`), the same Stop object in the daily summary and the
+  invoice request, ISO times with seconds, money as text, UUIDs on every line, follow-up and photo, the address in parts
+  (Places → Edit place: street, suite, city, state, ZIP). Samples in `docs/sample-report/v2/`. Send one test day first
+  (Email report → "Send as format 2 (test)").
 
 ## Backup and restore
 

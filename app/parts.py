@@ -450,13 +450,14 @@ def remove_purchase(conn, puid):
 
 def bought_for_day(conn, date):
     """{stop_id: [purchase lines]} for the day's stops."""
-    rows = conn.execute("SELECT pu.*, p.name, p.sku, p.unit, p.kind, p.pack_size, p.pack_unit FROM purchases pu "
+    rows = conn.execute("SELECT pu.*, p.name, p.sku, p.unit, p.kind, p.pack_size, p.pack_unit, p.qbo_item FROM purchases pu "
                         "JOIN parts p ON p.id=pu.part_id JOIN stops s ON s.id=pu.stop_id WHERE s.date=? "
                         "ORDER BY pu.id", (date,)).fetchall()
     out = {}
     for r in rows:
         out.setdefault(r["stop_id"], []).append({
-            "id": r["id"], "part_id": r["part_id"], "name": r["name"], "sku": r["sku"] or "", "unit": r["unit"] or "ea",
+            "id": r["id"], "uid": r["uid"] or "", "qbo_item": r["qbo_item"] or "",
+            "part_id": r["part_id"], "name": r["name"], "sku": r["sku"] or "", "unit": r["unit"] or "ea",
             "kind": r["kind"] or "part", "qty": r["qty"], "paid": r["total"],
             "each": round(r["total"] / r["qty"], 4) if r["total"] is not None and r["qty"] else None,
             "pack_size": r["pack_size"], "pack_unit": r["pack_unit"] or "", "note": r["note"] or ""})
@@ -653,13 +654,16 @@ def template_csv():
 # ---- per-stop usage ----------------------------------------------------
 def stop_part_dict(r):
     cost = r["unit_cost"]
-    return {"id": r["id"], "stop_id": r["stop_id"], "part_id": r["part_id"], "name": r["name"],
+    keys = r.keys()
+    return {"id": r["id"], "uid": (r["uid"] if "uid" in keys else None) or "", "stop_id": r["stop_id"],
+            "part_id": r["part_id"], "name": r["name"],
             "sku": r["sku"] or "", "unit": r["unit"] or "ea", "qty": r["qty"], "unit_cost": cost,
             "line_cost": None if cost is None else round(cost * r["qty"], 2),
             "billable": bool(r["billable"]), "notes": r["notes"] or "",
             "kind": r["kind"] or "part", "consumable": (r["kind"] or "part") == "consumable",
             "expense": (r["kind"] or "part") == "expense",
-            "qbo_item": (r["qbo_item"] if "qbo_item" in r.keys() else None) or ""}
+            "qbo_item": (r["qbo_item"] if "qbo_item" in keys else None) or "",
+            "our_cost": r["our_cost"] if "our_cost" in keys else None}
 
 
 def _qty(v):
@@ -744,7 +748,7 @@ def release_stops(conn, stop_ids):
 
 
 def for_day(conn, date):
-    rows = conn.execute("SELECT sp.*, p.qbo_item AS qbo_item FROM stop_parts sp JOIN stops s ON s.id=sp.stop_id "
+    rows = conn.execute("SELECT sp.*, p.qbo_item AS qbo_item, p.last_cost AS our_cost FROM stop_parts sp JOIN stops s ON s.id=sp.stop_id "
                         "LEFT JOIN parts p ON p.id=sp.part_id WHERE s.date=? ORDER BY sp.id", (date,)).fetchall()
     out = {}
     for r in rows:

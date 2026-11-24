@@ -43,6 +43,7 @@ class Config:
     alert_late: str = "on"         # Pushover when the ETA says you will be late for an on-site appointment
     alert_late_min: int = 10
     late_notice_to: str = ""       # where "Tell the customer" emails the late notice (blank = MAIL_TO)
+    message_format: str = "1"      # JSON layout of the emails to the agent: "1" or "2" (docs/sample-report/README.md)
     calendar_url: str = ""       # published ICS link (secret); "" = off
     calendar_keyword: str = "onsite"
     receipt_reader: str = "off"       # off | google_vision (an AI reader can be added later)
@@ -111,6 +112,7 @@ class Config:
             alert_late=e("ALERT_LATE", "on"),
             alert_late_min=_int("ALERT_LATE_MIN", 10),
             late_notice_to=e("LATE_NOTICE_TO", "").strip(),
+            message_format=e("MESSAGE_FORMAT", "1").strip() if e("MESSAGE_FORMAT", "1").strip() in ("1", "2") else "1",
             calendar_url=e("CALENDAR_URL", "").strip(),
             calendar_keyword=e("CALENDAR_KEYWORD", "onsite").strip() or "onsite",
             receipt_reader=e("RECEIPT_READER", "off").strip() or "off",

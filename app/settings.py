@@ -154,6 +154,10 @@ SPEC = [
              help="A long random phrase that only JobHub and your work AI agent know (give the agent the same phrase). "
                   "Each emailed report then has a “Signature:” line: HMAC-SHA256 of the attached JSON file with this key, "
                   "so the agent can reject a report that JobHub did not make. Write-only."),
+        dict(key="message_format", label="Message format", kind="choice", choices=["1", "2"],
+             help="The JSON layout of every email to the agent (daily summary, Send for invoice, late notice). "
+                  "2 is the new shared format the agent asked for (docs/sample-report/README.md). Stay on 1 until the "
+                  "agent has checked a real day sent as 2 (Reports → Email report → “Send as format 2 (test)”)."),
         dict(key="late_notice_to", label="Send late notices to (optional)", kind="email",
              help="Where “Tell the customer” (running late) sends the JobHub Late Notice: your work AI agent's "
                   "address. Blank = the “Send reports to” address."),
