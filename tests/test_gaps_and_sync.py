@@ -1,5 +1,4 @@
 """Data gaps, still-on-site stops, End Day following, auto-sync, vendor marking."""
-import time
 from dataclasses import replace
 from unittest import mock
 
@@ -39,7 +38,7 @@ def test_typed_times_are_trusted_over_the_estimate(tmp_path):
 
 
 def test_editing_arrival_keeps_departure_growing(tmp_path):
-    from app import db, service
+    from app import db
     c = day_with_gap(tmp_path)
     st = c.get(f"/api/day/{D}").json["stops"]
     r = c.patch(f"/api/stops/{st[1]['id']}", json={"arrive": "10:00"}).json["stops"][1]

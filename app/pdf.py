@@ -408,7 +408,6 @@ def render(report, load_photo=None):
     story = [Paragraph("JobHub Daily Summary", st["title"]), Spacer(1, 6)]
     period = (f"{report['date_from']} to {report['date_to']}" if multi else
               datetime.fromisoformat(report["date_from"]).strftime("%A, %Y-%m-%d"))
-    gen = datetime.fromisoformat(report["generated_at"]).strftime("%Y-%m-%d %H:%M")
     head_rows = [("Period" if multi else "Date", period)]
     tech = report.get("technician") or {}
     if tech.get("name") or tech.get("email"):

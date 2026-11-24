@@ -64,7 +64,7 @@ def test_uid_in_all_report_lists_and_report_key(tmp_path):
 
 
 def test_existing_rows_get_a_uid_on_connect(tmp_path):
-    c = make(tmp_path)
+    make(tmp_path)
     conn = db.connect(str(tmp_path))
     conn.execute("DROP INDEX idx_stops_uid")
     conn.execute("UPDATE stops SET uid=NULL")

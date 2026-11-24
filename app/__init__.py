@@ -322,8 +322,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         def go(conn, cfg):
             load = lambda pid: photos.get(conn, cfg.data_dir, pid)
             try:
-                r = invoice_request.send(conn, cfg, sid, {k: bool(b.get(k)) for k in ("pdf", "photos")},
-                                         lambda req, pics: pdf.render_invoice_request(req, pics, load), load)
+                invoice_request.send(conn, cfg, sid, {k: bool(b.get(k)) for k in ("pdf", "photos")},
+                                     lambda req, pics: pdf.render_invoice_request(req, pics, load), load)
             except mailer.MailError as e:
                 raise service.EditError(str(e))
             return payload(conn, cfg, conn.execute("SELECT date FROM stops WHERE id=?", (sid,)).fetchone()["date"])
@@ -1325,25 +1325,6 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                 b["address"] = reverse_address(s["lat"], s["lon"])
             return service.save_place(conn, cfg, sid, b)
         return mutate(go)
-
-    @app.post("/api/known-sites")
-    def teach():
-        """Remember a confirmed business (called when a stop is confirmed)."""
-        b = request.get_json(silent=True) or {}
-        try:
-            name = str(b["name"]).strip()
-            lat, lon = float(b["lat"]), float(b["lon"])
-        except (KeyError, ValueError, TypeError):
-            return jsonify(error="name, lat, lon are required"), 400
-        if not name:
-            return jsonify(error="name is required"), 400
-        conn = db.connect(base.data_dir)
-        try:
-            sid = known.learn(conn, name, str(b.get("address", "")), lat, lon,
-                              str(b.get("category", "")))
-        finally:
-            conn.close()
-        return jsonify(id=sid)
 
     # ---- settings page ------------------------------------------------
     def settings_context(**extra):

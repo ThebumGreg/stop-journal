@@ -57,7 +57,7 @@ def test_osm_outage_falls_back_to_google_and_reports_it(tmp_path):
 def test_known_site_nearby_skips_google(tmp_path):
     osm, g = Fake(), Fake([biz("G", src="google")])
     c = client(tmp_path, osm, g)
-    c.post("/api/known-sites", json={"name": "My Client", "lat": LAT, "lon": LON})
+    c.post("/api/places", json={"name": "My Client", "lat": LAT, "lon": LON})
     r = q(c)
     assert g.calls == 0 and r["candidates"][0]["name"] == "My Client"
 

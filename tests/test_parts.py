@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from app import create_app, db, parts, sample
+from app import create_app, db, sample
 from tests.test_detect import CFG
 
 D = "2026-11-18"

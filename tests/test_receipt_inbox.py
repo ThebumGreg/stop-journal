@@ -1,7 +1,5 @@
 """Truck → Receipts: past gas and vendor stops created from receipt photos, each item handled its own way."""
 import io
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import pytest
 from PIL import Image

@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from app import create_app, db, sample
+from app import create_app, sample
 from tests.test_detect import CFG
 from tests.test_places import FakeSession  # noqa: F401  (shared fixtures live there)
 

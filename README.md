@@ -32,7 +32,17 @@ Single user. Your location data stays on your own server.
   report, filed as `photos/YYYY/MM/DD/stop-1-acme-receipt-1.jpg` (the PDF prints each picture's file name).
   From the Home Screen app the files open the share sheet (Save to Files, Mail).
 - **Home page**: where you are, the next on-site appointment with drive time ("leave by", or an ETA while driving), and
-  what is still unfinished today. The day view is under **Day**.
+  what is still unfinished today. The day view is under **Day**. **Go to a place** opens Apple or Google Maps to a saved
+  place and fills in the stop when you get there.
+- **Running late** (optional, Pushover): when the drive time says you will be late for an on-site appointment you get an
+  alert (no names in it); the Home page then offers **Tell the customer**, which emails your work AI agent a late notice.
+  Only on that tap.
+- **Send for invoice**: a finished Time & Material stop can be emailed to your work AI agent right away (time on site,
+  billable parts and expenses, after a preview) so it can invoice while you are still there. Only on that tap.
+- **Vendor stops record what you bought** ("Bought here"): it goes into truck stock and the purchase log, never billed.
+  **Truck → Receipts** turns photos of old gas and store receipts into stops (for days with no GPS).
+- Parts that were never used on a stop can be **deleted permanently**; used ones are removed from the catalog and keep
+  their history.
 - **AI notes** (optional, Anthropic API key in Settings → AI): ✨ Polish notes fixes spelling and grammar in Work performed
   and shows the result for you to accept; only that text is sent.
 - **Receipt reading** (optional: Google Cloud Vision, or Claude for store, date, tax and line items): a receipt photo suggests
@@ -45,7 +55,7 @@ Single user. Your location data stays on your own server.
 - **Alerts** to your phone through Pushover (for example: no location data during work hours, or you drove away from a stop
   you had not finished; tapping that one opens the stop).
 - A **live status** box: where the phone is now and how long it has been there.
-- Sync, Confirm all known and Undo are under **Export & tools**. Once the day is ended, no more stops are added to it.
+- Sync, Confirm all known and Undo are on the **Reports** page. Once the day is ended, no more stops are added to it.
 - Tag a stop **Lunch** (left out, by time only) or **Traffic** (a slow-down: its minutes count as drive time). Export is blocked until no stop is left in Draft.
 - **Start day / End day** buttons (either can be used alone; any stop can also be made the start or end, and **End at home** adds a basic Home stop), **one-tap confirm** for saved places (and Confirm all known),
   "usual parts" per business, and **Undo** for delete, merge, split and re-detect.
@@ -123,6 +133,16 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `APP_URL` | | address that notification taps open, e.g. `http://192.168.x.x:8000` |
 | `ALERT_NO_DATA`, `ALERT_NO_DATA_MIN`, `WORK_DAYS`, `WORK_START`, `WORK_END`, `ALERT_REPEAT_MIN` | on, 60, Mon-Fri, 07:00, 17:00, 0 | the no-data alert (tapping Start/End day overrides the work hours for that day) |
 | `ALERT_DRAFTS`, `ALERT_LOW_STOCK`, `ALERT_LEFT_STOP` | on, on, on | end-of-day "stops still in Draft" reminder, low truck stock alert, "you left a stop that isn't finished" (generic text only) |
+| `ALERT_LATE`, `ALERT_LATE_MIN` | on, 10 | "running late" alert when the drive time says you will reach an on-site appointment this many minutes after it starts |
+| `MAIL_TO`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `SMTP_HOST`, `SMTP_PORT` | | Gmail for reports, invites, late notices and invoice requests (see Email reports) |
+| `LATE_NOTICE_TO` | blank (= `MAIL_TO`) | where **Tell the customer** sends late notices (your agent's address) |
+| `REPORT_SIGNING_KEY` | | optional shared phrase; emails then carry an HMAC signature of the attached JSON |
+| `CALENDAR_INVITES`, `CALENDAR_INVITE_MIN` | off, 10 | put today's stops on your Outlook calendar as invites |
+| `CALENDAR_URL`, `CALENDAR_KEYWORD` | , onsite | published Outlook (ICS) link and the word that marks on-site appointments |
+| `TECH_NAME`, `TECH_EMAIL`, `FOLLOWUP_OWNERS`, `LUNCH_PAID` | , , , on | technician on reports, follow-up owners (`Name = email`, `|`-separated), whether lunch is paid |
+| `ANTHROPIC_API_KEY`, `AI_NOTES`, `RECEIPT_READER` | , on, off | Claude for Polish notes and reading receipts (`claude`, or `google_vision`) |
+| `QBO_IMPORT_SERVICE_ITEMS_WITH_SKU` | on | QuickBooks parts import: Service items with a SKU count as parts |
+| `LOG_LEVEL` | info | `debug` adds page steps to the log (Settings → General → Log) |
 | `AUTO_SYNC_MIN` | `2` | while today's day page is open, pick up new points and stops every this many minutes (0 = off); also a Settings value |
 | `LANGUAGETOOL_URL` | blank (off) | your own LanguageTool server, e.g. `http://192.168.1.10:8010`; adds a **Check grammar** button to the notes sheet. Only the note text is sent, to that address. Also a Settings value |
 | `ROUTING_URL` | public OSRM server | road distance used only to document miles from where the day ended to Home; coordinates are rounded to ~100 m; blank = off (estimate) |
@@ -157,6 +177,10 @@ and a guide for the agent are in `docs/sample-report/` (regenerate with `python 
 - `summary.paid_minutes` = on-site + drive + lunch (when `lunch_paid`; Settings → General → Pay rules). `drive_minutes`
   includes `traffic_minutes` (time at fuel stops and short breaks: `fuel_stop_minutes`, `short_break_minutes`, plus traffic).
   The `timesheet` rows marked paid add up to `paid_minutes`.
+- Vendor stops list `bought_here` (bought for truck stock, never billed). Stops already sent for invoice carry
+  `invoice_request` {version, sent_at, billed_through, time_on_site_minutes}: the agent must not invoice them again.
+- Two more emails go to the agent, only when you tap: `JobHub Invoice Request <date> – <customer>` and
+  `JobHub Late Notice <ticket>`. Their formats and samples are in `docs/sample-report/README.md`.
 
 ## Backup and restore
 
@@ -174,7 +198,10 @@ do not contain them, so back up the whole `/data` folder (at least `backups/` an
 ## Logs
 
 JobHub writes one line per request (path only), errors with a short code (the page shows the same code), and events
-such as syncs, emails, alerts, invites and backups. Coordinates are never written. Settings → General → Log: detail
+such as syncs, emails, alerts, invites and backups. Coordinates are never written. Lines starting with `sent` are the
+server's delivery log (path only, never the query string): a request with no `sent` line never reached the phone.
+Once a week old working data is trimmed (calendar-invite log, map and route caches, old one-off alert markers, old
+trips); stops, parts, purchases, photos and email records are never trimmed. Settings → General → Log: detail
 (info / debug), **View recent log** and **Download log**.
 
 On Unraid: Docker tab → JobHub icon → **Logs**, or `docker logs --tail 200 JobHub` (`docker logs -f JobHub` to follow).
@@ -188,11 +215,15 @@ Settings → Docker (Docker log rotation) so the container log cannot fill the d
 - The only outbound calls are place lookups (coordinates and search text go to the provider you
   choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, reading your published calendar (only if you set the link), Google Vision for receipts and Claude for Polish notes (only if
   turned on; receipt photos and the note text respectively), map tiles, and Pushover notifications (whose text never contains locations).
+  With the running-late alert on, JobHub also looks up the drive time to your next appointment every few minutes during
+  the work day (rounded coordinates to the routing server; the appointment's address to OpenStreetMap search, cached).
 - **Email report** (Settings → Email) sends the report, including customer names, addresses, notes and (unless you
   untick "GPS coordinates") coordinates, to the address you set, through your Gmail account. It is sent only when you
-  tap Email report on the Reports page.
-- Request URLs contain coordinates, so the server keeps its access log off. Nothing is logged to
-  stdout that includes locations. No analytics or telemetry.
+  tap Email report on the Reports page. Calendar invites (when turned on) send each stop's type, customer, address,
+  ticket and times, never notes or prices. **Send for invoice** and **Tell the customer** email one stop or appointment
+  (customer, address, ticket, work, parts) to your agent, only when you tap them.
+- Request URLs can contain coordinates, so every log line (the app's and the server's delivery log) has the path only,
+  never the query string, and anything that looks like a coordinate is blanked. No analytics or telemetry.
 - If you ever track technicians, that needs written consent and work-hours-only tracking. This app
   is built for a single owner and does not support it.
 
@@ -213,6 +244,10 @@ SAMPLE_DATA=1 DATA_DIR=./data-sample .venv/bin/flask --app "app:create_app" run 
 `SAMPLE_DATA=1` serves synthetic days (2026-11-17 and 2026-11-18) instead of reading the Recorder
 and turns the background alert checker off. CI (`.github/workflows/docker.yml`) runs the tests and
 publishes the image on every push to `main`.
+
+How each feature works (time rules, mileage, reports, parts, alerts, emails) is written up in `docs/FEATURES.md`;
+`CLAUDE.md` has the project rules, a code map and the plan. After changing the report or the emails, run
+`python scripts/make_sample_report.py` to refresh `docs/sample-report/`.
 
 Stack: Python 3.12, Flask, SQLite, Jinja, Leaflet + OpenStreetMap, ReportLab (PDF).
 The bundled DejaVu fonts (`app/fonts`) are under their own free license.

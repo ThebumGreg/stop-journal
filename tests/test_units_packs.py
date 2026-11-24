@@ -1,4 +1,3 @@
-import io
 
 from app import db
 from tests.test_parts import make, part

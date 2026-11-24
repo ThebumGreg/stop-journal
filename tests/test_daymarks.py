@@ -1,9 +1,9 @@
 import time
 from dataclasses import replace
 
-from app import alerts, create_app, db, sample, service
+from app import alerts, db
 from tests.test_detect import CFG
-from tests.test_parts import D, make, part
+from tests.test_parts import D, make
 
 TODAY = time.strftime("%Y-%m-%d")
 

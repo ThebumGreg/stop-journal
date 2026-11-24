@@ -224,24 +224,12 @@ const partLabel = p => [p.name, [p.sku, [p.shelf, p.bin ? 'bin ' + p.bin : ''].f
                                  p.tracked ? p.on_hand + ' ' + p.unit + ' on truck' : '', p.kind === 'consumable' ? 'consumable' : '']
                                 .filter(Boolean).join(' · ')];
 
-// ---- parts catalog --------------------------------------------------------
-const partList = document.createElement('datalist');
-partList.id = 'partlist';
-document.body.append(partList);
-const expList = document.createElement('datalist');
-expList.id = 'explist';
-document.body.append(expList);
+// ---- parts catalog (for the live part search) ------------------------------
 async function loadParts() {
   try {
     api('GET', '/api/kits').then(d => { S.kits = d.kits; }, () => {});
     S.parts = (await api('GET', '/api/parts')).parts;
-    partList.replaceChildren(); expList.replaceChildren();
-    S.parts.forEach(p => {
-      const o = document.createElement('option');
-      o.value = p.name; if (p.sku) o.label = p.sku;
-      (p.kind === 'expense' ? expList : partList).append(o);
-    });
-  } catch (e) { /* autocomplete is optional */ }
+  } catch (e) { /* the search is optional: typing a name and Add still works */ }
 }
 
 function partsBlock(s, err) {

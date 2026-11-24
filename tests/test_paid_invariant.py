@@ -1,7 +1,6 @@
 """Paid time in the summary always equals the paid rows of the timesheet, whatever sits between the jobs."""
 import importlib.util
 import os
-import tempfile
 from dataclasses import replace
 
 import pytest

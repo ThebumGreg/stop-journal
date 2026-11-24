@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import icalendar
 
-from app import calendar_feed, calendar_out, db, mailer, settings
+from app import calendar_out, db, settings
 from tests.test_commute import D, make
 from tests.test_email import FakeSMTP, SENT, setup_mail  # noqa: F401  (autouse fixture comes with it)
 from tests.test_email import fake_smtp  # noqa: F401

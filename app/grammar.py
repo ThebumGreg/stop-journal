@@ -48,4 +48,4 @@ def test(url):
         return False, "Could not reach LanguageTool at that address (check the IP, port and that the container is running)."
     if not n:
         return False, "Connected, but it found no mistake in a sentence that has one. Is this really LanguageTool?"
-    return True, f"LanguageTool works (it flagged the mistake in the test sentence)."
+    return True, "LanguageTool works (it flagged the mistake in the test sentence)."

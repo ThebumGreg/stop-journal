@@ -1,6 +1,5 @@
 from dataclasses import replace
 
-import pytest
 
 from app import create_app, db, sample
 from tests.test_detect import CFG

@@ -1,4 +1,3 @@
-import pytest
 
 from app import create_app, db
 from app.places import OsmProvider, PlaceCache
@@ -112,7 +111,7 @@ def test_suggest_endpoint(tmp_path):
     cfg = replace(CFG, data_dir=str(tmp_path))
     p, _ = provider(tmp_path, overpass=OVERPASS)
     c = create_app(cfg, client=object(), provider=p).test_client()
-    assert c.post("/api/known-sites", json={
+    assert c.post("/api/places", json={
         "name": "My Client", "lat": LAT, "lon": LON}).status_code == 200
     r = c.get(f"/api/suggest?lat={LAT}&lon={LON}&minutes=30").json
     assert r["candidates"][0]["name"] == "My Client"
@@ -129,7 +128,7 @@ def test_suggest_survives_provider_failure(tmp_path):
 
     cfg = replace(CFG, data_dir=str(tmp_path))
     c = create_app(cfg, client=object(), provider=Boom()).test_client()
-    c.post("/api/known-sites", json={"name": "My Client", "lat": LAT, "lon": LON})
+    c.post("/api/places", json={"name": "My Client", "lat": LAT, "lon": LON})
     r = c.get(f"/api/suggest?lat={LAT}&lon={LON}").json
     assert r["candidates"][0]["name"] == "My Client" and "failed" in r["error"]
 

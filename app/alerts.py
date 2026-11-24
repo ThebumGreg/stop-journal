@@ -214,6 +214,11 @@ def run_once(base, client, now=None, send=notify.send):
             calendar_out.tick(conn, cfg, client, now, marks, in_window)
         except Exception as e:
             log.warning("calendar invites failed: %s", type(e).__name__)
+        from . import housekeeping
+        try:
+            housekeeping.maybe_prune(conn, now)          # weekly trim of old logs and caches
+        except Exception as e:
+            log.warning("weekly trim failed: %s", type(e).__name__)
     finally:
         conn.close()
 

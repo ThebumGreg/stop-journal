@@ -373,8 +373,8 @@ def redetect(conn, cfg, date, kept, run_cfg):
     snapshot_day(conn, date, "Re-detected the day")
     gone = [r["id"] for r in conn.execute("SELECT id FROM stops WHERE date=? AND source!='manual'", (date,))]
     # photos are kept: each goes to the new stop that covers the middle of its old stop's time
-    pics = conn.execute(f"SELECT p.id, (s.arrive_utc + s.depart_utc) / 2 AS mid FROM photos p JOIN stops s ON s.id=p.stop_id "
-                        f"WHERE s.date=? AND s.source!='manual'", (date,)).fetchall()
+    pics = conn.execute("SELECT p.id, (s.arrive_utc + s.depart_utc) / 2 AS mid FROM photos p JOIN stops s ON s.id=p.stop_id "
+                        "WHERE s.date=? AND s.source!='manual'", (date,)).fetchall()
     buys = conn.execute("SELECT pu.id, (s.arrive_utc + s.depart_utc) / 2 AS mid FROM purchases pu JOIN stops s "
                         "ON s.id=pu.stop_id WHERE s.date=? AND s.source!='manual'", (date,)).fetchall()
     # stable IDs carry over the same way: each goes to the new stop covering the middle of its old stop
