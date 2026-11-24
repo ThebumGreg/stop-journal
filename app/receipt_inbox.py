@@ -271,9 +271,10 @@ def apply(conn, cfg, iid, f, ensure_day=None):
                         "billable": act == "job"}))
                 if act == "stock" or p["tracked"]:
                     parts.adjust(conn, p["id"], delta=qty, paid=amount, vendor=store, ts=when,
-                                 note=f"Bought at {store} (receipt {date})")
+                                 note=f"Bought at {store} (receipt {date})", stop_id=sid)
                 else:
-                    parts.record_purchase(conn, p, qty, amount, store, f"Bought at {store} (receipt {date})", ts=when)
+                    parts.record_purchase(conn, p, qty, amount, store, f"Bought at {store} (receipt {date})", ts=when,
+                                          stop_id=sid)
                 if act == "job":
                     parts.add_to_stop(conn, int(ln["job_stop_id"]), {"part_id": p["id"], "qty": qty})
             done["items"].append({"name": name, "action": act, "qty": qty, "amount": amount})

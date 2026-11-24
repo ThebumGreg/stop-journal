@@ -118,6 +118,9 @@ def build(data_dir):
     # Vendor: a purchase as an expense with a note
     ok(c.patch(f"/api/stops/{supply['id']}", json={"stop_type": "vendor", "business_name": "Sample Supply House",
                                                    "notes": "Picked up a 1000 ft box of Cat 6 for the clinic job."}))
+    # Bought here: goes into truck stock (report `bought_here`), never billed at the vendor stop
+    ok(c.post(f"/api/stops/{supply['id']}/bought", json={"name": "Cat 6 cable", "qty": 1000, "paid": 189.00}))
+    ok(c.post(f"/api/stops/{supply['id']}/bought", json={"name": "Keystone jack Cat 6 - white", "qty": 25, "paid": 62.50}))
     ok(c.post(f"/api/stops/{supply['id']}/finish", json={}))
 
     # Lunch

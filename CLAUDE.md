@@ -567,27 +567,21 @@ The work AI agent is the bridge between HubSpot / QuickBooks and JobHub, by emai
 QuickBooks makes the estimate (its number); a HubSpot service ticket holds the job and the estimate data. Match on the
 HubSpot ticket number (the calendar event's `Ticket:` line, then the stop's ticket); keep the QuickBooks estimate number as info.
 
-A. Waiting on the user (setup and testing)
-  1. Rebuild the Docker image (`pypdfium2` added) and test the Home Screen PDF viewer (all pages) and Copy link for Safari.
-  2. Gmail App password in Settings → Email; Send test email; Send test calendar invite (does Outlook ask to accept?).
-  3. Turn on calendar invites and check the stops on the Outlook calendar for a day.
-  4. Have the work agent review `docs/sample-report/` and describe what it would write to HubSpot (no writes yet).
-  5. Outlook ICS link (Settings → Calendar) and the address format for on-site events.
-  6. Anthropic API key (AI notes, AI receipt reader).
-  7. https for JobHub (Tailscale serve or a reverse proxy): needed for Share in the Home Screen app.
-  8. Optional: LanguageTool container.
+A. Status 2026-11-23 evening (user)
+  Done: update deployed; the "site down" cause was the router firewall (UniFi IPS, fixed); test calendar invite lands on
+  the calendar by itself; Anthropic key loaded; the work agent ran 4 real days.
+  Testing 2026-11-24: calendar invites through a work day, the Outlook ICS appointments, the phone app (checklist 7).
+  User to do: parts clean-up (checklist 5b), HubSpot company IDs CSV, QuickBooks parts import. Remote access is VPN for
+  now; https is undecided (blocks Share in the app and the offline shell).
 
-B. Next to build, in order
-  1. (built, testing) Calendar invites: every stop on the Outlook calendar, updated every 5-10 min.
-  2. Sample estimate email for the agent: subject `JobHub Estimate <ticket>`, JSON attachment: ticket, QuickBooks estimate
-     number, customer, quoted hours, quoted parts (name, part #, qty, price).
-  3. Estimates in: JobHub reads the Gmail inbox (IMAP, same App password; only that subject, only allowed senders), stored per ticket.
-  4. Stop sheet: Estimate box (quoted hours and parts, "on site 4 h 40 of 6 h quoted") and an **Add quoted parts** button
-     (never automatic). Jobs can take several visits: actual = all stops with the same ticket.
-  5. Report (additive, schema "1"): per job quoted vs actual hours and parts, and the differences; the agent writes them back.
-  6. Late alerts: from the Home page ETA, a Pushover alert when you will be late for an on-site appointment, with "Tell the
-     customer" that emails the agent a structured `JobHub Late Notice` (ticket, appointment, new ETA). Never sent without a tap.
-  7. After https: offline app shell (the app opens with no signal).
+B. Next to build, in order (user-approved 2026-11-23)
+  1. (built) Vendor stops = "Bought here" (see "Bought here" below).
+  2. (built) Delete permanently for parts never used on a stop. (Clearing "Our cost" dropped: not needed.)
+  3. Late alerts: from the Home page ETA logic, run in the alert thread: Pushover (generic text) when the ETA is past an
+     on-site appointment's start; "Tell the customer" emails the work agent a `JobHub Late Notice` (ticket, customer,
+     appointment, new ETA). Never sent without a tap. Needs the agent's address and the lateness threshold.
+  Later (user will review): estimates (sample estimate email, IMAP reading, Estimate box + Add quoted parts, quoted vs
+  actual in the report); offline app shell after https.
 
 C. Suggested, not chosen yet
   - Weekly / monthly summary; yearly mileage log and year-end accountant package; invoice-ready export.
@@ -724,3 +718,21 @@ D. Later / parked
   request never connecting. Signature of a router intrusion-prevention rule blocking the sender after a DELETE. Fix in JobHub: pages
   send DELETE and PUT as POST + `X-Method-Override` (`wireMethod`/`overrideHeader` in day.js, truck.js, places.js, tools.js, home.js);
   a WSGI wrapper in create_app turns POST + X-Method-Override (DELETE/PUT/PATCH) back into that method. Keep it that way.
+
+## Bought here (vendor stops) and deleting parts (2026-11-23)
+- A vendor stop's sheet shows **Bought here** instead of Parts used (`boughtBlock`, day.js): search a part (a pick fills the
+  box; "Count is in sticks of 6" tick for pack items, on by default for sticks), qty, "$ paid" (line total, optional), Add; a
+  new name opens a small form (counted in, type, part #, price you charge). Rows: − qty +, paid, ✕ (confirm). Purchases ADD
+  to truck stock (part becomes tracked and active again), are logged in `purchases` with `stop_id` (migration), vendor = the
+  stop's name and ts = the stop's arrival (`parts.buy_at_stop`); last_cost follows the newest priced purchase. Never billed.
+  `POST /api/stops/<id>/bought`, `PATCH|DELETE /api/purchases/<id>`. Old part lines on a vendor stop (they took stock OFF)
+  show "Move to Bought here" (`POST /api/stop-parts/<id>/to-bought`). Receipt items on a vendor stop: "+ Add as bought".
+  Truck → Receipts (inbox) stock/job lines link their purchase to the stop too. Purchases move with merge, re-attach on
+  re-detect like photos, stay in stock when the stop is deleted, and Undo puts their stop link back (snapshot `purchases`).
+- Report (schema "1", additive): per stop `bought_here` [{name, part_number, quantity, unit, paid}], `summary.bought_total`,
+  records_to_update `bought_here` strings; omit=costs drops `paid` and `bought_total`. PDF: "Bought here" table (Parts used
+  row hidden on a stop with purchases and no parts), top-section "Bought for truck stock". Agent README explains it.
+- **Delete permanently** (part page, only when never on a stop; `DELETE /api/parts/<id>`, `parts.purge_part`): refused when on a
+  stop line or in a kit; deletes its inventory_log and purchases.
+- `swallowNextClick(rect)` (day.js, truck.js) now eats only a click inside where the pick list was, so a quick tap on Add
+  right after picking is not lost.

@@ -272,6 +272,8 @@ def build_day(payload, cfg):
             "parts_used": used,
             "consumables_used": consumed,
             "expenses": spent,
+            "bought_here": [{"name": b["name"], "part_number": b["sku"], "quantity": b["qty"], "unit": b["unit"],
+                             "paid": b["paid"]} for b in s.get("bought") or []],
             "follow_ups": [{"what": f["text"], "owner": f["owner"],
                             "owner_email": owners.get((f["owner"] or "").strip().lower(), ("", ""))[1],
                             "due": f["due"], "follow_up_id": f.get("id")}
@@ -306,6 +308,7 @@ def build_day(payload, cfg):
                                                                 "billing": o["billing"], "on_site_minutes": 0})
         row["on_site_minutes"] += o["time_on_site_minutes"]
     expenses_total = round(sum(_line_total(e) for o in out_stops for e in o["expenses"]), 2)
+    bought_total = round(sum(b["paid"] or 0 for o in out_stops for b in o["bought_here"]), 2)
     # pictures of confirmed stops and fill-ups only (never of Personal, Lunch or unconfirmed stops)
     pic_from += [(f"Fuel stop{', ' + s['business_name'] if s['business_name'] else ''}, {s['arrive']}",
                   f"fuel-{s['arrive'].replace(':', '')}-{_slug(s['business_name'])}", s.get("photos") or [])
@@ -336,6 +339,7 @@ def build_day(payload, cfg):
                         "lunch_paid": lunch_paid, "miles_approx": round(miles, 1),
                         "stops_confirmed": len(out_stops), "stops_excluded": len(excluded),
                         "hours_by_category": list(by_cat.values()), "expenses_total": expenses_total,
+                        "bought_total": bought_total,
                         "fuel_total": round(sum(f["total"] or 0 for f in fuel), 2)},
             "fuel": fuel,
             "photos": pics,
@@ -371,6 +375,9 @@ def records_to_update(days, technician=None):
                          "expenses": [p["name"] + (f" ({p['notes']})" if p.get("notes") else "")
                                       + (f" ${p['line_cost']:.2f}" if p["line_cost"] is not None else "")
                                       for p in s.get("expenses") or []],
+                         "bought_here": [f"{b['quantity']:g} x {b['name']}" + (f" ({b['part_number']})" if b["part_number"] else "")
+                                         + (f" ${b['paid']:.2f}" if b.get("paid") is not None else "")
+                                         for b in s.get("bought_here") or []],
                          "photo_attachments": [att[i] for i in s.get("photos") or [] if i in att]})
     return rows
 
@@ -505,6 +512,8 @@ def apply_omit(report, omit):
             if "costs" in omit:
                 for p in s["parts_used"] + s["consumables_used"]:
                     p.pop("unit_cost", None); p.pop("line_cost", None)
+                for b in s.get("bought_here") or []:
+                    b.pop("paid", None)
             if "expenses" in omit:
                 s.pop("expenses", None)
             if "materials" in omit:
@@ -515,6 +524,8 @@ def apply_omit(report, omit):
                 s.pop("latitude", None); s.pop("longitude", None)
         if "expenses" in omit:
             sm.pop("expenses_total", None)
+        if "costs" in omit:
+            sm.pop("bought_total", None)
         if "categories" in omit:
             sm.pop("hours_by_category", None)
         if "fuel" in omit:

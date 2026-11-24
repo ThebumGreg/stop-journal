@@ -375,6 +375,8 @@ def redetect(conn, cfg, date, kept, run_cfg):
     # photos are kept: each goes to the new stop that covers the middle of its old stop's time
     pics = conn.execute(f"SELECT p.id, (s.arrive_utc + s.depart_utc) / 2 AS mid FROM photos p JOIN stops s ON s.id=p.stop_id "
                         f"WHERE s.date=? AND s.source!='manual'", (date,)).fetchall()
+    buys = conn.execute("SELECT pu.id, (s.arrive_utc + s.depart_utc) / 2 AS mid FROM purchases pu JOIN stops s "
+                        "ON s.id=pu.stop_id WHERE s.date=? AND s.source!='manual'", (date,)).fetchall()
     # stable IDs carry over the same way: each goes to the new stop covering the middle of its old stop
     uids = conn.execute("SELECT uid, (arrive_utc + depart_utc) / 2 AS mid FROM stops WHERE date=? AND source!='manual' "
                         "ORDER BY arrive_utc", (date,)).fetchall()
@@ -389,6 +391,10 @@ def redetect(conn, cfg, date, kept, run_cfg):
                           (date, p["mid"], p["mid"])).fetchone()
         if to:
             conn.execute("UPDATE photos SET stop_id=? WHERE id=?", (to["id"], p["id"]))
+    for p in buys:          # purchases too (they stay in truck stock either way)
+        to = conn.execute("SELECT id FROM stops WHERE date=? AND arrive_utc<=? AND depart_utc>=? ORDER BY arrive_utc LIMIT 1",
+                          (date, p["mid"], p["mid"])).fetchone()
+        conn.execute("UPDATE purchases SET stop_id=? WHERE id=?", (to["id"] if to else None, p["id"]))
     taken = set()
     for u in uids:
         to = conn.execute("SELECT id FROM stops WHERE date=? AND source!='manual' AND arrive_utc<=? AND depart_utc>=? "
@@ -565,10 +571,13 @@ def snapshot_day(conn, date, label):
         f"SELECT * FROM follow_ups WHERE stop_id IN ({marks})", ids)] if ids else []
     fl = [dict(r) for r in conn.execute(
         f"SELECT * FROM fuel WHERE stop_id IN ({marks})", ids)] if ids else []
+    buys = [{"id": r["id"], "stop_id": r["stop_id"]} for r in conn.execute(
+        f"SELECT id, stop_id FROM purchases WHERE stop_id IN ({marks})", ids)] if ids else []
     drives = [dict(r) for r in conn.execute("SELECT * FROM drives WHERE date=?", (date,))]
     conn.execute("INSERT INTO undo_log(date,ts,label,payload) VALUES (?,?,?,?)",
                  (date, int(time.time()), label,
-                  json.dumps({"stops": stops, "drives": drives, "stop_parts": sp, "follow_ups": fu, "fuel": fl})))
+                  json.dumps({"stops": stops, "drives": drives, "stop_parts": sp, "follow_ups": fu, "fuel": fl,
+                              "purchases": buys})))
     conn.execute("DELETE FROM undo_log WHERE date=? AND id NOT IN "
                  "(SELECT id FROM undo_log WHERE date=? ORDER BY id DESC LIMIT ?)",
                  (date, date, UNDO_KEEP))
@@ -613,6 +622,8 @@ def undo_last(conn, cfg, date):
         put("follow_ups", rec)
     for rec in snap.get("fuel", []):
         put("fuel", rec)
+    for rec in snap.get("purchases", []):      # purchases stay in stock; only which stop they belong to is put back
+        conn.execute("UPDATE purchases SET stop_id=? WHERE id=?", (rec["stop_id"], rec["id"]))
     conn.execute("DELETE FROM undo_log WHERE id=?", (row["id"],))
     _finish(conn, cfg, date)
     return date
@@ -919,6 +930,7 @@ def merge_stops(conn, cfg, id_a, id_b):
     conn.execute("UPDATE follow_ups SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
     conn.execute("UPDATE OR IGNORE fuel SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
     conn.execute("UPDATE photos SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
+    conn.execute("UPDATE purchases SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
     conn.execute("DELETE FROM fuel WHERE stop_id=?", (b["id"],))
     conn.execute("DELETE FROM stops WHERE id=?", (b["id"],))
     _finish(conn, cfg, a["date"])
@@ -969,6 +981,43 @@ def remove_stop_part(conn, cfg, spid):
     stop_id = parts.remove_from_stop(conn, spid)
     conn.commit()
     return _stop(conn, stop_id)["date"]
+
+
+# ---- bought at a vendor stop -------------------------------------------------
+def add_bought(conn, cfg, stop_id, f):
+    s = _stop(conn, stop_id)
+    parts.buy_at_stop(conn, s, f)
+    conn.execute("UPDATE stops SET edited=1 WHERE id=?", (stop_id,))
+    conn.commit()
+    return s["date"]
+
+
+def _purchase_date(conn, stop_id):
+    if stop_id is None:
+        raise EditError("That purchase is not on a stop.")
+    return _stop(conn, stop_id)["date"]
+
+
+def patch_bought(conn, cfg, puid, f):
+    sid = parts.patch_purchase(conn, puid, f)
+    conn.commit()
+    return _purchase_date(conn, sid)
+
+
+def remove_bought(conn, cfg, puid):
+    sid = parts.remove_purchase(conn, puid)
+    conn.commit()
+    return _purchase_date(conn, sid)
+
+
+def stop_part_to_bought(conn, cfg, spid):
+    r = conn.execute("SELECT stop_id FROM stop_parts WHERE id=?", (spid,)).fetchone()
+    if not r:
+        raise EditError("That part line no longer exists.")
+    s = _stop(conn, r["stop_id"])
+    parts.stop_part_to_bought(conn, spid, s)
+    conn.commit()
+    return s["date"]
 
 
 # ---- follow-ups (what is still open, who owns it, when it is due) --------
@@ -1273,6 +1322,7 @@ def _looks_like_vendor(stop, vendor_names):
 
 def day_payload(conn, cfg, date, include_path=False):
     used = parts.for_day(conn, date)
+    bought = parts.bought_for_day(conn, date)
     fups = followups_for_day(conn, date)
     fuel = fuel_for_day(conn, date)
     pics = photo_store.for_day(conn, date)
@@ -1282,7 +1332,7 @@ def day_payload(conn, cfg, date, include_path=False):
     stops = [{
         "site_kind": site_kind.get(r["known_site_id"]) or "",
         "vendor_hint": site_kind.get(r["known_site_id"]) in (None, "client") and _looks_like_vendor(r, vendor_names),
-        "parts": used.get(r["id"], []), "follow_ups": fups.get(r["id"], []),
+        "parts": used.get(r["id"], []), "bought": bought.get(r["id"], []), "follow_ups": fups.get(r["id"], []),
         "work_category": r["work_category"] or "", "ticket": r["ticket"] or "", "qbo_estimate": r["qbo_estimate"] or "",
         "ticket_action": r["ticket_action"] or "", "from_receipt": bool(r["from_receipt"]),
         # a visit after one that ended "return visit" / "waiting" is most likely the same job

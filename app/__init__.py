@@ -530,6 +530,23 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def stop_part_delete(spid):
         return mutate(service.remove_stop_part, spid)
 
+    # ---- bought at a vendor stop ("Bought here": adds to truck stock) ------------
+    @app.post("/api/stops/<int:sid>/bought")
+    def stop_bought_add(sid):
+        return mutate(service.add_bought, sid, request.get_json(silent=True) or {})
+
+    @app.patch("/api/purchases/<int:puid>")
+    def purchase_patch(puid):
+        return mutate(service.patch_bought, puid, request.get_json(silent=True) or {})
+
+    @app.delete("/api/purchases/<int:puid>")
+    def purchase_delete(puid):
+        return mutate(service.remove_bought, puid)
+
+    @app.post("/api/stop-parts/<int:spid>/to-bought")
+    def stop_part_to_bought(spid):
+        return mutate(service.stop_part_to_bought, spid)
+
     # ---- photos and receipts ----------------------------------------------
     @app.post("/api/stops/<int:sid>/photos")
     def stop_photo_add(sid):
@@ -882,6 +899,14 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         def go(conn):
             parts.update_part(conn, pid, b)
             return parts.part_dict(parts.get_part(conn, pid))
+        return catalog(go)
+
+    @app.delete("/api/parts/<int:pid>")
+    def parts_purge(pid):
+        def go(conn):
+            r = parts.purge_part(conn, pid)
+            logs.get("parts").info("part deleted for good (%d stock changes, %d purchases)", r["stock_changes"], r["purchases"])
+            return r
         return catalog(go)
 
     @app.post("/api/parts/<int:pid>/adjust")

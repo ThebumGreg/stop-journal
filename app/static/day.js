@@ -154,10 +154,14 @@ async function loadCands(s, box, q, pick, google) {
 // Every word typed must appear in the name, part #, shelf or bin. Tap a match to pick it.
 // After a pick on finger-up, the browser still sends a click. The list is gone by then, so the click would land on
 // whatever is underneath (a link, the ✕ of a part) and could navigate away mid-request. Swallow that one click.
-function swallowNextClick() {
-  const stop = e => { e.preventDefault(); e.stopPropagation(); };
-  document.addEventListener('click', stop, {capture: true, once: true});
-  setTimeout(() => document.removeEventListener('click', stop, {capture: true}), 700);
+function swallowNextClick(r) {
+  // the browser's click after a finger-up pick lands where the list was (now hidden): eat that one click only.
+  // A click elsewhere (a quick tap on Add) is left alone.
+  const inside = e => !r || (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom);
+  const stop = e => { if (!inside(e)) return; e.preventDefault(); e.stopPropagation(); off(); };
+  const off = () => document.removeEventListener('click', stop, {capture: true});
+  document.addEventListener('click', stop, {capture: true});
+  setTimeout(off, 700);
 }
 
 function liveSearch(input, items, label, onPick, after) {
@@ -181,7 +185,7 @@ function liveSearch(input, items, label, onPick, after) {
       // iPhone: pick on finger-up (a click can arrive late or not at all with the keyboard open); a drag is a scroll
       let x0 = 0, y0 = 0, done = false;
       const pick = (e, how) => { if (done) return; done = true; if (e) e.preventDefault(); touching = false;
-                                 if (how !== 'click') swallowNextClick();     // the click after finger-up must not land under the list
+                                 if (how !== 'click') swallowNextClick(box.getBoundingClientRect());     // the click after finger-up must not land under the list
                                  box.hidden = true;
                                  jl('debug', 'search pick "' + p.name + '" (#' + p.id + ') by ' + how); onPick(p); };
       b.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; jl('debug', 'search touch on "' + p.name + '"'); });
@@ -356,6 +360,109 @@ function newPartForm(box, name, qty, s, err) {
       dup.append(b);
     });
   }, () => {});
+}
+
+// Vendor stops: "Bought here". What you buy goes INTO truck stock and the purchase log; it is not billed at this stop
+// (put it on a job when you use it). Lines can be changed (qty, paid) or taken back out.
+function boughtBlock(s, err) {
+  const box = el('div');
+  box.append(el('label', null, 'Bought here (adds to truck stock)'));
+  const money = v => v == null || v === '' ? '' : Number(v).toFixed(2);
+  (s.bought || []).forEach(b => {
+    const row = el('div', 'prow brow'); row.style.gridTemplateColumns = '1fr auto 72px 36px';
+    const nm = el('div', 'pn');
+    nm.append(el('div', null, b.name + (b.sku ? ' · ' + b.sku : '') + (b.unit && b.unit !== 'ea' ? ' (' + b.unit + ')' : '')),
+              el('div', 'lt', (b.paid != null ? '$' + b.paid.toFixed(2) + ' paid' + (b.each != null && b.qty !== 1 ? ' ($' + b.each.toFixed(2) + ' each)' : '')
+                                              : 'what you paid: optional') + (b.note && /^\d/.test(b.note) ? ' · ' + b.note : '')));
+    const setQty = v => run(() => api('PATCH', '/api/purchases/' + b.id, {qty: v}), err, () => { loadParts(); });
+    const qs = el('div', 'qtys');
+    const minus = el('button', null, '−'); minus.type = 'button'; minus.title = 'One less';
+    const q = el('input'); q.value = b.qty; q.inputMode = 'decimal'; q.title = 'Quantity bought';    // text: no spinner, room for 1000
+    const plus = el('button', null, '+'); plus.type = 'button'; plus.title = 'One more';
+    minus.onclick = () => { const v = Math.round((Number(b.qty) - 1) * 1000) / 1000; if (v > 0) setQty(v); };
+    plus.onclick = () => setQty(Math.round((Number(b.qty) + 1) * 1000) / 1000);
+    q.onchange = () => setQty(q.value);
+    qs.append(minus, q, plus);
+    const paid = el('input'); paid.inputMode = 'decimal'; paid.placeholder = '$ paid'; paid.value = money(b.paid);
+    paid.title = 'Total paid for this line';
+    paid.onchange = () => run(() => api('PATCH', '/api/purchases/' + b.id, {paid: paid.value.trim().replace(/^\$/, '') || null}), err);
+    const x = el('button', 'danger', '✕'); x.type = 'button'; x.title = 'Remove (takes it back out of truck stock)';
+    x.onclick = () => { if (confirm('Remove ' + b.name + '? ' + b.qty + ' ' + (b.unit || 'ea') + ' come back out of truck stock.'))
+                          run(() => api('DELETE', '/api/purchases/' + b.id), err, () => { loadParts(); }); };
+    row.append(nm, qs, paid, x);
+    box.append(row);
+  });
+  // parts put on this stop before "Bought here" existed took stock OFF the truck: offer to turn them into purchases
+  const old = (s.parts || []).filter(p => !p.expense);
+  if (old.length) {
+    const o = el('div', 'readhint');
+    o.append(el('div', 'n', 'Entered as used here (this took them OFF truck stock):'));
+    old.forEach(p => {
+      const r = el('div', 'prow add one');
+      r.append(el('div', 'pn', p.qty + ' × ' + p.name));
+      const mv = el('button', null, 'Move to Bought here'); mv.type = 'button';
+      mv.onclick = () => run(() => api('POST', '/api/stop-parts/' + p.id + '/to-bought'), err, () => { loadParts(); });
+      const x = el('button', 'danger', '✕'); x.type = 'button'; x.title = 'Remove (returns to truck)';
+      x.onclick = () => run(() => api('DELETE', '/api/stop-parts/' + p.id), err, () => { loadParts(); });
+      r.append(mv, x);
+      o.append(r);
+    });
+    box.append(o);
+  }
+  let chosen = null;
+  const add = el('div', 'prow add'); add.style.gridTemplateColumns = '1fr 70px 80px auto';
+  const name = el('input'); name.placeholder = 'Bought: start typing a name or part #';
+  const qty = el('input'); qty.type = 'number'; qty.step = 'any'; qty.min = '0'; qty.value = '1'; qty.title = 'How many'; qty.inputMode = 'decimal';
+  const paid = el('input'); paid.inputMode = 'decimal'; paid.placeholder = '$ paid'; paid.title = 'Total paid (optional)';
+  const go = el('button', null, 'Add'); go.type = 'button';
+  const packs = el('label', 'bill'); packs.hidden = true;
+  const pk = el('input'); pk.type = 'checkbox';
+  const pkText = el('span');
+  packs.append(pk, pkText);
+  const fresh = el('div', 'newpart'); fresh.hidden = true;
+  const setChosen = p => {
+    chosen = p;
+    packs.hidden = !(p && p.pack_size);
+    if (p && p.pack_size) { pkText.textContent = 'Count is in ' + (p.pack_unit || 'pack') + 's of ' + p.pack_size + ' ' + (p.unit || 'ea');
+                            pk.checked = p.pack_unit === 'stick'; }
+  };
+  const body = () => {
+    const out = {paid: paid.value.trim().replace(/^\$/, '') || null};
+    out[chosen && chosen.pack_size && pk.checked ? 'packs' : 'qty'] = qty.value;
+    return out;
+  };
+  const done = () => { name.value = ''; qty.value = '1'; paid.value = ''; setChosen(null); fresh.hidden = true; loadParts(); };
+  go.onclick = () => {
+    const v = name.value.trim();
+    if (!v) { err.textContent = 'Enter what you bought.'; return; }
+    const m = chosen && chosen.name.toLowerCase() === v.toLowerCase() ? chosen
+            : S.parts.find(p => p.kind !== 'expense' && (p.name.toLowerCase() === v.toLowerCase() || (p.sku && p.sku.toLowerCase() === v.toLowerCase())));
+    if (m) { run(() => api('POST', '/api/stops/' + s.id + '/bought', {part_id: m.id, ...body()}), err, done); return; }
+    // not in the catalog: what is it counted in, and what do you charge (optional)
+    fresh.replaceChildren(el('div', 'hint', '“' + v + '” is not in your parts list yet. It is added there and to truck stock.'));
+    const unit = el('select'); UNITS.forEach(([k, t]) => { const o = el('option', null, t); o.value = k; unit.append(o); });
+    const kind = el('select');
+    [['part', 'Part (billable when used)'], ['consumable', 'Consumable (not billed)']].forEach(([k, t]) => { const o = el('option', null, t); o.value = k; kind.append(o); });
+    const sku = el('input'); sku.placeholder = 'Part # (optional)';
+    const sell = el('input'); sell.inputMode = 'decimal'; sell.placeholder = 'later is fine';
+    const g = el('div', 'two');
+    g.append(labeled('Counted in', unit), labeled('Type', kind), labeled('Part #', sku), labeled('You charge per unit', sell));
+    const ok = el('button', 'primary', 'Add to Bought here'); ok.type = 'button';
+    const no = el('button', null, 'Cancel'); no.type = 'button'; no.onclick = () => { fresh.hidden = true; };
+    ok.onclick = () => run(() => api('POST', '/api/stops/' + s.id + '/bought',
+      {name: v, unit: unit.value, type: kind.value, sku: sku.value.trim() || null,
+       unit_cost: sell.value.trim().replace(/^\$/, '') || null, qty: qty.value, paid: paid.value.trim().replace(/^\$/, '') || null}), err, done);
+    fresh.append(g, btnRow(ok, no));
+    fresh.hidden = false;
+  };
+  name.addEventListener('input', () => { fresh.hidden = true; if (chosen && name.value !== chosen.name) setChosen(null); });
+  add.append(name, qty, paid, go);
+  box.append(add, packs, fresh);
+  liveSearch(name, () => S.parts.filter(p => p.active !== false && p.kind !== 'expense'), partLabel, p => {
+    name.value = p.name; setChosen(p); qty.focus(); qty.select();
+  }, add);
+  box.append(el('div', 'hint', 'Not billed here: when you use them on a job, add them to that stop.'));
+  return box;
 }
 
 // ---- the stop sheet (slides up over the day) ------------------------------------
@@ -1113,7 +1220,7 @@ function refreshSheet() {
   if (s.stop_type === 'gas') {
     sh.fuel.replaceChildren(...fuelBox(s, sh.err));
   } else {
-    sh.parts.replaceChildren(partsBlock(s, sh.err));
+    sh.parts.replaceChildren(s.stop_type === 'vendor' ? boughtBlock(s, sh.err) : partsBlock(s, sh.err));
     sh.exp.replaceChildren(expensesBlock(s, sh.err));
     sh.fu.replaceChildren(followBlock(s, sh.err));
     sh.catHint.replaceChildren();
@@ -1432,7 +1539,8 @@ function receiptHints(s, err) {
       }
       // line items: add any of them to this stop as parts (a part you already have keeps your price; a new one starts
       // at the receipt price, which you can change on the Truck page)
-      const have = new Set((s.parts || []).filter(x => !x.expense).map(x => x.name.toLowerCase()));
+      const vendor = s.stop_type === 'vendor';           // at a vendor the items were bought for the truck
+      const have = new Set((vendor ? (s.bought || []) : (s.parts || []).filter(x => !x.expense)).map(x => x.name.toLowerCase()));
       const items = (r.items || []).filter(it => !have.has(it.description.toLowerCase()));
       if (items.length) {
         const det = el('details');
@@ -1441,10 +1549,17 @@ function receiptHints(s, err) {
           const row = el('div', 'prow add one');
           row.append(el('div', 'pn', (it.qty && it.qty !== 1 ? it.qty + ' × ' : '') + it.description +
                                      (it.unit_price != null ? ' · ' + $(it.unit_price) : '')));
-          const b = el('button', null, '+ Add'); b.type = 'button';
-          b.title = 'Add to this stop\'s parts';
+          const b = el('button', null, vendor ? '+ Add as bought' : '+ Add'); b.type = 'button';
+          b.title = vendor ? 'Add to truck stock (Bought here)' : 'Add to this stop\'s parts';
           b.onclick = () => {
             const m = S.parts.find(p => p.name.toLowerCase() === it.description.toLowerCase() || (it.sku && p.sku && p.sku.toLowerCase() === it.sku.toLowerCase()));
+            if (vendor) {
+              const paid = it.amount != null ? it.amount : it.unit_price != null ? Math.round(it.unit_price * (it.qty || 1) * 100) / 100 : null;
+              const body = m ? {part_id: m.id, qty: it.qty || 1, paid}
+                             : {name: it.description, sku: it.sku || null, qty: it.qty || 1, paid, type: 'part'};
+              run(() => api('POST', '/api/stops/' + s.id + '/bought', body), err, () => { loadParts(); });
+              return;
+            }
             const body = m ? {part_id: m.id, qty: it.qty || 1}
                            : {name: it.description, sku: it.sku || null, qty: it.qty || 1, unit_cost: it.unit_price, type: 'part'};
             run(() => api('POST', '/api/stops/' + s.id + '/parts', body), err, () => { loadParts(); });

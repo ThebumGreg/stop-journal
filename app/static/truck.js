@@ -72,10 +72,14 @@ function kindSel(cur) {
 // name, part #, shelf or bin.
 // After a pick on finger-up, the browser still sends a click. The list is gone by then, so the click would land on
 // whatever is underneath (a link, the ✕ of a part) and could navigate away mid-request. Swallow that one click.
-function swallowNextClick() {
-  const stop = e => { e.preventDefault(); e.stopPropagation(); };
-  document.addEventListener('click', stop, {capture: true, once: true});
-  setTimeout(() => document.removeEventListener('click', stop, {capture: true}), 700);
+function swallowNextClick(r) {
+  // the browser's click after a finger-up pick lands where the list was (now hidden): eat that one click only.
+  // A click elsewhere (a quick tap on Add) is left alone.
+  const inside = e => !r || (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom);
+  const stop = e => { if (!inside(e)) return; e.preventDefault(); e.stopPropagation(); off(); };
+  const off = () => document.removeEventListener('click', stop, {capture: true});
+  document.addEventListener('click', stop, {capture: true});
+  setTimeout(off, 700);
 }
 
 function liveSearch(input, items, onPick, after) {
@@ -100,7 +104,7 @@ function liveSearch(input, items, onPick, after) {
       b.append(el('span', 'n', p.name), el('span', 'm', [p.sku, p.shelf, p.tracked ? p.on_hand + ' ' + p.unit : ''].filter(Boolean).join(' · ')));
       b.onmousedown = e => e.preventDefault();
       let x0 = 0, y0 = 0, done = false;
-      const pick = e => { if (done) return; done = true; if (e) { e.preventDefault(); swallowNextClick(); } touching = false; box.hidden = true; onPick(p); };
+      const pick = e => { if (done) return; done = true; if (e) { e.preventDefault(); swallowNextClick(box.getBoundingClientRect()); } touching = false; box.hidden = true; onPick(p); };
       b.addEventListener('pointerdown', e => { x0 = e.clientX; y0 = e.clientY; });
       b.addEventListener('pointerup', e => { if (Math.abs(e.clientX - x0) < 12 && Math.abs(e.clientY - y0) < 12) pick(e); });
       b.onclick = () => pick();
@@ -358,6 +362,14 @@ async function partPage(id) {
   };
   const flags = el('div', 'row'); flags.append(bl, tl);
   const acts = el('div', 'row'); acts.append(save, del);
+  if (!d.totals.stops) {          // never on a stop: it can go for good (typos, test parts, duplicates)
+    const purge = el('button', 'danger', 'Delete permanently');
+    purge.onclick = async () => {
+      if (!confirm('Delete “' + p.name + '” for good? Its stock changes and purchase lines are deleted too. This cannot be undone.')) return;
+      try { await api('DELETE', '/api/parts/' + p.id); location.hash = 'parts'; route(); } catch (e) { err.textContent = e.message; }
+    };
+    acts.append(purge);
+  }
   det.append(grid, flags, acts);
 
   // stock changes

@@ -39,7 +39,8 @@ INSTRUCTIONS = [
     "Stop blocks: one per confirmed stop, in order. Work performed is the full text the technician wrote. Parts used "
     "lists parts consumed at the stop. Non-billable materials (supplies such as tape or solvent) are listed separately "
     "and are not for billing. Expenses (parking, tolls, purchases) are listed with their cost; Billable says whether "
-    "they are charged to the customer. A blank HubSpot company ID means it is not known yet: match the company by "
+    "they are charged to the customer. Bought here (vendor stops) lists parts bought for the truck's stock: not used "
+    "on a job and not billed at that stop. A blank HubSpot company ID means it is not known yet: match the company by "
     "business name and address.",
     "Category is one of seven: Time & Material (billed hourly), Quoted project and White-label migration (hours "
     "tracked against the project), and Internal operations, Administrative, Customer outreach and Training "
@@ -262,6 +263,23 @@ def _expenses_table(items, st):
                  [1.85 * inch, 0.45 * inch, 0.8 * inch, 0.8 * inch, 0.75 * inch], st)
 
 
+def _bought_table(items, st):
+    paid = all("paid" in b for b in items)             # left out when the export omits costs
+    rows = []
+    for b in items:
+        row = [_p(b["name"], st["small"]), _p(b["part_number"], st["small"]), _p(f"{b['quantity']:g}", st["small"]),
+               _p(b["unit"], st["small"])]
+        rows.append(row + ([_p(_money(b["paid"]), st["small"])] if paid else []))
+    if paid:
+        rows.append([Paragraph("Total", st["th"]), _p("", st["small"]), _p("", st["small"]), _p("", st["small"]),
+                     Paragraph(f"{sum(b['paid'] or 0 for b in items):.2f}", st["th"])])
+    widths = [1.85, 0.9, 0.45, 0.5] + ([0.95] if paid else [])
+    if not paid:
+        widths[0] += 0.95
+    return _grid(["Bought (to truck stock)", "Part #", "Qty", "Unit"] + (["Paid"] if paid else []), rows,
+                 [w * inch for w in widths], st)
+
+
 def _followups_table(items, st, extra=None, total=7.0):
     head = ["Follow-up", "Owner", "Due"]
     widths = [3.5, 1.0, 0.9]
@@ -334,7 +352,10 @@ def _stop_block(s, st):
              ("QuickBooks estimate #", s.get("qbo_estimate", "")), ("Visit result", s["visit_result"])]
     for i, piece in enumerate(_fit(s["work_performed"], st["base"], 7 * inch - LABEL_W - 12, MAX_ROW_H)):
         rows.append(("Work performed" if i == 0 else "Work performed (continued)", piece))
-    rows.append(("Parts used", _parts_table(s["parts_used"], st)))
+    if s["parts_used"] or not s.get("bought_here"):
+        rows.append(("Parts used", _parts_table(s["parts_used"], st)))
+    if s.get("bought_here"):
+        rows.append(("Bought here", _bought_table(s["bought_here"], st)))
     if s.get("consumables_used"):
         rows.append(("Non-billable materials", _parts_table(s["consumables_used"], st)))
     if s.get("expenses"):
@@ -408,6 +429,8 @@ def render(report, load_photo=None):
             rows.append(("Expenses", f"{sm['expenses_total']:.2f}"))
         if sm.get("fuel_total"):
             rows.append(("Fuel", f"{sm['fuel_total']:.2f}"))
+        if sm.get("bought_total"):
+            rows.append(("Bought for truck stock", f"{sm['bought_total']:.2f}"))
         if day.get("day_start") or day.get("day_end"):
             rows.append(("Work day", f"{day.get('day_start') or '—'} to {day.get('day_end') or '—'}"))
         return rows + _end_day_rows(day.get("end_day"))

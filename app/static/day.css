@@ -254,6 +254,8 @@ body.sheet-open { overflow:hidden; }
 .prow .qtys { display:flex; align-items:center; gap:2px; }
 .prow .qtys button { min-height:36px; min-width:34px; padding:0; }
 .prow .qtys input { width:48px; text-align:center; padding:4px 2px; }
+.prow.brow .qtys input { width:58px; }
+.prow.brow > input { padding:4px 4px; text-align:right; }
 .prow .bill { display:flex; align-items:center; gap:3px; font-size:12px; color:var(--muted); white-space:nowrap; margin:0; }
 .prow .lt { font-size:12px; color:var(--muted); }
 .phrases { display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 8px; }

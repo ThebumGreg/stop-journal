@@ -316,7 +316,7 @@ def move(conn, part, delta, reason, sp_id=None, note=""):
     _log(conn, part["id"], delta, reason, sp_id, note)
 
 
-def adjust(conn, pid, delta=None, set_to=None, note="", packs=None, paid=None, vendor="", ts=None):
+def adjust(conn, pid, delta=None, set_to=None, note="", packs=None, paid=None, vendor="", ts=None, stop_id=None):
     """Change stock. When stock is added with `paid` (the total for what was added), it is a purchase."""
     p = get_part(conn, pid)
     packs = _num(packs, "Packs")
@@ -338,19 +338,141 @@ def adjust(conn, pid, delta=None, set_to=None, note="", packs=None, paid=None, v
         vendor = _text(vendor, "Vendor", 80) or p["vendor"] or ""
         note = note or ("Bought at " + vendor if vendor else "Bought")
         move(conn, get_part(conn, pid), delta, "bought", note=_text(note, "Note", 200))
-        record_purchase(conn, p, delta, paid, vendor, note, ts=ts)
+        record_purchase(conn, p, delta, paid, vendor, note, ts=ts, stop_id=stop_id)
     else:
         move(conn, get_part(conn, pid), delta, reason, note=_text(note, "Note", 200))
     conn.commit()
 
 
-def record_purchase(conn, p, qty, total, vendor="", note="", ts=None):
+def record_purchase(conn, p, qty, total, vendor="", note="", ts=None, stop_id=None):
     """One line of the purchase log. The part's last_cost becomes what was paid per unit (its Unit cost, the price in
-    reports, is left alone)."""
-    conn.execute("INSERT INTO purchases(part_id, ts, vendor, qty, total, note) VALUES (?,?,?,?,?,?)",
-                 (p["id"], int(ts or time.time()), vendor or None, qty, total, note or None))
+    reports, is left alone). `stop_id`: the vendor stop it was bought at, when known."""
+    pid = conn.execute("INSERT INTO purchases(part_id, ts, vendor, qty, total, note, stop_id) VALUES (?,?,?,?,?,?,?)",
+                       (p["id"], int(ts or time.time()), vendor or None, qty, total, note or None, stop_id)).lastrowid
     if total is not None and qty:
         conn.execute("UPDATE parts SET last_cost=? WHERE id=?", (round(total / qty, 4), p["id"]))
+    return pid
+
+
+# ---- bought at a vendor stop ("Bought here") ---------------------------------
+# On a vendor stop the sheet records PURCHASES, not parts used: each line adds to truck stock (the part becomes tracked),
+# goes in the purchase log with the stop's vendor name and arrival time, and is never billed (it is not in parts_used).
+def buy_at_stop(conn, stop, f):
+    """stop: the stops row. f: {part_id | name (+ sku, unit, type, unit_cost = the price you charge, for a new part),
+    qty | packs, paid (total paid for the line, optional), note}. Returns the purchase id."""
+    if f.get("part_id"):
+        p = get_part(conn, int(f["part_id"]))
+    else:
+        name = _text(f.get("name"), "Part name", required=True)
+        p = find_part(conn, name, f.get("sku"))
+        if p is None:
+            p = get_part(conn, create_part(conn, {"name": name, "sku": f.get("sku"), "unit": f.get("unit"),
+                                                  "unit_cost": f.get("unit_cost"), "type": f.get("type"),
+                                                  "vendor": stop["business_name"]}))
+    if p["kind"] == "expense":
+        raise EditError(f"“{p['name']}” is an expense, not stock: add it under Expenses.")
+    packs = _num(f.get("packs"), "Packs")
+    if packs is not None:
+        if packs <= 0:
+            raise EditError("Packs must be more than 0.")
+        if not p["pack_size"]:
+            raise EditError(f"Set a pack size on “{p['name']}” first (Truck → the part → Edit details).")
+        qty = round(packs * p["pack_size"], 4)
+        note = f"{packs:g} x {p['pack_unit'] or 'pack'} of {p['pack_size']:g}"
+    else:
+        qty, note = _qty(f.get("qty", 1)), ""
+    paid = _num(f.get("paid"), "Paid", 0)
+    vendor = (stop["business_name"] or "").strip()
+    note = _text(f.get("note"), "Note", 200) or note or ("Bought at " + vendor if vendor else "Bought")
+    conn.execute("UPDATE parts SET tracked=1, active=1 WHERE id=?", (p["id"],))
+    move(conn, get_part(conn, p["id"]), qty, "bought", note=note)
+    return record_purchase(conn, p, qty, paid, vendor, note, ts=stop["arrive_utc"], stop_id=stop["id"])
+
+
+def purge_part(conn, pid):
+    """Delete a part for good (typos, test parts, duplicates). Only a part that is not on any stop and not in a kit:
+    those stay as "removed" so old reports keep their history. Its stock changes and purchase lines go with it."""
+    p = get_part(conn, pid)
+    used = conn.execute("SELECT COUNT(*) FROM stop_parts WHERE part_id=?", (pid,)).fetchone()[0]
+    if used:
+        raise EditError(f"“{p['name']}” is on {used} stop line{'s' if used != 1 else ''}, so it cannot be deleted "
+                        f"for good (old reports need it). Use Remove from catalog instead, or take it off those stops first.")
+    kits = [r[0] for r in conn.execute("SELECT DISTINCT k.name FROM kit_items ki JOIN kits k ON k.id=ki.kit_id "
+                                       "WHERE ki.part_id=?", (pid,))]
+    if kits:
+        raise EditError(f"“{p['name']}” is in the kit{'s' if len(kits) > 1 else ''} {', '.join(kits)}: "
+                        f"take it out of the kit first.")
+    n_log = conn.execute("DELETE FROM inventory_log WHERE part_id=?", (pid,)).rowcount
+    n_buy = conn.execute("DELETE FROM purchases WHERE part_id=?", (pid,)).rowcount
+    conn.execute("DELETE FROM parts WHERE id=?", (pid,))
+    conn.commit()
+    return {"deleted": p["name"], "stock_changes": n_log, "purchases": n_buy}
+
+
+def _purchase(conn, puid):
+    r = conn.execute("SELECT * FROM purchases WHERE id=?", (puid,)).fetchone()
+    if not r:
+        raise EditError("That purchase no longer exists.")
+    return r
+
+
+def _refresh_last_cost(conn, part_id):
+    r = conn.execute("SELECT qty, total FROM purchases WHERE part_id=? AND total IS NOT NULL AND qty>0 "
+                     "ORDER BY ts DESC, id DESC LIMIT 1", (part_id,)).fetchone()
+    if r:
+        conn.execute("UPDATE parts SET last_cost=? WHERE id=?", (round(r["total"] / r["qty"], 4), part_id))
+
+
+def patch_purchase(conn, puid, f):
+    """Change a purchase's quantity (truck stock follows) or what was paid. Returns its stop_id."""
+    r = _purchase(conn, puid)
+    upd = {}
+    if "qty" in f:
+        upd["qty"] = _qty(f["qty"])
+    if "paid" in f:
+        upd["total"] = _num(f["paid"], "Paid", 0)
+    if upd:
+        conn.execute(f"UPDATE purchases SET {', '.join(k + '=?' for k in upd)} WHERE id=?", (*upd.values(), puid))
+        if "qty" in upd and upd["qty"] != r["qty"]:
+            move(conn, get_part(conn, r["part_id"]), round(upd["qty"] - r["qty"], 4), "bought", note="quantity changed")
+        _refresh_last_cost(conn, r["part_id"])
+    return r["stop_id"]
+
+
+def remove_purchase(conn, puid):
+    """Take a purchase back out: its quantity leaves truck stock again. Returns its stop_id."""
+    r = _purchase(conn, puid)
+    move(conn, get_part(conn, r["part_id"]), -r["qty"], "bought", note="purchase removed")
+    conn.execute("DELETE FROM purchases WHERE id=?", (puid,))
+    _refresh_last_cost(conn, r["part_id"])
+    return r["stop_id"]
+
+
+def bought_for_day(conn, date):
+    """{stop_id: [purchase lines]} for the day's stops."""
+    rows = conn.execute("SELECT pu.*, p.name, p.sku, p.unit, p.kind, p.pack_size, p.pack_unit FROM purchases pu "
+                        "JOIN parts p ON p.id=pu.part_id JOIN stops s ON s.id=pu.stop_id WHERE s.date=? "
+                        "ORDER BY pu.id", (date,)).fetchall()
+    out = {}
+    for r in rows:
+        out.setdefault(r["stop_id"], []).append({
+            "id": r["id"], "part_id": r["part_id"], "name": r["name"], "sku": r["sku"] or "", "unit": r["unit"] or "ea",
+            "kind": r["kind"] or "part", "qty": r["qty"], "paid": r["total"],
+            "each": round(r["total"] / r["qty"], 4) if r["total"] is not None and r["qty"] else None,
+            "pack_size": r["pack_size"], "pack_unit": r["pack_unit"] or "", "note": r["note"] or ""})
+    return out
+
+
+def stop_part_to_bought(conn, spid, stop):
+    """A part line put on a vendor stop before "Bought here" existed (it took stock OFF the truck): return it to the
+    truck and record it as bought here instead."""
+    r = conn.execute("SELECT * FROM stop_parts WHERE id=?", (spid,)).fetchone()
+    if not r or r["stop_id"] != stop["id"]:
+        raise EditError("That part line no longer exists.")
+    if not r["part_id"] or r["kind"] == "expense":
+        raise EditError("Only parts and consumables can be moved to Bought here.")
+    remove_from_stop(conn, spid)
+    return buy_at_stop(conn, stop, {"part_id": r["part_id"], "qty": r["qty"]})
 
 
 # ---- CSV ---------------------------------------------------------------

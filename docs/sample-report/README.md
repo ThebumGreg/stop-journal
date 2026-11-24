@@ -63,6 +63,10 @@ A made-up day (all names, addresses and coordinates are invented) that uses ever
 - Per stop: `work_performed` (the note), `category` + `billing` (hourly | project | non_billable), `job_reference`
   (ticket), `visit_result`, `time_on_site_minutes`, `parts_used` (billable flag, qty, unit, unit cost),
   `consumables_used` (never billed), `expenses`, `follow_ups`, `photos`.
+- `bought_here` (vendor stops): parts bought for the truck's stock (name, part_number, quantity, unit, paid). They are
+  NOT used on a job and NOT billable: never put them on a customer, ticket or invoice. A part is billed only when it
+  later appears in a job stop's `parts_used`. `summary.bought_total` is the day's total paid; `records_to_update[]`
+  has them as text. Without costs (`omitted` costs) `paid` is left out.
 - Top-level `follow_ups` (owner, due) are natural HubSpot tasks.
 - `omitted` lists sections left out on purpose (for example GPS coordinates or costs); they are not missing data.
 - Times are local, in the report's `timezone`.

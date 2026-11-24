@@ -320,6 +320,7 @@ MIGRATIONS = [
     ("stops", "qbo_estimate", "TEXT"),
     ("parts", "vendor_item", "TEXT"),
     ("parts", "qbo_item", "TEXT"),
+    ("purchases", "stop_id", "INTEGER"),
     ("stops", "ticket_action", "TEXT"),
     ("stops", "from_receipt", "INTEGER DEFAULT 0"),
 ]
