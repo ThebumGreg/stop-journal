@@ -10,22 +10,24 @@ HubSpot company ID: 18200000001
 HubSpot ticket: 24681357913
 QuickBooks estimate: (none)
 Date: 2026-11-18
-Labor: 08:00 to 10:30, 150 min
+Labor: 08:00 to 10:22, 142 min (still on site when sent)
 Visit result: Complete
 Customer billing email: billing@dental.example
-Version: 1
 Message format: 2
-Message ID: 4411245c-4300-4206-8caf-984e91154615
-Stop ID: 7a60a46b-abdd-4e12-a77c-e618b344ef48
-Parts:
+Revision: 1
+Message ID: 8d291bb7-5aa5-4320-9f52-a1cfbc8673e0
+Stop ID: e74959f5-da83-4314-8401-904a18c88a72
+Parts (JobHub prices; the invoice uses QuickBooks prices):
   140 ft x Cat 6 cable (C6-1000-BLU) $0.45 each
-  4 ea x Keystone jack Cat 6 - white (KJ-C6-W) $6.50 each
+  4 ea x Keystone jack Cat 6 - white (IC1078F6WH) $6.50 each
+Billable expenses:
+  Parking $12.00
 
 Work performed:
 Ran two Cat 6 drops from the network rack to the front desk.
 Terminated both ends with keystone jacks and tested: both pass.
 Relabeled the patch panel ports 12 and 13.
 
-Attached: jobhub-invoice-request-2026-11-18-stop-1-sample-dental-office-r1.json (the data)
+Attached: jobhub-invoice-request-2026-11-18-stop-1-sample-dental-office-r1.json (the data); 1 receipt/photo picture (receipts for the billed expenses)
 
 [attachment file name: jobhub-invoice-request-2026-11-18-stop-1-sample-dental-office-r1.json]

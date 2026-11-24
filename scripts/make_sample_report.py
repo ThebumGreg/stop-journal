@@ -29,13 +29,17 @@ DELI = sample.offset(*HOME, 3000, 9500)
 CLINIC = sample.offset(*HOME, -3000, 9000)
 
 
-def picture(lines, w=600, h=800):
+def picture(lines, w=600, h=800, taken=None):
+    """A made-up picture; `taken` ("2026:11:18 08:41:05") is its capture time, as a phone camera writes it."""
     img = Image.new("RGB", (w, h), "white")
     dr = ImageDraw.Draw(img)
     for i, t in enumerate(lines):
         dr.text((30, 30 + i * 28), t, fill="black")
     buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=85)
+    ex = Image.Exif()
+    if taken:
+        ex.get_ifd(0x8769)[0x9003] = taken
+    img.save(buf, "JPEG", quality=85, exif=ex)
     return buf.getvalue()
 
 
@@ -44,7 +48,24 @@ def ok(r):
     return r.get_json()
 
 
-def build(data_dir):
+def at(hm):
+    """'10:22' on the sample day -> seconds."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return int(datetime.fromisoformat(f"{D}T{hm}").replace(tzinfo=ZoneInfo("America/Los_Angeles")).timestamp())
+
+
+# the made-up calendar appointment at the clinic (format 2 samples: the summary's stop and the late notice share it)
+CLINIC_EVENT = {"uid": "AAMkSample123@1795543200", "title": "Onsite Sample Medical Clinic", "name": "Sample Medical Clinic",
+                "location": "300 Example Blvd, Los Angeles, CA 90013", "ticket": "362600000002", "estimate": "2210",
+                "contact": "Front desk 555-0142", "category": "Quoted project"}
+ON_SITE_SEND = "10:22"         # format 2 sample: Send for invoice while still at the dental office (left 10:30)
+
+
+def build(data_dir, v2=False):
+    """The sample day. v2: the format 2 version: the clinic visit matches a calendar appointment, the keystone jack
+    has a real-looking QuickBooks SKU and name, and the dental office is sent for invoice at 10:22 while still there
+    (the phone has only sent points up to 10:20 at that moment; the rest of the day comes in afterwards)."""
     d = sample.Day(D)
     t = d.dwell(*HOME, d.at(7), 40)            # 07:00-07:40 home
     t = d.drive(HOME, DENTAL, t, 20)           # 07:40-08:00
@@ -65,7 +86,12 @@ def build(data_dir):
                  data_dir=data_dir, routing_url="", overpass_url="")
     cfg = replace(cfg, tech_name="Sample Technician", tech_email="tech@work.example",
                   followup_owners="Me\nOffice = office@work.example")
-    c = create_app(cfg, client=sample.ListRecorder(d.points())).test_client()
+    points = d.points()
+    if v2:
+        cfg = replace(cfg, calendar_url="https://calendar.example/sample.ics")
+        mail_settings(data_dir, message_format="2")
+    rec = sample.ListRecorder([p for p in points if p["tst"] <= at("10:20")] if v2 else points)
+    c = create_app(cfg, client=rec).test_client()
 
     ok(c.post("/api/places", json={"name": "Home", "kind": "home", "lat": HOME[0], "lon": HOME[1]}))
     ok(c.post("/api/places", json={"name": "Sample Supply House", "kind": "vendor", "lat": SUPPLY[0], "lon": SUPPLY[1],
@@ -78,22 +104,21 @@ def build(data_dir):
         if name == "Sample Dental Office":       # the address in parts with a suite, and the QuickBooks customer
             ok(c.patch(f"/api/places/{pid}", json={"line1": "100 Example Ave", "line2": "Suite 210", "city": "Los Angeles",
                                                    "state": "CA", "zip": "90012", "qbo_customer_id": "58"}))
-    stops = [s for s in ok(c.get(f"/api/day/{D}"))["stops"] if s["kind"] == "stop"]
-    assert len(stops) == 7, [(s["arrive"], s["depart"]) for s in stops]
-    home1, dental, gas, supply, deli, clinic, home2 = stops
 
     # catalog: a tracked part, a part, a consumable
     ok(c.post("/api/parts", json={"name": "Cat 6 cable", "sku": "C6-1000-BLU", "unit": "ft", "unit_cost": 0.45,
                                   "billable": True, "tracked": True, "on_hand": 900, "vendor": "Sample Supply House",
                                   "qbo_item": "Cable Cat6 Blue (ft)"}))
-    ok(c.post("/api/parts", json={"name": "Keystone jack Cat 6 - white", "sku": "KJ-C6-W", "unit": "ea",
-                                  "unit_cost": 6.50, "billable": True}))
+    ok(c.post("/api/parts", json={"name": "Keystone jack Cat 6 - white", "sku": "IC1078F6WH" if v2 else "KJ-C6-W",
+                                  "unit": "ea", "unit_cost": 6.50, "billable": True,
+                                  **({"qbo_item": "Cable CAT6 Insert RJ-45 (White)"} if v2 else {})}))
     ok(c.post("/api/parts", json={"name": "Zip ties 8 in", "unit": "pack", "unit_cost": 4.00, "type": "consumable",
                                   "billable": False}))
     ok(c.post("/api/parts", json={"name": "Parking", "type": "expense"}))
 
+    stops = [s for s in ok(c.get(f"/api/day/{D}"))["stops"] if s["kind"] == "stop"]
+    home1, dental = stops[0], stops[1]
     ok(c.patch(f"/api/stops/{home1['id']}", json={"business_name": "Home", "stop_type": "personal"}))
-    ok(c.patch(f"/api/stops/{home2['id']}", json={"business_name": "Home", "stop_type": "personal"}))
     ok(c.post(f"/api/day/{D}/mark", json={"which": "start", "time": "07:38"}))
 
     # Job 1: complete, hourly, parts + consumable + expense, receipt and photo
@@ -107,14 +132,33 @@ def build(data_dir):
     ok(c.post(f"/api/stops/{sid}/parts", json={"name": "Cat 6 cable", "qty": 140}))
     ok(c.post(f"/api/stops/{sid}/parts", json={"name": "Keystone jack Cat 6 - white", "qty": 4}))
     ok(c.post(f"/api/stops/{sid}/parts", json={"name": "Zip ties 8 in", "qty": 1}))
-    ok(c.post(f"/api/stops/{sid}/parts", json={"name": "Parking", "qty": 1, "unit_cost": 12.00}))
+    # format 2 sample: the parking is billed to the customer, so its receipt goes with the invoice request
+    day = ok(c.post(f"/api/stops/{sid}/parts", json={"name": "Parking", "qty": 1, "unit_cost": 12.00}))
+    if v2:
+        line = next(p for x in day["stops"] if x["id"] == sid for p in x["parts"] if p["name"] == "Parking")
+        ok(c.patch(f"/api/stop-parts/{line['id']}", json={"billable": True}))
     ok(c.post(f"/api/stops/{sid}/photos", data={"kind": "receipt", "caption": "Parking receipt",
-                                                "file": (io.BytesIO(picture(["SAMPLE PARKING", "Total $12.00"])), "r.jpg")},
+                                                "file": (io.BytesIO(picture(["SAMPLE PARKING", "Total $12.00"], taken="2026:11:18 08:03:41")), "r.jpg")},
               content_type="multipart/form-data"))
     ok(c.post(f"/api/stops/{sid}/photos", data={"kind": "photo", "caption": "Patch panel after relabel",
-                                                "file": (io.BytesIO(picture(["SAMPLE PHOTO", "Patch panel"])), "p.jpg")},
+                                                "file": (io.BytesIO(picture(["SAMPLE PHOTO", "Patch panel"], taken="2026:11:18 10:12:05")), "p.jpg")},
               content_type="multipart/form-data"))
     ok(c.post(f"/api/stops/{sid}/finish", json={"visit_result": "complete"}))
+    if v2:
+        import time as clock
+        real = clock.time
+        clock.time = lambda: at(ON_SITE_SEND)          # still at the dental office: labor runs to the moment of sending
+        try:
+            ok(c.post(f"/api/stops/{sid}/invoice-request",
+                      json={"pdf": False, "photos": False, "invoice_to_email": "billing@dental.example"}))
+        finally:
+            clock.time = real
+        rec.points = points                            # the rest of the day comes in
+        ok(c.post(f"/api/day/{D}/sync"))
+    stops = [s for s in ok(c.get(f"/api/day/{D}"))["stops"] if s["kind"] == "stop"]
+    assert len(stops) == 7, [(s["arrive"], s["depart"]) for s in stops]
+    home1, dental, gas, supply, deli, clinic, home2 = stops
+    ok(c.patch(f"/api/stops/{home2['id']}", json={"business_name": "Home", "stop_type": "personal"}))
 
     # Fill-up
     ok(c.patch(f"/api/stops/{gas['id']}", json={"stop_type": "gas", "business_name": "Sample Fuel Station"}))
@@ -181,46 +225,56 @@ def body_text(msg):
 
 
 def write_v2(out):
-    """Message format 2: the invoice request (sent first, as during the day), the daily summary, a late notice."""
+    """Message format 2: the invoice request sent while still on site, the daily summary (revision 1), the same day
+    after a stop was deleted and a stop's parts changed (revision 2), and a late notice for the clinic appointment."""
     import json
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    from app import late, message_v2
+    from app import calendar_feed, late, message_v2
     os.makedirs(out, exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmp:
-        c, cfg = build(tmp)
-        mail_settings(tmp, message_format="2")
-        SENT.clear()
-        tm = next(s for s in ok(c.get(f"/api/day/{D}"))["stops"] if s.get("work_category") == "Time & Material")
-        ok(c.post(f"/api/stops/{tm['id']}/invoice-request",
-                  json={"pdf": False, "photos": False, "invoice_to_email": "billing@dental.example"}))
-        inv = SENT.pop(0)
-        fn = save(out, "invoice-request-sample.json", inv, ".json")
-        open(os.path.join(out, "invoice-request-body.txt"), "w").write(body_text(inv) + f"\n[attachment file name: {fn}]\n")
-        ok(c.post(f"/api/export/email?from={D}", json={"json": True, "pdf": False, "photos": True}))
-        day = SENT.pop(0)
-        fn = save(out, "daily-summary-sample.json", day, ".json")
-        pics = [p.get_filename() for p in day.iter_attachments() if p.get_content_maintype() == "image"]
-        open(os.path.join(out, "daily-summary-body.txt"), "w").write(
-            body_text(day) + f"\n[attachment file names: {fn}; " + "; ".join(pics) + "]\n")
-        # a late notice for an appointment at the clinic (made up: 12:00, arriving 12:21)
-        conn = db.connect(tmp)
-        cfg = replace(cfg, message_format="2", mail_to="agent@work.example")
-        tz = ZoneInfo(cfg.app_tz)
-        ts = lambda hm: int(datetime.fromisoformat(f"{D}T{hm}").replace(tzinfo=tz).timestamp())
-        ev = {"uid": "AAMkSample123@1795543200", "start_ts": ts("12:00"), "end_ts": ts("14:00"), "start": "12:00",
-              "name": "Sample Medical Clinic", "location": "300 Example Blvd, Los Angeles, CA 90013",
-              "ticket": "362600000002", "estimate": "2210", "contact": "Front desk 555-0142", "category": "Quoted project"}
-        eta = {"arrive_ts": ts("12:21"), "arrive": "12:21 PM", "late_min": 21, "method": "routed"}
-        mid = message_v2.new_id()
-        n2 = message_v2.late_notice(conn, cfg, ev, eta, ts("11:52"), "Stuck in traffic on the 110", "", 1, None, mid)
-        open(os.path.join(out, "late-notice-sample.json"), "w").write(json.dumps(n2, indent=2, ensure_ascii=False))
-        n1 = late.notice(cfg, ev, eta, ts("11:52"), "Stuck in traffic on the 110")
-        stem = message_v2.file_stem("late_notice", D, "1200", 1)
-        open(os.path.join(out, "late-notice-body.txt"), "w").write(
-            "Subject: " + message_v2.subject("late_notice", D, ev["name"], 1) + "\n\n" + late.body(n1, "", mid)
-            + f"\n[attachment file name: {stem}.json]\n")
-        conn.close()
+    ev = dict(CLINIC_EVENT, start_ts=at("12:00"), end_ts=at("14:00"), start="12:00")
+    real_events = calendar_feed.events_for_day
+    calendar_feed.events_for_day = lambda cfg, date: [ev] if date == D else []
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            SENT.clear()
+            c, cfg = build(tmp, v2=True)
+            inv = SENT.pop(0)
+            fn = save(out, "invoice-request-sample.json", inv, ".json")
+            open(os.path.join(out, "invoice-request-body.txt"), "w").write(
+                body_text(inv) + f"\n[attachment file name: {fn}]\n")
+            ok(c.post(f"/api/export/email?from={D}", json={"json": True, "pdf": True, "photos": True}))
+            day = SENT.pop(0)
+            fn = save(out, "daily-summary-sample.json", day, ".json")
+            files = [p.get_filename() for p in day.iter_attachments()]
+            open(os.path.join(out, "daily-summary-body.txt"), "w").write(
+                body_text(day) + "\n[attachment file names: " + "; ".join(files) + "]\n")
+            # revision 2: the supply house stop deleted, the clinic's cable changed 60 -> 80 ft, its jacks removed
+            stops = ok(c.get(f"/api/day/{D}"))["stops"]
+            supply = next(x for x in stops if x["business_name"] == "Sample Supply House")
+            clinic = next(x for x in stops if x["business_name"] == "Sample Medical Clinic")
+            ok(c.delete(f"/api/stops/{supply['id']}"))
+            ok(c.patch(f"/api/stop-parts/{next(p['id'] for p in clinic['parts'] if p['name'] == 'Cat 6 cable')}",
+                       json={"qty": 80}))
+            ok(c.delete(f"/api/stop-parts/{next(p['id'] for p in clinic['parts'] if p['name'].startswith('Keystone'))}"))
+            ok(c.post(f"/api/export/email?from={D}", json={"json": True, "pdf": False, "photos": False}))
+            day2 = SENT.pop(0)
+            fn = save(out, "daily-summary-r2-sample.json", day2, ".json")
+            open(os.path.join(out, "daily-summary-r2-body.txt"), "w").write(
+                body_text(day2) + f"\n[attachment file name: {fn}]\n")
+            # a late notice for the clinic appointment (made up: 12:00, arriving 12:21), sent at 11:52
+            conn = db.connect(tmp)
+            cfg = replace(cfg, message_format="2", mail_to="agent@work.example")
+            eta = {"arrive_ts": at("12:21"), "arrive": "12:21 PM", "late_min": 21, "method": "routed"}
+            mid = message_v2.new_id()
+            n2 = message_v2.late_notice(conn, cfg, ev, eta, at("11:52"), "Stuck in traffic on the 110", "", 1, None, mid)
+            open(os.path.join(out, "late-notice-sample.json"), "w").write(json.dumps(n2, indent=2, ensure_ascii=False))
+            n1 = late.notice(cfg, ev, eta, at("11:52"), "Stuck in traffic on the 110")
+            stem = message_v2.file_stem("late_notice", D, "1200", 1)
+            open(os.path.join(out, "late-notice-body.txt"), "w").write(
+                "Subject: " + message_v2.subject("late_notice", D, ev["name"], 1) + "\n\n" + late.body(n1, "", mid)
+                + f"\n[attachment file name: {stem}.json]\n")
+            conn.close()
+    finally:
+        calendar_feed.events_for_day = real_events
 
 
 def main():

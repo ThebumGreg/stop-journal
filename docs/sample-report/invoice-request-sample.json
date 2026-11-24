@@ -9,7 +9,7 @@
   },
   "date": "2026-11-18",
   "report_key": "2026-11-18",
-  "stop_uid": "1f0563fe-d5c9-47ab-9572-b78a8d2888f1",
+  "stop_uid": "8284a692-1c1a-466e-a937-19ece0fa4c3e",
   "stop_number": 1,
   "customer": {
     "business_name": "Sample Dental Office",
@@ -96,6 +96,6 @@
     }
   ],
   "request_version": 1,
-  "sent_at": "2026-11-24T12:03-08:00",
+  "sent_at": "2026-11-24T12:41-08:00",
   "invoice_to_email": ""
 }

@@ -928,12 +928,14 @@ def merge_stops(conn, cfg, id_a, id_b):
     conn.execute(
         "UPDATE stops SET arrive_utc=?, depart_utc=?, lat=?, lon=?, business_name=?, "
         "address=?, category=?, known_site_id=?, notes=?, status=?, kind=?, work_category=?, ticket=?, qbo_estimate=?, ticket_action=?, "
-        "visit_result=?, stop_type=?, edited=1, times_edited=1 WHERE id=?",
+        "visit_result=?, stop_type=?, calendar_uid=?, calendar_ticket=?, calendar_contact=?, edited=1, times_edited=1 WHERE id=?",
         (a["arrive_utc"], b["depart_utc"], lat, lon, first["business_name"],
          first["address"], first["category"], first["known_site_id"], notes, status,
          kind, a["work_category"] or b["work_category"], a["ticket"] or b["ticket"], a["qbo_estimate"] or b["qbo_estimate"], a["ticket_action"] or b["ticket_action"],
          b["visit_result"] or a["visit_result"],
-         a["stop_type"] if a["stop_type"] == b["stop_type"] and _type_fits(a["stop_type"], status) else None, a["id"]))
+         a["stop_type"] if a["stop_type"] == b["stop_type"] and _type_fits(a["stop_type"], status) else None,
+         *(((a["calendar_uid"], a["calendar_ticket"], a["calendar_contact"]) if a["calendar_uid"]
+            else (b["calendar_uid"], b["calendar_ticket"], b["calendar_contact"]))), a["id"]))
     conn.execute("UPDATE stop_parts SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
     conn.execute("UPDATE follow_ups SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
     conn.execute("UPDATE OR IGNORE fuel SET stop_id=? WHERE stop_id=?", (a["id"], b["id"]))
@@ -1358,6 +1360,8 @@ def day_payload(conn, cfg, date, include_path=False):
         "needs": stop_needs(r, stop_type(r, site_kind.get(r["known_site_id"]) or ""),
                             "" if r["work_category"] else last_category(conn, r["id"], r["business_name"], r["known_site_id"]),
                             fuel.get(r["id"])),
+        "calendar_uid": r["calendar_uid"] or "", "calendar_ticket": r["calendar_ticket"] or "",
+        "calendar_contact": r["calendar_contact"] or "",
         "id": r["id"], "uid": r["uid"], "seq": r["seq"], "kind": r["kind"] or "stop", "source": r["source"],
         "lat": r["lat"], "lon": r["lon"],
         "arrive": fmt_time(cfg, r["arrive_utc"]), "depart": fmt_time(cfg, r["depart_utc"]),
@@ -1412,6 +1416,8 @@ def day_payload(conn, cfg, date, include_path=False):
            "marks": marks, "mileage": mil, "end_day": end_info(conn, cfg, stops, marks, mil),
            "followup_owners": [v[0] for v in _owners(cfg).values()]}
     out["calendar"], out["calendar_error"] = calendar_for_day(cfg, date, stops, now)
+    if out["calendar"] and not out["calendar_error"]:
+        _keep_calendar(conn, stops, out["calendar"])
     if include_path:
         pts = kept_points(conn, cfg, date)
         out["path"] = [[p["lat"], p["lon"]] for p in pts]
@@ -1737,6 +1743,33 @@ def station_history(conn, cfg, key, limit=200):
 
 # ---- calendar: on-site appointments next to the stops ------------------------------
 CAL_SLACK_S = 30 * 60      # a stop up to 30 min before or after an appointment still matches it
+
+
+def _keep_calendar(conn, stops, events):
+    """Save on each stop the appointment it matches (uid, ticket, contact), so the reports keep the link after the
+    published calendar has dropped that day. A stop whose saved appointment is still in the feed but now matches
+    another stop (or none) is cleared; when the appointment is no longer in the feed at all, the saved one stays."""
+    by_id = {st["id"]: st for st in stops}
+    seen = {e.get("uid") for e in events}
+    changed = False
+    for e in events:
+        st = by_id.get(e.get("stop_id"))
+        if st is None:
+            continue
+        new = (e.get("uid") or "", e.get("ticket") or "", e.get("contact") or "")
+        if (st["calendar_uid"], st["calendar_ticket"], st["calendar_contact"]) != new:
+            conn.execute("UPDATE stops SET calendar_uid=?, calendar_ticket=?, calendar_contact=? WHERE id=?", (*new, st["id"]))
+            st["calendar_uid"], st["calendar_ticket"], st["calendar_contact"] = new
+            changed = True
+    matched = {e.get("stop_id") for e in events if e.get("stop_id")}
+    for st in stops:
+        if st["calendar_uid"] and st["calendar_uid"] in seen and st["id"] not in matched:
+            conn.execute("UPDATE stops SET calendar_uid=NULL, calendar_ticket=NULL, calendar_contact=NULL WHERE id=?",
+                         (st["id"],))
+            st["calendar_uid"] = st["calendar_ticket"] = st["calendar_contact"] = ""
+            changed = True
+    if changed:
+        conn.commit()
 
 
 def calendar_for_day(cfg, date, stops, now):

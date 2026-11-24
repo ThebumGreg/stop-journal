@@ -518,6 +518,8 @@ def _qbo_import(conn, header, reader, service_with_sku=True):
             res["services_skipped"] += 1
             continue
         rec["type"] = QBO_TYPES.get(qtype, "part")
+        if rec.get("name"):                         # the QuickBooks product/service name, as QuickBooks has it
+            rec["qbo_item"] = rec["name"]
         if rec.get("name", "").count(":"):          # QuickBooks sub-items: "Cable:Cat 6" -> "Cat 6"
             rec["name"] = rec["name"].rsplit(":", 1)[1].strip()
         if not rec.get("unit_cost"):

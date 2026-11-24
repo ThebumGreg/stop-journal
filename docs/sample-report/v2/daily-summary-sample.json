@@ -1,11 +1,11 @@
 {
   "schema_version": "2",
   "type": "daily_summary",
-  "message_id": "fe153355-0caf-4431-97c8-a7a151e83eb3",
+  "message_id": "f1c2b6b3-7d9f-4263-bd52-dfa9b44beeb6",
   "subject_key": "2026-11-18",
   "revision": 1,
   "supersedes": null,
-  "sent_at": "2026-11-24T12:03:36-08:00",
+  "sent_at": "2026-11-24T12:41:23-08:00",
   "timezone": "America/Los_Angeles",
   "app": {
     "name": "JobHub",
@@ -67,7 +67,7 @@
       },
       "stops": [
         {
-          "stop_uid": "7a60a46b-abdd-4e12-a77c-e618b344ef48",
+          "stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
           "date": "2026-11-18",
           "place_type": "client",
           "calendar_event_uid": "",
@@ -82,8 +82,8 @@
               "state": "CA",
               "zip": "90012",
               "formatted": "100 Example Ave, Suite 210, Los Angeles, CA 90012",
-              "latitude": 34.1039096121667,
-              "longitude": -118.20662654803587
+              "latitude": 34.103910222320735,
+              "longitude": -118.20662518721788
             },
             "site_contact": ""
           },
@@ -113,7 +113,7 @@
           "work_performed": "Ran two Cat 6 drops from the network rack to the front desk.\nTerminated both ends with keystone jacks and tested: both pass.\nRelabeled the patch panel ports 12 and 13.",
           "lines": [
             {
-              "line_uid": "fc68a9df-841f-462c-83da-e057baadc1f6",
+              "line_uid": "10ac14f8-768c-4120-9415-d6df142c3d11",
               "kind": "part",
               "name": "Cat 6 cable",
               "sku": "C6-1000-BLU",
@@ -129,12 +129,12 @@
               "notes": ""
             },
             {
-              "line_uid": "ffe77c3a-ab84-4ca2-a74c-7fb2524505a4",
+              "line_uid": "9cc3bace-08c6-4e61-8abf-144a9f566296",
               "kind": "part",
               "name": "Keystone jack Cat 6 - white",
-              "sku": "KJ-C6-W",
+              "sku": "IC1078F6WH",
               "qbo_item_id": "",
-              "qbo_item_name": "",
+              "qbo_item_name": "Cable CAT6 Insert RJ-45 (White)",
               "quantity": 4,
               "unit": "ea",
               "unit_price": "6.50",
@@ -145,7 +145,7 @@
               "notes": ""
             },
             {
-              "line_uid": "bc173b04-8ae7-47d5-997b-a5f603f247b1",
+              "line_uid": "e903a7ad-4d7d-4967-8221-0c6db15471fc",
               "kind": "consumable",
               "name": "Zip ties 8 in",
               "sku": "",
@@ -153,15 +153,15 @@
               "qbo_item_name": "",
               "quantity": 1,
               "unit": "pack",
-              "unit_price": "4.00",
-              "amount": "4.00",
-              "unit_cost": "",
+              "unit_price": "",
+              "amount": "",
+              "unit_cost": "4.00",
               "billable": false,
               "receipt_photo_uid": "",
               "notes": ""
             },
             {
-              "line_uid": "df646bb2-850c-4101-ac59-9fa7bfbd261b",
+              "line_uid": "2b6c6edb-de94-4602-af92-d7537505f1ce",
               "kind": "expense",
               "name": "Parking",
               "sku": "",
@@ -172,26 +172,26 @@
               "unit_price": "12.00",
               "amount": "12.00",
               "unit_cost": "12.00",
-              "billable": false,
-              "receipt_photo_uid": "d05e566f-da9d-4479-9007-a62a9b1f259c",
+              "billable": true,
+              "receipt_photo_uid": "bb1f18dd-63af-4247-9970-280079d49a88",
               "notes": ""
             }
           ],
           "follow_ups": [],
           "photo_uids": [
-            "d05e566f-da9d-4479-9007-a62a9b1f259c",
-            "f23d2cca-07b7-4ecf-8fdf-ae7d3fb66590"
+            "bb1f18dd-63af-4247-9970-280079d49a88",
+            "012d4541-2990-4539-8861-738fc0a5a8c0"
           ],
           "invoice_request": {
-            "message_id": "4411245c-4300-4206-8caf-984e91154615",
+            "message_id": "8d291bb7-5aa5-4320-9f52-a1cfbc8673e0",
             "revision": 1,
-            "sent_at": "2026-11-24T12:03:36-08:00",
-            "billed_through": "2026-11-18T10:30:00-08:00",
-            "time_on_site_minutes": 150
+            "sent_at": "2026-11-18T10:22:00-08:00",
+            "billed_through": "2026-11-18T10:22:00-08:00",
+            "time_on_site_minutes": 142
           }
         },
         {
-          "stop_uid": "02d1db7d-f3de-4e00-be03-3dad66bc061c",
+          "stop_uid": "5463f78b-1394-42a2-a90f-666579fb31d4",
           "date": "2026-11-18",
           "place_type": "vendor",
           "calendar_event_uid": "",
@@ -226,7 +226,7 @@
           "drive_from_previous": {
             "from_type": "client",
             "from_name": "Sample Dental Office",
-            "from_stop_uid": "7a60a46b-abdd-4e12-a77c-e618b344ef48",
+            "from_stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
             "minutes": 22,
             "minutes_estimated": false,
             "miles": 3.6,
@@ -237,7 +237,7 @@
           "work_performed": "Picked up a 1000 ft box of Cat 6 for the clinic job.",
           "lines": [
             {
-              "line_uid": "c60d4977-16f0-48d4-9a83-be735900b296",
+              "line_uid": "074af5fb-a568-4105-ace0-aab8e5704566",
               "kind": "stock",
               "name": "Cat 6 cable",
               "sku": "C6-1000-BLU",
@@ -254,12 +254,12 @@
               "notes": "Bought at Sample Supply House"
             },
             {
-              "line_uid": "60149055-b80f-4cba-ac69-2e9c77e659c8",
+              "line_uid": "1334b556-0b7d-43cb-9b26-1fb824986dc1",
               "kind": "stock",
               "name": "Keystone jack Cat 6 - white",
-              "sku": "KJ-C6-W",
+              "sku": "IC1078F6WH",
               "qbo_item_id": "",
-              "qbo_item_name": "",
+              "qbo_item_name": "Cable CAT6 Insert RJ-45 (White)",
               "quantity": 25,
               "unit": "ea",
               "unit_price": "",
@@ -276,10 +276,10 @@
           "invoice_request": null
         },
         {
-          "stop_uid": "72d0bf85-768e-4d72-ad83-8c58977a567c",
+          "stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
           "date": "2026-11-18",
           "place_type": "client",
-          "calendar_event_uid": "",
+          "calendar_event_uid": "AAMkSample123@1795543200",
           "customer": {
             "business_name": "Sample Medical Clinic",
             "hubspot_company_id": "18200000002",
@@ -294,13 +294,13 @@
               "latitude": 34.0230457039227,
               "longitude": -118.15243070204251
             },
-            "site_contact": ""
+            "site_contact": "Front desk 555-0142"
           },
           "job": {
             "category": "Quoted project",
             "billing": "project",
-            "hubspot_ticket_id": "",
-            "ticket_action": "continue",
+            "hubspot_ticket_id": "362600000002",
+            "ticket_action": "use",
             "qbo_estimate_number": "2210",
             "tech_typed_reference": ""
           },
@@ -311,7 +311,7 @@
           "drive_from_previous": {
             "from_type": "vendor",
             "from_name": "Sample Supply House",
-            "from_stop_uid": "02d1db7d-f3de-4e00-be03-3dad66bc061c",
+            "from_stop_uid": "5463f78b-1394-42a2-a90f-666579fb31d4",
             "minutes": 20,
             "minutes_estimated": false,
             "miles": 6.2,
@@ -322,7 +322,7 @@
           "work_performed": "Mounted the new switch in the IT closet and patched 18 of 24 ports.\nSix ports wait on the customer's new patch cords.",
           "lines": [
             {
-              "line_uid": "1ae26dc4-3f0a-4c4e-a3de-5ea5433e9700",
+              "line_uid": "7e3e0323-7538-436b-a193-f0c3fd6c2fb1",
               "kind": "part",
               "name": "Cat 6 cable",
               "sku": "C6-1000-BLU",
@@ -338,12 +338,12 @@
               "notes": ""
             },
             {
-              "line_uid": "4c3edb9d-0694-4374-a8d5-904ddc8ee3ff",
+              "line_uid": "4608f334-aa32-4221-b4da-ec94d0a7e51d",
               "kind": "part",
               "name": "Keystone jack Cat 6 - white",
-              "sku": "KJ-C6-W",
+              "sku": "IC1078F6WH",
               "qbo_item_id": "",
-              "qbo_item_name": "",
+              "qbo_item_name": "Cable CAT6 Insert RJ-45 (White)",
               "quantity": 6,
               "unit": "ea",
               "unit_price": "6.50",
@@ -356,16 +356,16 @@
           ],
           "follow_ups": [
             {
-              "follow_up_uid": "789d107f-8175-4d91-88ac-8693523dfa9d",
-              "stop_uid": "72d0bf85-768e-4d72-ad83-8c58977a567c",
+              "follow_up_uid": "c71cdc43-2cba-4bac-994c-6544f22fd475",
+              "stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
               "what": "Send the customer a quote for 6 patch cords",
               "owner": "Office",
               "owner_email": "office@work.example",
               "due": "2026-11-20"
             },
             {
-              "follow_up_uid": "b13cb55f-5088-46a3-886e-a3111352b2ba",
-              "stop_uid": "72d0bf85-768e-4d72-ad83-8c58977a567c",
+              "follow_up_uid": "3fda9e38-348e-4e2e-a07c-37520b8eb15e",
+              "stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
               "what": "Return visit",
               "owner": "Me",
               "owner_email": "tech@work.example",
@@ -494,30 +494,30 @@
         "legs": [
           {
             "from_stop_uid": null,
-            "to_stop_uid": "7a60a46b-abdd-4e12-a77c-e618b344ef48",
+            "to_stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
             "from_name": "Home",
             "to_name": "Sample Dental Office",
             "miles": 4.5,
             "method": "gps"
           },
           {
-            "from_stop_uid": "7a60a46b-abdd-4e12-a77c-e618b344ef48",
-            "to_stop_uid": "02d1db7d-f3de-4e00-be03-3dad66bc061c",
+            "from_stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
+            "to_stop_uid": "5463f78b-1394-42a2-a90f-666579fb31d4",
             "from_name": "Sample Dental Office",
             "to_name": "Sample Supply House",
             "miles": 3.6,
             "method": "gps"
           },
           {
-            "from_stop_uid": "02d1db7d-f3de-4e00-be03-3dad66bc061c",
-            "to_stop_uid": "72d0bf85-768e-4d72-ad83-8c58977a567c",
+            "from_stop_uid": "5463f78b-1394-42a2-a90f-666579fb31d4",
+            "to_stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
             "from_name": "Sample Supply House",
             "to_name": "Sample Medical Clinic",
             "miles": 6.2,
             "method": "estimate"
           },
           {
-            "from_stop_uid": "72d0bf85-768e-4d72-ad83-8c58977a567c",
+            "from_stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
             "to_stop_uid": null,
             "from_name": "Sample Medical Clinic",
             "to_name": "Home",
@@ -528,7 +528,7 @@
       },
       "fuel": [
         {
-          "stop_uid": "a3548992-7311-4a98-9cd1-36e2a81f3309",
+          "stop_uid": "1989342e-3caa-46b6-b0d9-7bc924b3fc24",
           "start": "2026-11-18T10:42:00-08:00",
           "end": "2026-11-18T10:56:00-08:00",
           "station": "Sample Fuel Station",
@@ -541,26 +541,29 @@
       ],
       "photos": [
         {
-          "photo_uid": "d05e566f-da9d-4479-9007-a62a9b1f259c",
-          "stop_uid": "7a60a46b-abdd-4e12-a77c-e618b344ef48",
+          "photo_uid": "bb1f18dd-63af-4247-9970-280079d49a88",
+          "stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
           "kind": "receipt",
           "label": "Receipt: Stop 1, Sample Dental Office, 08:00. Parking receipt",
           "caption": "Parking receipt",
-          "attachment": "photo-d05e566f-da9d-4479-9007-a62a9b1f259c.jpg",
+          "attachment": "photo-bb1f18dd-63af-4247-9970-280079d49a88.jpg",
           "attached": true,
-          "taken_at": "2026-11-24T12:03:36-08:00"
+          "taken_at": "2026-11-18T08:03:41-08:00"
         },
         {
-          "photo_uid": "f23d2cca-07b7-4ecf-8fdf-ae7d3fb66590",
-          "stop_uid": "7a60a46b-abdd-4e12-a77c-e618b344ef48",
+          "photo_uid": "012d4541-2990-4539-8861-738fc0a5a8c0",
+          "stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
           "kind": "photo",
           "label": "Photo: Stop 1, Sample Dental Office, 08:00. Patch panel after relabel",
           "caption": "Patch panel after relabel",
-          "attachment": "photo-f23d2cca-07b7-4ecf-8fdf-ae7d3fb66590.jpg",
+          "attachment": "photo-012d4541-2990-4539-8861-738fc0a5a8c0.jpg",
           "attached": true,
-          "taken_at": "2026-11-24T12:03:36-08:00"
+          "taken_at": "2026-11-18T10:12:05-08:00"
         }
-      ]
+      ],
+      "removed_stops": [],
+      "removed_line_uids": [],
+      "removed_follow_up_uids": []
     }
   ]
 }

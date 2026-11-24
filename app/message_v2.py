@@ -12,6 +12,7 @@ The agent's spec (agreed 2026-11-24) is in docs/sample-report/README.md. In shor
 The numbers come from the same day calculation as format 1 (`report.build_day(..., keep_src=True)`), so the two can
 never disagree. Within format 2 fields may only be ADDED (the agent ignores fields it does not know).
 """
+import json
 import uuid
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -111,8 +112,13 @@ def customer(name, address_text, lat, lon, hubspot_id="", site=None, contact="",
             "site_contact": contact or ""}
 
 
-def job(category, ticket, ticket_choice, qbo_estimate):
+def job(category, ticket, ticket_choice, qbo_estimate, calendar_ticket=""):
+    """Job object. The ticket: a real ID typed on the stop, else a real ID on the matched calendar appointment (the
+    same value the late notice sends); a short number goes to tech_typed_reference."""
     real, typed = ticket_fields(ticket)
+    if not real:
+        cal_real, cal_typed = ticket_fields(calendar_ticket)
+        real, typed = (cal_real, typed) if cal_real else ("", typed or cal_typed)
     action = "use" if real else report.TICKET_ACTIONS.get(ticket_choice or "", "find")
     return {"category": category or "", "billing": service.WORK_CATEGORIES.get(category or "", ""),
             "hubspot_ticket_id": real, "ticket_action": action, "qbo_estimate_number": (qbo_estimate or "").strip(),
@@ -133,13 +139,17 @@ def lines(src, omit):
         kind = p.get("kind") or "part"
         if (kind == "expense" and "expenses" in omit) or (kind == "consumable" and "materials" in omit):
             continue
-        # what you pay per unit: the part's purchase cost; an expense IS what was paid
+        # what you pay per unit: the part's purchase cost; an expense IS what was paid. A consumable is never charged:
+        # no price, and its cost is the purchase cost, else the catalog price (all JobHub knows about it)
+        charged = kind != "consumable"
         cost = p["unit_cost"] if kind == "expense" else p.get("our_cost")
+        if kind == "consumable" and cost is None:
+            cost = p["unit_cost"]
         out.append({"line_uid": p.get("uid") or "", "kind": kind, "name": p["name"], "sku": p["sku"] or "",
                     "qbo_item_id": "", "qbo_item_name": p.get("qbo_item") or "",
                     "quantity": qty(p["qty"]), "unit": p["unit"] or "ea",
-                    "unit_price": money(p["unit_cost"], unit=True) if costs else "",
-                    "amount": money(p["line_cost"]) if costs else "",
+                    "unit_price": money(p["unit_cost"], unit=True) if costs and charged else "",
+                    "amount": money(p["line_cost"]) if costs and charged else "",
                     "unit_cost": money(cost, unit=True) if costs else "",
                     "billable": bool(p["billable"]) and kind in ("part", "expense"),
                     "receipt_photo_uid": receipt if kind == "expense" else "", "notes": p.get("notes") or ""})
@@ -168,15 +178,18 @@ def stop(v1, src, date, tz, sites, from_uid, lunch_paid, omit):
         "from_type": (dv.get("from_type") or "").lower(), "from_name": dv.get("from") or "",
         "from_stop_uid": from_uid, "minutes": dv["minutes"], "minutes_estimated": bool(dv.get("minutes_estimated")),
         "miles": dv["miles_approx"], "miles_method": dv.get("miles_method") or "", "notes": dv.get("notes") or ""}
-    cal = src.get("calendar") or {}
+    cal = src.get("calendar") or {}           # the appointment matched now, else the one saved on the stop
+    cal_uid = cal.get("uid") or src.get("calendar_uid") or ""
+    cal_ticket = cal.get("ticket") if cal.get("uid") else src.get("calendar_ticket")
+    cal_contact = cal.get("contact") if cal.get("uid") else src.get("calendar_contact")
     inv = src.get("invoice_request")
     return {
         "stop_uid": v1["stop_uid"], "date": date, "place_type": place_type(src),
-        "calendar_event_uid": cal.get("uid", ""),
+        "calendar_event_uid": cal_uid,
         "customer": customer(src["business_name"], src["address"], src["lat"], src["lon"], src["hubspot_company_id"],
-                             sites.get(src.get("known_site_id")), cal.get("contact", ""), coords),
+                             sites.get(src.get("known_site_id")), cal_contact or "", coords),
         "job": job(v1["category"], src.get("ticket"), src.get("ticket_action") or src.get("ticket_action_default"),
-                   v1["qbo_estimate"]),
+                   v1["qbo_estimate"], cal_ticket or ""),
         "arrival": iso(src["arrive_ts"], tz), "departure": iso(src["depart_ts"], tz),
         "time_on_site_minutes": v1["time_on_site_minutes"],
         "breaks": [{"kind": "lunch" if g["kind"] == "Lunch" else "personal", "start": iso(g["from_ts"], tz),
@@ -203,7 +216,7 @@ def photo(p, stop_uid, tz):
     src = p["_src"]
     return {"photo_uid": src.get("uid") or "", "stop_uid": stop_uid, "kind": p["kind"], "label": p["label"],
             "caption": p.get("caption") or "", "attachment": photo_attachment(src.get("uid") or str(p["id"])),
-            "attached": False, "taken_at": iso(src.get("created"), tz)}
+            "attached": False, "taken_at": iso(src.get("taken_at"), tz)}
 
 
 # ---- the daily summary -----------------------------------------------------------------------------------------
@@ -307,6 +320,63 @@ def late_notice(conn, cfg, ev, eta, now, note, stop_uid, revision, supersedes, m
             "note_for_customer": (note or "").strip()[:300]}
 
 
+# ---- what was removed since the last send (agreed with the user 2026-11-24, "option 2") -----------------------------
+OMIT_KIND = {"expense": "expenses", "consumable": "materials"}
+
+
+def sent_uids(days):
+    """What a format 2 daily summary carried, kept in email_log.sent_uids for the next revision:
+    {date: {stop_uid: {"start", "end", "lines": {line_uid: kind}, "follow_ups": [uid]}}}."""
+    return {d["date"]: {s["stop_uid"]: {"start": s["arrival"], "end": s["departure"],
+                                        "lines": {ln["line_uid"]: ln["kind"] for ln in s["lines"] if ln["line_uid"]},
+                                        "follow_ups": [f["follow_up_uid"] for f in s["follow_ups"] if f["follow_up_uid"]]}
+                        for s in d["stops"]} for d in days}
+
+
+def _ts(text):
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def removed(prev, day, omit):
+    """(removed_stops, removed_line_uids, removed_follow_up_uids) of one day against what was last sent for it.
+    A stop that is gone but whose lines, follow-ups or time now sit in another stop was merged into it
+    (`merged_into`): move its records there instead of deleting them. Lines and follow-ups of a section left out of
+    this send are not called removed."""
+    if not prev:
+        return [], [], []
+    now_stop = {s["stop_uid"]: s for s in day["stops"]}
+    line_at = {ln["line_uid"]: s["stop_uid"] for s in day["stops"] for ln in s["lines"]}
+    fu_at = {f["follow_up_uid"]: s["stop_uid"] for s in day["stops"] for f in s["follow_ups"]}
+    gone_stops = []
+    for uid, p in prev.items():
+        if uid in now_stop:
+            continue
+        into = next((line_at[x] for x in p.get("lines", {}) if x in line_at), None) or \
+            next((fu_at[x] for x in p.get("follow_ups", []) if x in fu_at), None)
+        if into is None:
+            a, b = _ts(p.get("start")), _ts(p.get("end"))
+            mid = (a + b) / 2 if a is not None and b is not None else None
+            into = next((s["stop_uid"] for s in day["stops"] if mid is not None
+                         and (_ts(s["arrival"]) or 0) <= mid <= (_ts(s["departure"]) or 0)), None)
+        gone_stops.append({"stop_uid": uid, "merged_into": into})
+    gone_lines = [x for p in prev.values() for x, kind in p.get("lines", {}).items()
+                  if x not in line_at and OMIT_KIND.get(kind) not in omit]
+    gone_fus = [] if "follow_ups" in omit else [x for p in prev.values() for x in p.get("follow_ups", []) if x not in fu_at]
+    return gone_stops, gone_lines, gone_fus
+
+
+def last_sent_uids(conn, table, where, args):
+    r = conn.execute(f"SELECT sent_uids FROM {table} WHERE ok=1 AND sent_uids IS NOT NULL AND {where} "
+                     "ORDER BY id DESC LIMIT 1", args).fetchone()
+    try:
+        return json.loads(r["sent_uids"]) if r else {}
+    except ValueError:
+        return {}
+
+
 def range_key(a, b):
     return a if a == b else f"{a}_{b}"
 
@@ -319,6 +389,9 @@ def daily_summary(conn, cfg, dates, ensure, omit, revision, supersedes, now, mes
         ensure(conn, cfg, date)
         dd, ff = day(conn, cfg, service.day_payload(conn, cfg, date), sites, omit)
         days.append(dd); files += ff
+    prev = last_sent_uids(conn, "email_log", "date_from=? AND date_to=?", (dates[0], dates[-1]))
+    for d in days:
+        d["removed_stops"], d["removed_line_uids"], d["removed_follow_up_uids"] = removed(prev.get(d["date"]), d, omit)
     msg = {**envelope(cfg, "daily_summary", range_key(dates[0], dates[-1]), revision, supersedes, now, omit, message_id),
            "date_from": dates[0], "date_to": dates[-1], "days": days}
     return msg, files

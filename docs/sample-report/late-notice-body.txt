@@ -1,8 +1,8 @@
 Subject: JobHub Late Notice 1043
 Attachment: jobhub-late-notice-2026-11-18-1330.json
 
-JobHub Late Notice: the technician is running late for an on-site appointment.
-Please let the customer know. Details are in the attached JSON.
+JobHub Late Notice: the technician is running late for this appointment.
+Details are in the attached JSON.
 
 Technician: Sample Technician <tech@yourco.example>
 Customer: Sample Medical Clinic

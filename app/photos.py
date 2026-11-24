@@ -9,7 +9,10 @@ The phone also shrinks the picture before sending it, so uploads stay quick on a
 import io
 import json
 import os
+import re
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -40,6 +43,31 @@ def normalize(raw):
     return out.getvalue(), im.width, im.height
 
 
+EXIF_DATETIME_ORIGINAL, EXIF_IFD, EXIF_DATETIME = 0x9003, 0x8769, 0x0132
+TAKEN = re.compile(r"^(\d{4}):(\d\d):(\d\d)[ T](\d\d):(\d\d):(\d\d)$")
+
+
+def capture_time(raw, given="", tz="UTC"):
+    """When the picture was taken (seconds), or None. The phone sends `given` (its EXIF DateTimeOriginal, read before
+    it shrinks the picture, which drops the metadata); a full-size upload still has it in the file. EXIF times are
+    local, so they are read in the app's timezone. Only the time is kept, never the rest of the metadata."""
+    text = (given or "").strip()
+    if not text:
+        try:
+            ex = Image.open(io.BytesIO(raw)).getexif()
+            text = str(ex.get_ifd(EXIF_IFD).get(EXIF_DATETIME_ORIGINAL) or ex.get(EXIF_DATETIME) or "").strip("\x00 ")
+        except Exception:
+            return None
+    m = TAKEN.match(text)
+    if not m:
+        return None
+    try:
+        ts = int(datetime(*map(int, m.groups()), tzinfo=ZoneInfo(tz)).timestamp())
+    except (ValueError, KeyError):
+        return None
+    return ts if 946684800 <= ts <= time.time() + 86400 else None      # 2000 .. tomorrow: else a wrong clock
+
+
 def rel_path(date, pid, kind):
     """Where a picture lives under the data folder: by year, month and day of its stop."""
     y, m, d = date.split("-")
@@ -55,7 +83,7 @@ def _write(data_dir, rel, data):
     os.replace(tmp, full)       # never a half-written picture
 
 
-def add(conn, data_dir, stop_id, raw, kind="receipt", caption=""):
+def add(conn, data_dir, stop_id, raw, kind="receipt", caption="", taken="", tz="UTC"):
     if kind not in KINDS:
         raise EditError("Choose Receipt or Photo.")
     stop = conn.execute("SELECT date FROM stops WHERE id=?", (stop_id,)).fetchone()
@@ -65,8 +93,9 @@ def add(conn, data_dir, stop_id, raw, kind="receipt", caption=""):
     if n >= PER_STOP:
         raise EditError(f"A stop can have {PER_STOP} pictures at most.")
     data, w, h = normalize(raw)
-    cur = conn.execute("INSERT INTO photos(stop_id,kind,caption,created,width,height,data) VALUES (?,?,?,?,?,?,?)",
-                       (stop_id, kind, str(caption or "").strip()[:120], int(time.time()), w, h, b""))
+    cur = conn.execute("INSERT INTO photos(stop_id,kind,caption,created,width,height,data,taken_at) VALUES (?,?,?,?,?,?,?,?)",
+                       (stop_id, kind, str(caption or "").strip()[:120], int(time.time()), w, h, b"",
+                        capture_time(raw, taken, tz)))
     rel = rel_path(stop["date"], cur.lastrowid, kind)
     try:
         _write(data_dir, rel, data)
@@ -92,7 +121,7 @@ def move_to_files(conn, data_dir):
 
 def for_day(conn, date):
     out = {}
-    for r in conn.execute("SELECT p.id, p.uid, p.stop_id, p.kind, p.caption, p.created, p.read_json FROM photos p "
+    for r in conn.execute("SELECT p.id, p.uid, p.stop_id, p.kind, p.caption, p.created, p.taken_at, p.read_json FROM photos p "
                           "JOIN stops s ON s.id=p.stop_id WHERE s.date=? ORDER BY p.id", (date,)):
         read = None
         if r["read_json"]:
@@ -101,7 +130,8 @@ def for_day(conn, date):
             except ValueError:
                 read = None
         out.setdefault(r["stop_id"], []).append({"id": r["id"], "uid": r["uid"] or "", "kind": r["kind"],
-                                                 "caption": r["caption"] or "", "created": r["created"], "read": read})
+                                                 "caption": r["caption"] or "", "created": r["created"], "taken_at": r["taken_at"],
+                                                 "read": read})
     return out
 
 

@@ -1,0 +1,18 @@
+Subject: JobHub Daily Summary 2026-11-18 (update 2)
+
+JobHub Daily Summary
+Dates: 2026-11-18
+Technician: Sample Technician <tech@work.example>
+Message format: 2
+Revision: 2 (replaces the earlier email for these dates)
+Message ID: 356898c6-7047-4aa9-9802-4caecc335fc9
+Confirmed stops: 2
+Attached: jobhub-daily-summary-2026-11-18-r2.json (the data)
+
+Stops:
+- 2026-11-18 08:00-10:30 Sample Dental Office, 100 Example Ave, Suite 210, Los Angeles, CA 90012
+- 2026-11-18 12:21-14:41 Sample Medical Clinic, 300 Example Blvd, Los Angeles, CA 90013
+
+Sent by JobHub after the technician checked the day. The JSON attachment holds every field.
+
+[attachment file name: jobhub-daily-summary-2026-11-18-r2.json]

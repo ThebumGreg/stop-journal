@@ -109,17 +109,18 @@ def signature(key, data):
 def body_for(rep, version, attached, skipped_photos=0, sig="", message_id=""):
     a, b = rep["date_from"], rep["date_to"]
     stops = [(d, s) for d in rep["days"] for s in d["stops"]]
+    replaces = "replaces the earlier email for these dates"
     lines = [
         "JobHub Daily Summary",
         "Dates: " + (a if a == b else f"{a} to {b}"),
         "Technician: " + tech_text(rep.get("technician")),
-        f"Version: {version}" + (" (replaces the earlier email for these dates)" if version > 1 else ""),
+        *(["Message format: 2", f"Revision: {version}" + (f" ({replaces})" if version > 1 else ""),
+           f"Message ID: {message_id}"] if message_id else
+          [f"Version: {version}" + (f" ({replaces})" if version > 1 else ""),
+           "Report schema version: " + str(rep.get("schema_version", "1"))]),
         f"Confirmed stops: {len(stops)}",
-        "Report schema version: " + ("2" if message_id else str(rep.get("schema_version", "1"))),
         "Attached: " + ("; ".join(attached) if attached else "nothing (the summary below only)"),
     ]
-    if message_id:
-        lines.append(f"Message ID: {message_id}")
     if sig:
         lines.append(f"Signature: hmac-sha256={sig} (of the attached JSON file)")
     if rep.get("omitted"):
@@ -132,8 +133,11 @@ def body_for(rep, version, attached, skipped_photos=0, sig="", message_id=""):
                      + (f", {s['address']}" if s.get("address") else ""))
     if not stops:
         lines.append("- none confirmed")
-    lines += ["", "Sent by JobHub after the technician checked the day. The JSON attachment holds every field; "
-                  "the PDF is the same report for people."]
+    has_json = any(x.endswith(".json (the data)") for x in attached)
+    has_pdf = any(x.endswith(".pdf") for x in attached)
+    lines += ["", "Sent by JobHub after the technician checked the day."
+              + (" The JSON attachment holds every field." if has_json else "")
+              + (" The PDF is the same report for people." if has_pdf else "")]
     return "\n".join(lines) + "\n"
 
 
@@ -198,9 +202,10 @@ def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo, build_v2=None
                      "VALUES (?,?,?,?,?,?,0,?,?)", (entry["ts"], a, b, cfg.mail_to, subject, version, str(e), entry["attached"]))
         conn.commit()
         raise
-    conn.execute("INSERT INTO email_log(ts,date_from,date_to,mail_to,subject,version,ok,error,attached,message_id,schema) "
-                 "VALUES (?,?,?,?,?,?,1,NULL,?,?,?)", (entry["ts"], a, b, cfg.mail_to, subject, version, entry["attached"],
-                                                     mid, entry["format"]))
+    uids = json.dumps(message_v2.sent_uids(data_obj["days"])) if build_v2 else None    # for the next revision's removed lists
+    conn.execute("INSERT INTO email_log(ts,date_from,date_to,mail_to,subject,version,ok,error,attached,message_id,schema,"
+                 "sent_uids) VALUES (?,?,?,?,?,?,1,NULL,?,?,?,?)", (entry["ts"], a, b, cfg.mail_to, subject, version,
+                                                                   entry["attached"], mid, entry["format"], uids))
     conn.commit()
     log.info("report emailed: %s (%s), format %s%s", subject, entry["attached"], entry["format"], ", signed" if sig else "")
     return {**entry, "skipped_photos": skipped}

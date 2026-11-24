@@ -772,3 +772,22 @@ stop departed 12:21, and listed billable parts with no cost.
 - Changeover: samples in `docs/sample-report/v2/`; the user sends one real test day; then the setting goes to 2; format 1
   is removed after a week without format 1 emails (ask the user first).
 
+### Format 2 fixes after the agent's sample review (2026-11-24)
+- Calendar link kept on the stop: `stops.calendar_uid / calendar_ticket / calendar_contact`, saved by
+  `service._keep_calendar` whenever the day payload matches an appointment (the published Outlook calendar may drop
+  past days). Cleared only when that appointment is still in the feed but matches another stop or none; merge keeps it.
+  Format 2 ticket: a real ID typed on the stop, else a real ID from the appointment, else `tech_typed_reference`.
+- Consumables carry no price or amount (never charged); `unit_cost` = purchase cost, else the catalog price.
+- `billed_through` stored to the second (`invoice_requests.billed_through_ts` from `build(..., info)`).
+- Photo capture time: the phone reads EXIF DateTimeOriginal before shrinking (`exifTime` in day.js, sent as `taken`);
+  the server also reads it from a full-size file (`photos.capture_time`). Only the time is kept; the stored JPEG still
+  has no metadata. Receipt inbox pictures and older photos have none ("").
+- Revisions list removed items (user chose "option 2"): each format 2 send stores the ids it carried
+  (`email_log.sent_uids`, `invoice_requests.sent_uids`); the next revision lists `removed_stops` (with `merged_into`
+  when the stop's lines, follow-ups or time now sit in another stop), `removed_line_uids`, `removed_follow_up_uids`.
+- Invoice request: receipts always attached when an expense is billed; body lines "Message format / Revision /
+  Message ID" in all three emails; the daily body names only what is attached; parts labelled as JobHub prices.
+- Late notice body is neutral (the agent does not contact customers until management decides).
+- QuickBooks import keeps the QuickBooks product/service name in `qbo_item` (format 2 `qbo_item_name`).
+- Lunch stays paid by default (user decision): the setting is in Settings → General → Pay rules.
+

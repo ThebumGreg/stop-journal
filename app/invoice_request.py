@@ -72,11 +72,14 @@ def _prepare(conn, cfg, stop_id, now):
     return row, ps, s, still_here, through, minutes, photos, payload
 
 
-def build(conn, cfg, stop_id, now=None):
-    """(request dict, warnings, photos) in format 1. Raises EditError when the stop cannot be invoiced from here."""
+def build(conn, cfg, stop_id, now=None, info=None):
+    """(request dict, warnings, photos) in format 1. Raises EditError when the stop cannot be invoiced from here.
+    info (a dict) gets `through_ts`: the exact moment labor is billed through."""
     now = int(now or time.time())
     tz = ZoneInfo(cfg.app_tz)
     row, ps, s, still_here, through, minutes, photos, _ = _prepare(conn, cfg, stop_id, now)
+    if info is not None:
+        info["through_ts"] = through
     photos = report._public(photos)
     clock = lambda ts: datetime.fromtimestamp(ts, tz).strftime("%H:%M")
     billable = lambda xs: [x for x in xs if x.get("billable")]
@@ -126,9 +129,13 @@ def build_v2(conn, cfg, stop_id, now=None, invoice_to_email="", revision=1, supe
     if still_here:
         st["departure"], st["time_on_site_minutes"] = v2.iso(through, cfg.app_tz), minutes
     pics = [v2.photo(p, s["stop_uid"], cfg.app_tz) for p in photos]
+    # lines on the previous request for this stop that are gone now (removed or changed to another stop)
+    prev = v2.last_sent_uids(conn, "invoice_requests", "stop_uid=?", (s["stop_uid"],))
+    now_lines = {ln["line_uid"] for ln in st["lines"]}
     msg = {**v2.envelope(cfg, "invoice_request", s["stop_uid"], revision, supersedes, now, (), message_id),
            "stop": st, "billed_through": v2.iso(through, cfg.app_tz), "still_on_site": bool(still_here),
-           "invoice_to_email": (invoice_to_email or "").strip(), "photos": pics}
+           "invoice_to_email": (invoice_to_email or "").strip(), "photos": pics,
+           "removed_line_uids": [x for x in prev.get("lines", []) if x not in now_lines]}
     return msg, report._public(photos), [(pic["attachment"], p["id"]) for pic, p in zip(pics, photos)]
 
 
@@ -155,7 +162,13 @@ def subject(req, version):
             + (f" (update {version})" if version > 1 else ""))
 
 
-def body(req, version, attached, sig=""):
+def v2_lines(revision, message_id, replaces):
+    """The same three lines in every format 2 email body."""
+    return ["Message format: 2", f"Revision: {revision}" + (f" ({replaces})" if revision > 1 else ""),
+            f"Message ID: {message_id}"]
+
+
+def body(req, version, attached, sig="", message_id=""):
     lab = req["labor"]
     money = lambda v: "" if v is None else f" ${v:.2f}"
     lines = ["JobHub Invoice Request: please invoice this Time & Material visit. Details are in the attached JSON.",
@@ -171,10 +184,11 @@ def body(req, version, attached, sig=""):
              + (" (still on site when sent)" if lab["still_on_site"] else ""),
              f"Visit result: {req['visit_result'] or '(not set)'}",
              f"Customer billing email: {req.get('invoice_to_email') or '(not given)'}",
-             f"Version: {version}" + (" (replaces the earlier request for this stop)" if version > 1 else ""),
+             *(v2_lines(version, message_id, "replaces the earlier request for this stop") if message_id else
+               [f"Version: {version}" + (" (replaces the earlier request for this stop)" if version > 1 else "")]),
              f"Stop ID: {req['stop_uid']}"]
     if req["parts"]:
-        lines.append("Parts:")
+        lines.append("Parts (JobHub prices; the invoice uses QuickBooks prices):")
         lines += [f"  {p['quantity']:g} {p['unit']} x {p['name']}" + (f" ({p['part_number']})" if p["part_number"] else "")
                   + money(p["unit_cost"]) + (" each" if p["unit_cost"] is not None else "") for p in req["parts"]]
     if req["expenses"]:
@@ -196,7 +210,8 @@ def send(conn, cfg, stop_id, opts, render_pdf, load_photo, now=None):
         raise EditError("Email is not set up: add the address to send to in Settings → Email.")
     now = int(now or time.time())
     bill_to = known.billing_email(opts.get("invoice_to_email")) or ""
-    req, _, photos = build(conn, cfg, stop_id, now)
+    info = {}
+    req, _, photos = build(conn, cfg, stop_id, now, info)
     version, supersedes = v2.previous(conn, "invoice_requests", "stop_uid=?", (req["stop_uid"],))
     mid = v2.new_id()
     req["request_version"] = version
@@ -222,24 +237,25 @@ def send(conn, cfg, stop_id, opts, render_pdf, load_photo, now=None):
         files.append((f"{stem}.pdf", "application", "pdf", pdf_bytes)); attached.append(f"{stem}.pdf")
         total += len(pdf_bytes)
     sent_names = set()
-    if opts.get("photos"):
-        for p in photos:
+    # the receipts always go when an expense is billed (the invoice needs them); other pictures only when ticked
+    receipts_needed = bool(req["expenses"])
+    chosen = [p for p in photos if opts.get("photos") or (receipts_needed and p["kind"] == "receipt")]
+    if chosen:
+        for p in chosen:
             img = load_photo(p["id"])
             fname = names.get(p["id"]) or p["attachment"]
             if img and total + len(img) <= mailer.MAX_ATTACH_BYTES:
                 files.append((fname, "image", "jpeg", img)); total += len(img); sent_names.add(fname)
         if sent_names:
-            attached.append(f"{len(sent_names)} receipt/photo picture{'s' if len(sent_names) != 1 else ''}")
+            attached.append(f"{len(sent_names)} receipt/photo picture{'s' if len(sent_names) != 1 else ''}"
+                            + ("" if opts.get("photos") else " (receipts for the billed expenses)"))
     if fmt2:                          # format 2 says, per photo, whether its picture is attached to this email
         for p in msg2["photos"]:
             p["attached"] = p["attachment"] in sent_names
         data = json.dumps(msg2, indent=2, ensure_ascii=False).encode()
     sig = mailer.signature(cfg.report_signing_key, data) if cfg.report_signing_key else ""
     files.insert(0, (f"{stem}.json", "application", "json", data))
-    text = body(req, version, attached, sig)
-    if fmt2:
-        text = text.replace("\nStop ID: ", f"\nMessage format: 2\nMessage ID: {mid}\nStop ID: ", 1)
-    msg = mailer._message(cfg, subj, text)
+    msg = mailer._message(cfg, subj, body(req, version, attached, sig, mid if fmt2 else ""))
     for fname, main, sub, d in files:
         msg.add_attachment(d, maintype=main, subtype=sub, filename=fname)
     ok, err = True, None
@@ -247,14 +263,13 @@ def send(conn, cfg, stop_id, opts, render_pdf, load_photo, now=None):
         mailer.send(cfg, msg)
     except mailer.MailError as e:
         ok, err = False, str(e)
-    through_ts = _clock_ts(req["date"], req["labor"]["billed_through"], cfg.app_tz)
-    if req["labor"]["still_on_site"]:
-        through_ts = now
+    through_ts = info["through_ts"]
+    uids = json.dumps({"lines": [ln["line_uid"] for ln in msg2["stop"]["lines"]]}) if fmt2 else None
     conn.execute("INSERT INTO invoice_requests(ts,date,stop_id,stop_uid,version,billed_through,minutes,mail_to,ok,error,"
-                 "message_id,billed_through_ts,invoice_to_email) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 "message_id,billed_through_ts,invoice_to_email,sent_uids) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (now, req["date"], stop_id, req["stop_uid"], version if ok else None, req["labor"]["billed_through"],
                   req["labor"]["time_on_site_minutes"], cfg.mail_to, 1 if ok else 0, err, mid if ok else None, through_ts,
-                  bill_to or None))
+                  bill_to or None, uids))
     if ok and bill_to:          # remembered on the place: filled in next time (the user agreed 2026-11-24)
         conn.execute("UPDATE known_sites SET billing_email=? WHERE id=(SELECT known_site_id FROM stops WHERE id=?)",
                      (bill_to, stop_id))

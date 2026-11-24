@@ -156,7 +156,7 @@ def test_email_format_2_names_signature_and_revisions(sample):
     assert msg["schema_version"] == "2" and msg["revision"] == 1
     body = m.get_body(preferencelist=("plain",)).get_content()
     assert "Signature: hmac-sha256=" + mailer.signature("shared phrase", data) in body
-    assert f"Message ID: {msg['message_id']}" in body and "Report schema version: 2" in body
+    assert f"Message ID: {msg['message_id']}" in body and "Message format: 2\nRevision: 1\n" in body
     pics = {p.get_filename() for p in m.iter_attachments() if p.get_content_maintype() == "image"}
     assert pics == {p["attachment"] for p in msg["days"][0]["photos"]} and pics
     assert all(p["attached"] for p in msg["days"][0]["photos"])
@@ -211,7 +211,7 @@ def test_invoice_request_format_2_same_stop_as_summary(sample):
     # the daily summary now marks the stop as invoiced, with the request's message_id
     after = next(x for x in v2(c)["days"][0]["stops"] if x["stop_uid"] == s["uid"])
     assert after["invoice_request"]["message_id"] == msg["message_id"] and after["invoice_request"]["revision"] == 1
-    assert after["invoice_request"]["billed_through"] == msg["billed_through"][:17] + "00" + msg["billed_through"][19:]
+    assert after["invoice_request"]["billed_through"] == msg["billed_through"]          # the same, with seconds
     # sent again: revision 2 supersedes 1
     c.post(f"/api/stops/{s['id']}/invoice-request", json={})
     _, data2 = attachment(sent[1], ".json")
@@ -374,3 +374,154 @@ def test_invoice_format_2_still_on_site(tmp_path, monkeypatch):
     req, _, _ = invoice_request.build(conn, cfg, s["id"], now)
     assert msg["stop"]["time_on_site_minutes"] == req["labor"]["time_on_site_minutes"]
     assert msg["stop"]["job"]["hubspot_ticket_id"] == "" and msg["stop"]["job"]["tech_typed_reference"] == "1043"
+
+
+# ---- fixes after the agent's sample review (2026-11-24) ------------------------------------------------------------
+def test_calendar_appointment_kept_on_the_stop_and_its_ticket(tmp_path, monkeypatch):
+    from app import calendar_feed
+    from tests.test_export import make
+    c = make(tmp_path, calendar_url="https://x/cal.ics")
+    s = c.get(f"/api/day/{D}").json["stops"][0]
+    ev = {"uid": "AAMk1@1", "start_ts": s["arrive_ts"], "end_ts": s["depart_ts"], "title": "Onsite", "name": "Acme",
+          "location": "12 Main St", "ticket": "362600000002", "contact": "Front desk 555-0142", "estimate": ""}
+    monkeypatch.setattr(calendar_feed, "events_for_day", lambda cfg, date: [ev])
+    c.patch(f"/api/stops/{s['id']}", json={"stop_type": "job", "business_name": "Acme", "work_category": "Time & Material",
+                                          "notes": "Done.", "ticket_action": "continue"})
+    c.post(f"/api/stops/{s['id']}/finish", json={"visit_result": "complete"})
+    st = v2(c)["days"][0]["stops"][0]
+    assert st["calendar_event_uid"] == "AAMk1@1" and st["customer"]["site_contact"] == "Front desk 555-0142"
+    assert st["job"]["hubspot_ticket_id"] == "362600000002" and st["job"]["ticket_action"] == "use"
+    # the published calendar later drops the day: the stop keeps the appointment
+    monkeypatch.setattr(calendar_feed, "events_for_day", lambda cfg, date: [])
+    st = v2(c)["days"][0]["stops"][0]
+    assert st["calendar_event_uid"] == "AAMk1@1" and st["job"]["hubspot_ticket_id"] == "362600000002"
+    # a real ticket typed on the stop wins; a short calendar number is only a reference
+    c.patch(f"/api/stops/{s['id']}", json={"ticket": "999888777666"})
+    assert v2(c)["days"][0]["stops"][0]["job"]["hubspot_ticket_id"] == "999888777666"
+    c.patch(f"/api/stops/{s['id']}", json={"ticket": ""})
+    monkeypatch.setattr(calendar_feed, "events_for_day", lambda cfg, date: [dict(ev, ticket="1043")])
+    j = v2(c)["days"][0]["stops"][0]["job"]
+    assert j["hubspot_ticket_id"] == "" and j["tech_typed_reference"] == "1043" and j["ticket_action"] == "continue"
+
+
+def test_consumable_has_no_price_only_cost(sample):
+    c, _, _ = sample
+    zt = next(ln for s in v2(c)["days"][0]["stops"] for ln in s["lines"] if ln["kind"] == "consumable")
+    assert zt["unit_price"] == "" and zt["amount"] == "" and zt["unit_cost"] == "4.00" and zt["billable"] is False
+
+
+def exif_jpeg(when):
+    import io
+    from PIL import Image
+    im = Image.new("RGB", (40, 30), "white")
+    ex = Image.Exif()
+    ex.get_ifd(0x8769)[0x9003] = when
+    out = io.BytesIO(); im.save(out, "JPEG", exif=ex)
+    return out.getvalue()
+
+
+def test_photo_taken_at(sample):
+    import io
+    c, _, _ = sample
+    s = next(x for x in c.get(f"/api/day/{D}").json["stops"] if x["business_name"] == "Sample Medical Clinic")
+    up = lambda raw, **f: c.post(f"/api/stops/{s['id']}/photos", content_type="multipart/form-data",
+                                 data={"kind": "photo", "file": (io.BytesIO(raw), "p.jpg"), **f})
+    up(exif_jpeg("2026:11:18 13:05:09"))                                  # full size: the file still has it
+    up(exif_jpeg("2026:11:18 13:05:09"), taken="2026:11:18 13:40:00")    # the phone read it before shrinking
+    from PIL import Image
+    import io as _io
+    plain = _io.BytesIO(); Image.new("RGB", (40, 30)).save(plain, "JPEG")
+    up(plain.getvalue())                                                  # no capture time at all
+    pics = [p for p in v2(c)["days"][0]["photos"] if p["stop_uid"] == s["uid"]]
+    assert [p["taken_at"] for p in pics] == ["2026-11-18T13:05:09-08:00", "2026-11-18T13:40:00-08:00", ""]
+    # the stored picture itself still has no metadata
+    pid = next(x for x in c.get(f"/api/day/{D}").json["stops"] if x["id"] == s["id"])["photos"][0]["id"]
+    assert not Image.open(_io.BytesIO(c.get(f"/api/photos/{pid}.jpg").data)).getexif()
+
+
+def test_bodies_and_receipts_for_billed_expenses(sample):
+    c, sent, data_dir = sample
+    setting(data_dir, "message_format", "2")
+    s = tm_stop(c)
+    parking = next(p for p in s["parts"] if p["name"] == "Parking")
+    c.patch(f"/api/stop-parts/{parking['id']}", json={"billable": True})
+    c.post(f"/api/stops/{s['id']}/invoice-request", json={"pdf": False, "photos": False})
+    m = sent[0]
+    pics = [p.get_filename() for p in m.iter_attachments() if p.get_content_maintype() == "image"]
+    msg = json.loads(attachment(m, ".json")[1])
+    receipt = next(p for p in msg["photos"] if p["kind"] == "receipt")
+    assert pics == [receipt["attachment"]] and receipt["attached"]
+    assert not next(p for p in msg["photos"] if p["kind"] == "photo")["attached"]
+    body = m.get_body(preferencelist=("plain",)).get_content()
+    assert f"Message format: 2\nRevision: 1\nMessage ID: {msg['message_id']}\n" in body
+    assert "Parts (JobHub prices; the invoice uses QuickBooks prices):" in body
+    # the daily summary body names only what is attached
+    c.post(f"/api/export/email?from={D}", json={"json": True, "pdf": False})
+    body = sent[1].get_body(preferencelist=("plain",)).get_content()
+    assert "The JSON attachment holds every field." in body and "PDF" not in body
+    assert "Message format: 2\nRevision: 1\nMessage ID: " in body
+
+
+def test_late_notice_body_is_neutral(tmp_path, monkeypatch):
+    from tests.test_late import setup
+    conn, cfg, now, live, search = setup(tmp_path, monkeypatch, start_in_min=5)
+    msgs = []
+    monkeypatch.setattr(mailer, "send", lambda cfg, msg: msgs.append(msg))
+    late.send(conn, replace(cfg, message_format="2"), D, "ev1@1", now, live, search)
+    body = msgs[0].get_body(preferencelist=("plain",)).get_content()
+    assert "let the customer know" not in body and "Message format: 2\nRevision: 1\nMessage ID: " in body
+
+
+def test_revision_lists_removed_and_merged(sample):
+    c, sent, data_dir = sample
+    c.post(f"/api/export/email?from={D}", json={"json": True, "format": "2"})
+    first = json.loads(attachment(sent[0], ".json")[1])["days"][0]
+    assert first["removed_stops"] == [] and first["removed_line_uids"] == [] and first["removed_follow_up_uids"] == []
+    stops = c.get(f"/api/day/{D}").json["stops"]
+    clinic = next(s for s in stops if s["business_name"] == "Sample Medical Clinic")
+    vendor = next(s for s in stops if s["business_name"] == "Sample Supply House")
+    cable = next(p for p in clinic["parts"] if p["name"] == "Cat 6 cable")
+    jack = next(p for p in clinic["parts"] if p["name"].startswith("Keystone"))
+    fu = clinic["follow_ups"][0]
+    c.patch(f"/api/stop-parts/{cable['id']}", json={"qty": 80})          # changed: same line_uid, new quantity
+    c.delete(f"/api/stop-parts/{jack['id']}")                           # removed line
+    c.delete(f"/api/follow-ups/{fu['id']}")                             # removed follow-up
+    c.delete(f"/api/stops/{vendor['id']}")                              # removed stop (its stock lines go with it)
+    c.post(f"/api/export/email?from={D}", json={"json": True, "format": "2"})
+    msg = json.loads(attachment(sent[1], ".json")[1])
+    day = msg["days"][0]
+    assert msg["revision"] == 2 and sent[1]["Subject"].endswith("(update 2)")
+    assert day["removed_stops"] == [{"stop_uid": vendor["uid"], "merged_into": None}]
+    assert jack["uid"] in day["removed_line_uids"] and cable["uid"] not in day["removed_line_uids"]
+    assert {b["uid"] for b in vendor["bought"]} <= set(day["removed_line_uids"])
+    assert day["removed_follow_up_uids"] == [fu["uid"]]
+    cl = next(s for s in day["stops"] if s["stop_uid"] == clinic["uid"])
+    assert next(ln for ln in cl["lines"] if ln["line_uid"] == cable["uid"])["quantity"] == 80
+    # a merge: both stops were in the last send; the second one's lines now sit in the first -> merged_into
+    c.post(f"/api/day/{D}/undo")
+    stops = c.get(f"/api/day/{D}").json["stops"]
+    i = next(k for k, s in enumerate(stops) if s["business_name"] == "Sample Dental Office")
+    a, b = stops[i], stops[i + 1]
+    c.patch(f"/api/stops/{b['id']}", json={"stop_type": "job", "business_name": "Sample Dental Office",
+                                          "work_category": "Time & Material", "notes": "Came back for a cable."})
+    c.post(f"/api/stops/{b['id']}/parts", json={"name": "Keystone jack Cat 6 - white", "qty": 1})
+    c.post(f"/api/stops/{b['id']}/finish", json={"visit_result": "complete"})
+    c.post(f"/api/export/email?from={D}", json={"json": True, "format": "2"})
+    assert b["uid"] in {x["stop_uid"] for x in json.loads(attachment(sent[2], ".json")[1])["days"][0]["stops"]}
+    c.post("/api/stops/merge", json={"ids": [a["id"], b["id"]]})
+    c.post(f"/api/export/email?from={D}", json={"json": True, "format": "2"})
+    day = json.loads(attachment(sent[3], ".json")[1])["days"][0]
+    assert day["removed_stops"] == [{"stop_uid": b["uid"], "merged_into": a["uid"]}]
+    assert day["removed_line_uids"] == []                                  # the lines moved, nothing was removed
+
+
+def test_invoice_revision_lists_removed_lines(sample):
+    c, sent, data_dir = sample
+    setting(data_dir, "message_format", "2")
+    s = tm_stop(c)
+    c.post(f"/api/stops/{s['id']}/invoice-request", json={})
+    jack = next(p for p in s["parts"] if p["name"].startswith("Keystone"))
+    c.delete(f"/api/stop-parts/{jack['id']}")
+    c.post(f"/api/stops/{s['id']}/invoice-request", json={})
+    msg = json.loads(attachment(sent[1], ".json")[1])
+    assert msg["revision"] == 2 and msg["removed_line_uids"] == [jack["uid"]]

@@ -97,9 +97,9 @@ def notice(cfg, ev, eta, now, note=""):
             "calendar_event_uid": ev.get("uid") or ""}
 
 
-def body(n, sig="", message_id=""):
-    lines = ["JobHub Late Notice: the technician is running late for an on-site appointment.",
-             "Please let the customer know. Details are in the attached JSON.", "",
+def body(n, sig="", message_id="", revision=1):
+    lines = ["JobHub Late Notice: the technician is running late for this appointment.",
+             "Details are in the attached JSON.", "",
              f"Technician: {mailer.tech_text(n['technician'])}",
              f"Customer: {n['customer'] or '(not given)'}",
              f"Address: {n['address'] or '(not given)'}",
@@ -109,7 +109,8 @@ def body(n, sig="", message_id=""):
     if n["note"]:
         lines.append(f"Note from the technician: {n['note']}")
     if message_id:
-        lines += ["Message format: 2", f"Message ID: {message_id}"]
+        from .invoice_request import v2_lines
+        lines += v2_lines(revision, message_id, "replaces the earlier notice for this appointment")
     if sig:
         lines.append(f"Signature: hmac-sha256={sig} (of the attached JSON file)")
     return "\n".join(lines) + "\n"
@@ -147,7 +148,7 @@ def send(conn, cfg, date, uid, now, live, search, note=""):
         subject = f"JobHub Late Notice {n['hubspot_ticket'] or n['customer'] or ev['start']}"
         fname = f"jobhub-late-notice-{stamp}.json"
     sig = mailer.signature(cfg.report_signing_key, data) if cfg.report_signing_key else ""
-    msg = mailer._message(cfg, subject, body(n, sig, mid if cfg.message_format == "2" else ""))
+    msg = mailer._message(cfg, subject, body(n, sig, mid if cfg.message_format == "2" else "", revision))
     msg.replace_header("To", to)
     msg.add_attachment(data, maintype="application", subtype="json", filename=fname)
     ok, err = True, None

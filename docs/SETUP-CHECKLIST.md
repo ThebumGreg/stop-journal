@@ -92,7 +92,8 @@ Work down the list. Items marked **Tell Claude** are results to report back. Tic
 - [ ] A job's Finish step now has **Waiting for parts** and **Waiting for customer** (old "Waiting" answers became
       Waiting for parts: change any that were really waiting on the customer).
 - [ ] Send for invoice: the preview has **Customer billing email** (optional, remembered for that place).
-- [ ] Give your agent `docs/sample-report/v2/` and the README section "Message format 2".
+- [ ] Give your agent `docs/sample-report/v2/` and the README section "Message format 2" (updated after its review:
+      on-site invoice, revision 2 with removed items, calendar link, real SKU example).
 - [ ] Reports → Email report with **Send as format 2 (test)** ticked for one real day; the agent checks it.
 - [ ] When the agent is happy: Settings → Email → **Message format: 2**. After a week with no format 1 emails, tell
       Claude to remove format 1.

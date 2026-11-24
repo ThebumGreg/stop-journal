@@ -14,8 +14,8 @@ Labor: 08:00 to 10:30, 150 min
 Visit result: Complete
 Customer billing email: (not given)
 Version: 1
-Stop ID: 1f0563fe-d5c9-47ab-9572-b78a8d2888f1
-Parts:
+Stop ID: 8284a692-1c1a-466e-a937-19ece0fa4c3e
+Parts (JobHub prices; the invoice uses QuickBooks prices):
   140 ft x Cat 6 cable (C6-1000-BLU) $0.45 each
   4 ea x Keystone jack Cat 6 - white (KJ-C6-W) $6.50 each
 

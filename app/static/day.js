@@ -1498,6 +1498,31 @@ function shrink(file, side = 1600) {
     img.src = url;
   });
 }
+// When the picture was taken (its EXIF DateTimeOriginal, "2026:11:18 10:12:05"), read before shrink() re-encodes it and
+// the metadata is lost. Only this one value is read and sent; '' when the file has none (screenshots, some apps).
+async function exifTime(file) {
+  try {
+    const v = new DataView(await file.slice(0, 262144).arrayBuffer());
+    if (v.getUint16(0) !== 0xFFD8) return '';
+    for (let o = 2; o + 10 < v.byteLength;) {
+      const marker = v.getUint16(o), len = v.getUint16(o + 2);
+      if ((marker & 0xFF00) !== 0xFF00) return '';
+      if (marker === 0xFFE1 && v.getUint32(o + 4) === 0x45786966) {          // APP1 "Exif"
+        const t = o + 10, le = v.getUint16(t) === 0x4949;
+        const u16 = p => v.getUint16(t + p, le), u32 = p => v.getUint32(t + p, le);
+        const find = (dir, tag) => { const n = u16(dir); for (let i = 0; i < n; i++) { const e = dir + 2 + i * 12; if (u16(e) === tag) return e; } return -1; };
+        const ex = find(u32(4), 0x8769);                                     // the Exif sub-directory
+        const e = ex < 0 ? -1 : find(u32(ex + 8), 0x9003);                   // DateTimeOriginal
+        if (e < 0) return '';
+        const at = t + u32(e + 8);
+        let s = ''; for (let i = 0; i < 19; i++) s += String.fromCharCode(v.getUint8(at + i));
+        return /^\d{4}:\d\d:\d\d \d\d:\d\d:\d\d$/.test(s) ? s : '';
+      }
+      o += 2 + len;
+    }
+  } catch (e) {}
+  return '';
+}
 // Full-size view over the page with a Close button (opening the picture on its own would leave the
 // home-screen app with no way back).
 function viewPhoto(src) {
@@ -1531,6 +1556,7 @@ function photoBox(s, err) {
       const f = inp.files[0]; if (!f) return;
       lab.firstChild.textContent = 'Uploading…';
       const fd = new FormData();
+      fd.append('taken', await exifTime(f));
       fd.append('file', await shrink(f), 'picture.jpg'); fd.append('kind', kind);
       await run(async () => {
         const r = await fetch('/api/stops/' + s.id + '/photos', {method: 'POST', body: fd});

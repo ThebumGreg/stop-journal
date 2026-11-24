@@ -33,6 +33,8 @@ def test_qbo_products_and_services(tmp_path):
     assert jack["sku"] == "KJ-C6-W" and jack["unit_cost"] == 6.5 and jack["kind"] == "consumable"   # kind kept
     assert "Labor" not in parts and "Install fee" not in parts and "Tech time" not in parts
     assert parts["Cat 6 patch cord 3ft"]["sku"] == "PC6-3" and parts["Cat 6 patch cord 3ft"]["last_cost"] == 1.87
+    # the QuickBooks product/service name is kept as QuickBooks has it (format 2 qbo_item_name)
+    assert cable["qbo_item"] == "Cable:Cat 6 cable" and jack["qbo_item"] == "Keystone jack"
 
 
 def test_billable_part_without_number_warns(tmp_path):

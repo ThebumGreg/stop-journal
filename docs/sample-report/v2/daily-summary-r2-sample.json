@@ -1,0 +1,448 @@
+{
+  "schema_version": "2",
+  "type": "daily_summary",
+  "message_id": "356898c6-7047-4aa9-9802-4caecc335fc9",
+  "subject_key": "2026-11-18",
+  "revision": 2,
+  "supersedes": "f1c2b6b3-7d9f-4263-bd52-dfa9b44beeb6",
+  "sent_at": "2026-11-24T12:41:23-08:00",
+  "timezone": "America/Los_Angeles",
+  "app": {
+    "name": "JobHub",
+    "version": "2.0.0"
+  },
+  "technician": {
+    "name": "Sample Technician",
+    "email": "tech@work.example"
+  },
+  "omitted": [],
+  "date_from": "2026-11-18",
+  "date_to": "2026-11-18",
+  "days": [
+    {
+      "date": "2026-11-18",
+      "day_start": "2026-11-18T07:38:00-08:00",
+      "day_end": "2026-11-18T15:06:00-08:00",
+      "end_day": {
+        "kind": "home",
+        "place": "Home",
+        "drive_home_counted": true,
+        "time": "2026-11-18T15:06:00-08:00",
+        "miles_to_home": 5.9
+      },
+      "totals": {
+        "on_site_minutes": 290,
+        "billable_on_site_minutes": 290,
+        "drive_minutes": 126,
+        "traffic_minutes": 14,
+        "fuel_stop_minutes": 14,
+        "short_break_minutes": 0,
+        "lunch_minutes": 30,
+        "lunch_paid": true,
+        "unpaid_break_minutes": 0,
+        "paid_minutes": 446,
+        "miles": 18.4,
+        "expenses_total": "12.00",
+        "stock_bought_total": "0.00",
+        "fuel_total": "68.10",
+        "by_category": [
+          {
+            "category": "Time & Material",
+            "billing": "hourly",
+            "on_site_minutes": 150
+          },
+          {
+            "category": "Quoted project",
+            "billing": "project",
+            "on_site_minutes": 140
+          }
+        ],
+        "stops_confirmed": 2,
+        "stops_excluded": 4
+      },
+      "stops": [
+        {
+          "stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
+          "date": "2026-11-18",
+          "place_type": "client",
+          "calendar_event_uid": "",
+          "customer": {
+            "business_name": "Sample Dental Office",
+            "hubspot_company_id": "18200000001",
+            "qbo_customer_id": "58",
+            "service_address": {
+              "line1": "100 Example Ave",
+              "line2": "Suite 210",
+              "city": "Los Angeles",
+              "state": "CA",
+              "zip": "90012",
+              "formatted": "100 Example Ave, Suite 210, Los Angeles, CA 90012",
+              "latitude": 34.103910222320735,
+              "longitude": -118.20662518721788
+            },
+            "site_contact": ""
+          },
+          "job": {
+            "category": "Time & Material",
+            "billing": "hourly",
+            "hubspot_ticket_id": "24681357913",
+            "ticket_action": "use",
+            "qbo_estimate_number": "",
+            "tech_typed_reference": ""
+          },
+          "arrival": "2026-11-18T08:00:00-08:00",
+          "departure": "2026-11-18T10:30:30-08:00",
+          "time_on_site_minutes": 150,
+          "breaks": [],
+          "drive_from_previous": {
+            "from_type": "home",
+            "from_name": "Home",
+            "from_stop_uid": null,
+            "minutes": 20,
+            "minutes_estimated": false,
+            "miles": 4.5,
+            "miles_method": "gps",
+            "notes": ""
+          },
+          "visit_result": "complete",
+          "work_performed": "Ran two Cat 6 drops from the network rack to the front desk.\nTerminated both ends with keystone jacks and tested: both pass.\nRelabeled the patch panel ports 12 and 13.",
+          "lines": [
+            {
+              "line_uid": "10ac14f8-768c-4120-9415-d6df142c3d11",
+              "kind": "part",
+              "name": "Cat 6 cable",
+              "sku": "C6-1000-BLU",
+              "qbo_item_id": "",
+              "qbo_item_name": "Cable Cat6 Blue (ft)",
+              "quantity": 140,
+              "unit": "ft",
+              "unit_price": "0.45",
+              "amount": "63.00",
+              "unit_cost": "0.189",
+              "billable": true,
+              "receipt_photo_uid": "",
+              "notes": ""
+            },
+            {
+              "line_uid": "9cc3bace-08c6-4e61-8abf-144a9f566296",
+              "kind": "part",
+              "name": "Keystone jack Cat 6 - white",
+              "sku": "IC1078F6WH",
+              "qbo_item_id": "",
+              "qbo_item_name": "Cable CAT6 Insert RJ-45 (White)",
+              "quantity": 4,
+              "unit": "ea",
+              "unit_price": "6.50",
+              "amount": "26.00",
+              "unit_cost": "2.50",
+              "billable": true,
+              "receipt_photo_uid": "",
+              "notes": ""
+            },
+            {
+              "line_uid": "e903a7ad-4d7d-4967-8221-0c6db15471fc",
+              "kind": "consumable",
+              "name": "Zip ties 8 in",
+              "sku": "",
+              "qbo_item_id": "",
+              "qbo_item_name": "",
+              "quantity": 1,
+              "unit": "pack",
+              "unit_price": "",
+              "amount": "",
+              "unit_cost": "4.00",
+              "billable": false,
+              "receipt_photo_uid": "",
+              "notes": ""
+            },
+            {
+              "line_uid": "2b6c6edb-de94-4602-af92-d7537505f1ce",
+              "kind": "expense",
+              "name": "Parking",
+              "sku": "",
+              "qbo_item_id": "",
+              "qbo_item_name": "",
+              "quantity": 1,
+              "unit": "ea",
+              "unit_price": "12.00",
+              "amount": "12.00",
+              "unit_cost": "12.00",
+              "billable": true,
+              "receipt_photo_uid": "bb1f18dd-63af-4247-9970-280079d49a88",
+              "notes": ""
+            }
+          ],
+          "follow_ups": [],
+          "photo_uids": [
+            "bb1f18dd-63af-4247-9970-280079d49a88",
+            "012d4541-2990-4539-8861-738fc0a5a8c0"
+          ],
+          "invoice_request": {
+            "message_id": "8d291bb7-5aa5-4320-9f52-a1cfbc8673e0",
+            "revision": 1,
+            "sent_at": "2026-11-18T10:22:00-08:00",
+            "billed_through": "2026-11-18T10:22:00-08:00",
+            "time_on_site_minutes": 142
+          }
+        },
+        {
+          "stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
+          "date": "2026-11-18",
+          "place_type": "client",
+          "calendar_event_uid": "AAMkSample123@1795543200",
+          "customer": {
+            "business_name": "Sample Medical Clinic",
+            "hubspot_company_id": "18200000002",
+            "qbo_customer_id": "",
+            "service_address": {
+              "line1": "300 Example Blvd",
+              "line2": "",
+              "city": "Los Angeles",
+              "state": "CA",
+              "zip": "90013",
+              "formatted": "300 Example Blvd, Los Angeles, CA 90013",
+              "latitude": 34.0230457039227,
+              "longitude": -118.15243070204251
+            },
+            "site_contact": "Front desk 555-0142"
+          },
+          "job": {
+            "category": "Quoted project",
+            "billing": "project",
+            "hubspot_ticket_id": "362600000002",
+            "ticket_action": "use",
+            "qbo_estimate_number": "2210",
+            "tech_typed_reference": ""
+          },
+          "arrival": "2026-11-18T12:21:00-08:00",
+          "departure": "2026-11-18T14:41:00-08:00",
+          "time_on_site_minutes": 140,
+          "breaks": [],
+          "drive_from_previous": {
+            "from_type": "client",
+            "from_name": "Sample Dental Office",
+            "from_stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
+            "minutes": 67,
+            "minutes_estimated": false,
+            "miles": 8.0,
+            "miles_method": "estimate",
+            "notes": ""
+          },
+          "visit_result": "return_visit",
+          "work_performed": "Mounted the new switch in the IT closet and patched 18 of 24 ports.\nSix ports wait on the customer's new patch cords.",
+          "lines": [
+            {
+              "line_uid": "7e3e0323-7538-436b-a193-f0c3fd6c2fb1",
+              "kind": "part",
+              "name": "Cat 6 cable",
+              "sku": "C6-1000-BLU",
+              "qbo_item_id": "",
+              "qbo_item_name": "Cable Cat6 Blue (ft)",
+              "quantity": 80,
+              "unit": "ft",
+              "unit_price": "0.45",
+              "amount": "36.00",
+              "unit_cost": "0.189",
+              "billable": true,
+              "receipt_photo_uid": "",
+              "notes": ""
+            }
+          ],
+          "follow_ups": [
+            {
+              "follow_up_uid": "c71cdc43-2cba-4bac-994c-6544f22fd475",
+              "stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
+              "what": "Send the customer a quote for 6 patch cords",
+              "owner": "Office",
+              "owner_email": "office@work.example",
+              "due": "2026-11-20"
+            },
+            {
+              "follow_up_uid": "3fda9e38-348e-4e2e-a07c-37520b8eb15e",
+              "stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
+              "what": "Return visit",
+              "owner": "Me",
+              "owner_email": "tech@work.example",
+              "due": "2026-11-24"
+            }
+          ],
+          "photo_uids": [],
+          "invoice_request": null
+        }
+      ],
+      "excluded": [
+        {
+          "start": "2026-11-18T07:00:00-08:00",
+          "end": "2026-11-18T07:40:00-08:00",
+          "reason": "Personal"
+        },
+        {
+          "start": "2026-11-18T10:42:00-08:00",
+          "end": "2026-11-18T10:56:00-08:00",
+          "reason": "Fuel stop (counted as drive time)"
+        },
+        {
+          "start": "2026-11-18T11:39:00-08:00",
+          "end": "2026-11-18T12:09:00-08:00",
+          "reason": "Lunch"
+        },
+        {
+          "start": "2026-11-18T15:06:00-08:00",
+          "end": "",
+          "reason": "End Day"
+        }
+      ],
+      "timesheet": [
+        {
+          "start": "2026-11-18T07:40:00-08:00",
+          "end": "2026-11-18T08:00:00-08:00",
+          "type": "drive",
+          "description": "Drive: Home to Sample Dental Office",
+          "minutes": 20,
+          "paid": true
+        },
+        {
+          "start": "2026-11-18T08:00:00-08:00",
+          "end": "2026-11-18T10:30:30-08:00",
+          "type": "on_site",
+          "description": "Sample Dental Office",
+          "minutes": 150,
+          "paid": true
+        },
+        {
+          "start": "2026-11-18T10:30:30-08:00",
+          "end": "2026-11-18T10:42:00-08:00",
+          "type": "drive",
+          "description": "Drive: Sample Dental Office to Sample Fuel Station",
+          "minutes": 12,
+          "paid": true
+        },
+        {
+          "start": "2026-11-18T10:42:00-08:00",
+          "end": "2026-11-18T10:56:00-08:00",
+          "type": "drive",
+          "description": "Fuel stop (Sample Fuel Station), counted as drive time",
+          "minutes": 14,
+          "paid": true
+        },
+        {
+          "start": "2026-11-18T10:56:00-08:00",
+          "end": "2026-11-18T11:39:00-08:00",
+          "type": "drive",
+          "description": "Drive: Sample Fuel Station to Lunch",
+          "minutes": 43,
+          "paid": true
+        },
+        {
+          "start": "2026-11-18T11:39:00-08:00",
+          "end": "2026-11-18T12:09:00-08:00",
+          "type": "lunch",
+          "description": "Lunch",
+          "minutes": 30,
+          "paid": true
+        },
+        {
+          "start": "2026-11-18T12:09:00-08:00",
+          "end": "2026-11-18T12:21:00-08:00",
+          "type": "drive",
+          "description": "Drive: Lunch to Sample Medical Clinic",
+          "minutes": 12,
+          "paid": true
+        },
+        {
+          "start": "2026-11-18T12:21:00-08:00",
+          "end": "2026-11-18T14:41:00-08:00",
+          "type": "on_site",
+          "description": "Sample Medical Clinic",
+          "minutes": 140,
+          "paid": true
+        },
+        {
+          "start": "2026-11-18T14:41:00-08:00",
+          "end": "2026-11-18T15:06:00-08:00",
+          "type": "drive",
+          "description": "Drive: Sample Medical Clinic to Home",
+          "minutes": 25,
+          "paid": true
+        }
+      ],
+      "mileage": {
+        "basis": "home_to_home",
+        "total_miles": 18.4,
+        "legs": [
+          {
+            "from_stop_uid": null,
+            "to_stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
+            "from_name": "Home",
+            "to_name": "Sample Dental Office",
+            "miles": 4.5,
+            "method": "gps"
+          },
+          {
+            "from_stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
+            "to_stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
+            "from_name": "Sample Dental Office",
+            "to_name": "Sample Medical Clinic",
+            "miles": 8.0,
+            "method": "estimate"
+          },
+          {
+            "from_stop_uid": "ffc0650a-b817-42da-b24e-9ab1c046f584",
+            "to_stop_uid": null,
+            "from_name": "Sample Medical Clinic",
+            "to_name": "Home",
+            "miles": 5.9,
+            "method": "gps"
+          }
+        ]
+      },
+      "fuel": [
+        {
+          "stop_uid": "1989342e-3caa-46b6-b0d9-7bc924b3fc24",
+          "start": "2026-11-18T10:42:00-08:00",
+          "end": "2026-11-18T10:56:00-08:00",
+          "station": "Sample Fuel Station",
+          "gallons": 14.2,
+          "total": "68.10",
+          "price_per_gallon": "4.796",
+          "odometer": 48213,
+          "receipt_photo_uid": ""
+        }
+      ],
+      "photos": [
+        {
+          "photo_uid": "bb1f18dd-63af-4247-9970-280079d49a88",
+          "stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
+          "kind": "receipt",
+          "label": "Receipt: Stop 1, Sample Dental Office, 08:00. Parking receipt",
+          "caption": "Parking receipt",
+          "attachment": "photo-bb1f18dd-63af-4247-9970-280079d49a88.jpg",
+          "attached": false,
+          "taken_at": "2026-11-18T08:03:41-08:00"
+        },
+        {
+          "photo_uid": "012d4541-2990-4539-8861-738fc0a5a8c0",
+          "stop_uid": "e74959f5-da83-4314-8401-904a18c88a72",
+          "kind": "photo",
+          "label": "Photo: Stop 1, Sample Dental Office, 08:00. Patch panel after relabel",
+          "caption": "Patch panel after relabel",
+          "attachment": "photo-012d4541-2990-4539-8861-738fc0a5a8c0.jpg",
+          "attached": false,
+          "taken_at": "2026-11-18T10:12:05-08:00"
+        }
+      ],
+      "removed_stops": [
+        {
+          "stop_uid": "5463f78b-1394-42a2-a90f-666579fb31d4",
+          "merged_into": null
+        }
+      ],
+      "removed_line_uids": [
+        "074af5fb-a568-4105-ace0-aab8e5704566",
+        "1334b556-0b7d-43cb-9b26-1fb824986dc1",
+        "4608f334-aa32-4221-b4da-ec94d0a7e51d"
+      ],
+      "removed_follow_up_uids": []
+    }
+  ]
+}

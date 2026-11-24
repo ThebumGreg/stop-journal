@@ -597,7 +597,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         def go(conn, cfg):
             date = service._stop(conn, sid)["date"]
             kind = request.form.get("kind", "receipt")
-            pid, jpeg = photos.add(conn, cfg.data_dir, sid, f.read() if f else b"", kind, request.form.get("caption", ""))
+            pid, jpeg = photos.add(conn, cfg.data_dir, sid, f.read() if f else b"", kind, request.form.get("caption", ""),
+                                   request.form.get("taken", ""), cfg.app_tz)
             if kind == "receipt" and cfg.receipt_reader in receipts.READERS:
                 receipts.read(conn, cfg, pid, jpeg)        # suggestions only; a failure is stored, never raised
             return payload(conn, cfg, date)

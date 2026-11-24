@@ -361,6 +361,15 @@ MIGRATIONS = [
     ("invoice_requests", "billed_through_ts", "INTEGER"),
     ("invoice_requests", "invoice_to_email", "TEXT"),
     ("late_notices", "message_id", "TEXT"),
+    # the calendar appointment a stop matched, kept on the stop (the published calendar may later drop past days)
+    ("stops", "calendar_uid", "TEXT"),
+    ("stops", "calendar_ticket", "TEXT"),
+    ("stops", "calendar_contact", "TEXT"),
+    # when the picture was taken (the phone's capture time, read before the metadata is dropped)
+    ("photos", "taken_at", "INTEGER"),
+    # the ids sent in each format 2 message: the next revision lists what was removed since
+    ("email_log", "sent_uids", "TEXT"),
+    ("invoice_requests", "sent_uids", "TEXT"),
 ]
 
 # Tables whose rows carry a stable uid (filled by a trigger on insert; Undo re-inserts rows WITH their uid).

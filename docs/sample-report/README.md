@@ -12,53 +12,83 @@ A made-up day (all names, addresses and coordinates are invented) that uses ever
 | `jobhub-daily-summary-2026-11-18.pdf` | The same report for people. |
 
 ## Message format 2 (`v2/`)
-Built to the agent's spec "JobHub message format, schema version 2" (with its section 8 answers, 2026-11-24). JobHub
-sends format 1 until **Settings → Email → Message format** is set to 2; **Email report → "Send as format 2 (test)"**
-sends one day in format 2 first, for the agent to check. Format 2 samples (the same made-up day):
+Built to the agent's spec "JobHub message format, schema version 2" (with its section 8 answers and the sample review
+of 2026-11-24). JobHub sends format 1 until **Settings → Email → Message format** is set to 2; **Email report →
+"Send as format 2 (test)"** sends one day in format 2 first, for the agent to check. Format 2 samples (the same
+made-up day, with the clinic visit booked as a calendar appointment and real-looking QuickBooks SKUs):
 
 | File | What it is |
 |---|---|
-| `v2/daily-summary-sample.json` + `v2/daily-summary-body.txt` | Daily summary (`type` daily_summary). The PDF is unchanged (format 1 above). |
-| `v2/invoice-request-sample.json` + `v2/invoice-request-body.txt` | Invoice request (`type` invoice_request) for the Time & Material stop, sent before the summary, so the summary's stop has `invoice_request`. |
-| `v2/late-notice-sample.json` + `v2/late-notice-body.txt` | Late notice (`type` late_notice) for a made-up 12:00 appointment at the clinic. |
+| `v2/invoice-request-sample.json` + `-body.txt` | Invoice request for the Time & Material stop, **sent while still on site** at 10:22 (`still_on_site` true, 142 min). The parking is billed, so its receipt is attached. |
+| `v2/daily-summary-sample.json` + `-body.txt` | Daily summary, revision 1, sent after the day. The dental stop now ends 10:30:30 (150 min) and carries `invoice_request` (10:22, 142 min): the difference to flag. JSON, PDF and 2 pictures attached. |
+| `v2/daily-summary-r2-sample.json` + `-body.txt` | The same day, revision 2 ("(update 2)", `supersedes` = revision 1): the supply house stop was deleted, the clinic's cable changed 60 → 80 ft (same `line_uid`) and its jacks were removed. |
+| `v2/late-notice-sample.json` + `-body.txt` | Late notice for the 12:00 clinic appointment; its `calendar_event_uid` and ticket match the clinic stop in the summary. |
 
-As built, in the spec's terms:
+### Rules for the agent (format 2)
+- Act on `days[].stops[]` (confirmed stops only). Find earlier records by `stop_uid`, `line_uid`, `follow_up_uid`,
+  `photo_uid`; never by stop numbers or names.
+- The highest `revision` for a `subject_key` wins. A revision > 1 replaces the earlier one: update what you wrote,
+  never add it twice. Each day also lists what is gone since the previous send of the same dates:
+  - `removed_stops` [{`stop_uid`, `merged_into`}]: `merged_into` null = the stop was deleted or is no longer work
+    (e.g. marked Personal): remove what you wrote for it. `merged_into` = a `stop_uid`: it was joined with that stop:
+    move its records there, do not delete them.
+  - `removed_line_uids`, `removed_follow_up_uids`: lines and follow-ups deleted (a changed quantity keeps its
+    `line_uid` and is not listed). Items of a section left out on purpose (`omitted`) are never listed as removed.
+  - A removed stop that was already invoiced (it had `invoice_request`): do not void the invoice; tell the technician.
+- An invoice request with `revision` > 1 also has `removed_line_uids` (lines on the earlier request that are gone).
+  Update the invoice only while it is unsent; otherwise flag the difference.
+- `stop.invoice_request` set in a daily summary: never invoice that stop again; if its minutes or lines differ from
+  the request (`billed_through`, `time_on_site_minutes`), flag it to the technician.
+- Prices on the invoice come from QuickBooks (`sku`, then `qbo_item_name`, then `name`). `unit_cost` is our purchase
+  cost: documentation only.
+- Late notice: the company has not decided who contacts the customer; draft the message for the technician or the
+  office to send.
+
+### As built, in the spec's terms
 - **Envelope** on every JSON: as specified. `subject_key` is the date (a range: `2026-11-19_2026-11-23`), the
   `stop_uid` (invoice request) or the `calendar_event_uid` (late notice). `revision` counts successful sends of that
   key; the subject's "(update N)" is N = `revision`. `supersedes` is the previous send's `message_id` (`null` when that
-  send was format 1 or there was none). `app.version` starts at 2.0.0. The body has `Message ID:` and
-  `Message format: 2` lines; `Signature:` is over the JSON bytes as before.
+  send was format 1 or there was none). `app.version` starts at 2.0.0. Every format 2 body has the same three lines
+  `Message format: 2`, `Revision: N`, `Message ID: …`; `Signature:` is over the JSON bytes as before. The body names
+  only what is attached.
 - **Attachment names**: `jobhub-daily-summary-<date>-r<rev>.json` / `.pdf`,
   `jobhub-invoice-request-<date>-stop-<n>-<customer>-r<rev>.json`, `jobhub-late-notice-<date>-<HHMM>-r<rev>.json`;
-  pictures `photo-<photo_uid>.jpg`. Each Photo has `attached` (true when its picture is attached to this email).
+  pictures `photo-<photo_uid>.jpg`. Each Photo has `attached` (true when its picture is attached to this email) and
+  `taken_at` (the phone's capture time; "" when the picture has none, e.g. pictures added before 2026-11-24).
 - **Customer**: `service_address` comes from the saved place (the technician can type street, suite, city, state, ZIP
   on Places), else the stop's one-line address is split; `formatted` is always the full line. `latitude`/`longitude`
   are the stop's position (`null` when coordinates are left out). `site_contact` is the calendar appointment's contact.
-- **Job**: `hubspot_ticket_id` only when the value is all digits and 9+ long (links are reduced to the ID); anything
-  else is `tech_typed_reference` with `hubspot_ticket_id` "" and `ticket_action` from the technician's choice
-  (default `find`).
-- **Stop**: additions `calendar_event_uid` (the matched appointment, "" if none; joins a late notice to its visit).
+- **Job**: `hubspot_ticket_id` is a real ID (all digits, 9+ long; links are reduced to the ID): the one typed on the
+  stop, else the one on the matched calendar appointment (the same value its late notice sends). A short number goes
+  to `tech_typed_reference` with `hubspot_ticket_id` "" and `ticket_action` from the technician's choice (default
+  `find`).
+- **Stop**: addition `calendar_event_uid` (the matched appointment, "" if none; joins a late notice to its visit).
+  JobHub keeps the match on the stop, so later revisions have it even after the published calendar drops the day.
   `visit_result`: `complete`, `return_visit`, `waiting_parts`, `waiting_customer` (answers from before the split are
   `waiting_parts`), "" when not set. `breaks` lists lunch (`paid` per the lunch setting) and personal breaks (unpaid)
   taken in the middle of one visit; never billable.
 - **Line**: `unit_price`/`amount` are the price charged; `unit_cost` is what JobHub knows we pay per unit (the parts
   list's purchase cost or the last price paid; for an expense, the expense itself). Documentation only.
-  Additions: `qbo_item_name` (the QuickBooks product/service name from the import; `qbo_item_id` is "" because the
-  QuickBooks export has no item ID), and on `stock` lines `amount_paid` (what was paid for the line; `unit_price` and
-  `amount` are "" because stock is never charged). `receipt_photo_uid` is filled for expense and stock lines when the
-  stop has exactly one receipt picture.
-- **Daily summary**: `records_to_update` and top-level `follow_ups` are gone; act on `days[].stops[]`. Additions:
-  `totals.stops_confirmed` / `stops_excluded`, `end_day.time` / `miles_to_home`, `fuel[].stop_uid`. `excluded[].end`
-  is "" for the End Day stop. Omitted sections are empty (`[]`, `""`, `null`), never missing; `omitted` lists the keys
-  `costs`, `expenses`, `fuel`, `photos`, `materials`, `categories`, `follow_ups`, `mileage`, `recap`, `coordinates`.
+  `consumable` and `stock` lines are never charged: `unit_price` and `amount` are "", what we paid is in `unit_cost`
+  (a consumable never bought through JobHub shows its catalog price there). Additions: `qbo_item_name` (the QuickBooks
+  product/service name from the QuickBooks parts import; `qbo_item_id` is "" because that export has no item ID), and
+  on `stock` lines `amount_paid` (the total paid for the line). `receipt_photo_uid` is filled for expense and stock
+  lines when the stop has exactly one receipt picture.
+- **Daily summary**: `records_to_update` and top-level `follow_ups` are gone. Additions per day: `removed_stops`,
+  `removed_line_uids`, `removed_follow_up_uids` (above), `totals.stops_confirmed` / `stops_excluded`, `end_day.time` /
+  `miles_to_home`, and `fuel[].stop_uid` (the ID of the fuel stop, which is not in `stops`: fill-ups count as drive
+  time, so the stop is listed under `excluded`). `excluded[].end` is "" for the End Day stop. Omitted sections are
+  empty (`[]`, `""`, `null`), never missing; `omitted` lists the keys `costs`, `expenses`, `fuel`, `photos`,
+  `materials`, `categories`, `follow_ups`, `mileage`, `recap`, `coordinates`.
 - **Invoice request**: `stop` is the same Stop object as in the daily summary. When sent while still on site
   (`still_on_site` true), the Stop's `departure` and `time_on_site_minutes` run to `billed_through` (the moment of
-  sending); the later daily summary has the real departure, so compare and flag, never re-invoice. Additions:
-  `invoice_to_email` (the billing email the customer gave on site, "" if none; JobHub remembers it for that place) and
-  `photos` (Photo objects of the stop).
+  sending, to the second; the summary's `invoice_request.billed_through` is the same value). Receipts are always
+  attached when an expense is billed; other pictures only when the technician ticks Photos. Additions:
+  `invoice_to_email` (the billing email the customer gave on site, "" if none), `photos` (Photo objects of the stop)
+  and `removed_line_uids`. The body lists parts as "Parts (JobHub prices; the invoice uses QuickBooks prices)".
 - **Late notice**: as specified. `stop_uid` is "" (the visit does not exist yet when it is sent). The customer's
   company ID and address parts come from a saved client place with the appointment's name and street; otherwise only
-  the calendar's text (`formatted`, the rest "").
+  the calendar's text (`formatted`, the rest ""). The body no longer asks the agent to contact the customer.
 
 ## The day in the sample
 1. Home (Personal) → Start day 07:38.
@@ -72,7 +102,7 @@ As built, in the spec's terms:
    tech@work.example: return visit, due 11-24).
 7. End at home.
 
-## Rules for the agent
+## Rules for the agent (format 1)
 - Find emails whose subject starts with `JobHub Daily Summary`. A subject ending `(update N)` replaces the earlier email
   for the same dates: update what was written from the earlier one, do not add it twice.
 - `schema_version` is "1". New fields may be added later; ignore fields you don't know.
@@ -123,7 +153,7 @@ As built, in the spec's terms:
   `traffic_minutes` (time at fuel stops, short breaks and traffic: `fuel_stop_minutes` and `short_break_minutes` are part
   of it). The `timesheet` rows with `paid: true` add up to `paid_minutes`.
 
-## Late notices (`JobHub Late Notice <ticket>`)
+## Late notices, format 1 (`JobHub Late Notice <ticket>`)
 
 A second kind of email, sent only when the technician taps **Tell the customer** because they will be late for an
 on-site appointment. Samples: `late-notice-body.txt` (the email body) and `late-notice-sample.json` (the attachment,
@@ -141,7 +171,7 @@ on-site appointment. Samples: `late-notice-body.txt` (the email body) and `late-
 - Same rules as reports: accept it only from the JobHub Gmail address, and check the `Signature:` line when the office
   set a signing key.
 
-## Invoice requests (`JobHub Invoice Request <date> – <customer>`)
+## Invoice requests, format 1 (`JobHub Invoice Request <date> – <customer>`)
 
 Sent only when the technician taps **Send for invoice** on a finished **Time & Material** stop, usually while still
 on site, so the customer can pay before the technician leaves. Samples: `invoice-request-body.txt` (the email body),
