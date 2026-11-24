@@ -1,0 +1,22 @@
+{
+  "type": "jobhub_late_notice",
+  "schema_version": "1",
+  "sent_at": "2026-11-18T13:12-08:00",
+  "timezone": "America/Los_Angeles",
+  "technician": {
+    "name": "Sample Technician",
+    "email": "tech@yourco.example"
+  },
+  "hubspot_ticket": "1043",
+  "qbo_estimate": "2210",
+  "customer": "Sample Medical Clinic",
+  "address": "400 Health Pkwy, Los Angeles, CA 90017",
+  "contact": "Front desk 555-0142",
+  "appointment_start": "2026-11-18T13:30-08:00",
+  "appointment_end": "2026-11-18T15:30-08:00",
+  "new_eta": "2026-11-18T13:48-08:00",
+  "minutes_late": 18,
+  "eta_method": "road route",
+  "note": "Stuck in traffic on the 110",
+  "calendar_event_uid": "AAMkSample123@1795543200"
+}

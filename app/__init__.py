@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import ai, equipment, kits, logs, mailer, photos, receipt_inbox, receipts, summary, vendors
+from . import ai, equipment, kits, late, logs, mailer, photos, receipt_inbox, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .geo import haversine_m
@@ -1096,6 +1096,27 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             out["trip_done"] = ({"name": done["name"], "url": f"/day/{date}?stop={done['stop_id']}"}
                                 if done and now - done["set_at"] < 4 * 3600 else None)
             return jsonify(out)
+        return with_conn(go)
+
+    @app.post("/api/late-notice")
+    def late_notice():
+        """Tell the customer: email the work AI agent a JobHub Late Notice for the next appointment (only on this tap)."""
+        b = request.get_json(silent=True) or {}
+
+        def go(conn, cfg):
+            now = int(time.time())
+            date = datetime.fromtimestamp(now, tz).date().isoformat()
+            st, err, _ = live_now(cfg, now)
+            if not st:
+                raise service.EditError(err or "JobHub does not know where you are right now.")
+            try:
+                r = late.send(conn, cfg, date, str(b.get("uid") or ""), now, st,
+                              places.get_provider(cfg, "osm").search_text, str(b.get("note") or ""))
+            except ValueError as e:
+                raise service.EditError(str(e))
+            except mailer.MailError as e:
+                return jsonify(error=str(e)), 502
+            return jsonify(sent=r)
         return with_conn(go)
 
     # ---- Go to a place (Home page) ----------------------------------------

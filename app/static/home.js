@@ -145,8 +145,37 @@ function nextCard(d) {
                                 ' Address from ' + e.found_by + '.'));
     kids.push(box);
   } else if (n.eta_note) kids.push(el('div', 'sub', n.eta_note));
+  if (n.late || n.late_notice) kids.push(lateBox(n));
   if (n.location) kids.push(mapButtons({address: n.location, name: n.name}, null));
   return card('Next appointment', ...kids.filter(Boolean));
+}
+
+// Running late: "Tell the customer" emails the work AI agent a JobHub Late Notice. Only on this tap, after a confirm.
+let lateNote = '';                       // kept across the once-a-minute refresh
+const clock = ts => new Date(ts * 1000).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+function lateBox(n) {
+  const box = el('div', 'latebox');
+  const e = n.eta || {};
+  if (n.late) box.append(el('b', 'late', '⚠ You will be about ' + e.late_min + ' min late (arriving ' + e.arrive + ').'));
+  if (n.late_notice) box.append(el('div', 'sub', '✓ Late notice sent ' + (n.late_notice.time || clock(n.late_notice.ts)) + ' (' + n.late_notice.minutes_late +
+                                                 ' min late) to ' + n.late_notice.mail_to + '.'));
+  if (!n.late) return box;
+  const note = el('input'); note.placeholder = 'Note (optional): stuck in traffic';
+  note.value = lateNote; note.maxLength = 300;
+  note.oninput = () => { lateNote = note.value; };
+  const err = el('div', 'err');
+  const b = el('button', 'primary', n.late_notice ? 'Send an updated late notice' : 'Tell the customer');
+  b.type = 'button';
+  b.onclick = async () => {
+    if (!confirm('Email your work AI agent a late notice for ' + n.name + ' (' + n.start + '): arriving about ' + e.arrive +
+                 ', ' + e.late_min + ' min late?')) return;
+    b.disabled = true; b.textContent = 'Sending…'; err.textContent = '';
+    try { await post('POST', '/api/late-notice', {uid: n.uid, note: note.value}); lateNote = ''; load(true); }
+    catch (x) { err.textContent = x.message; b.disabled = false; b.textContent = 'Tell the customer'; }
+  };
+  box.append(note, b, err,
+             el('div', 'sub', 'The agent gets the ticket, customer, appointment and new arrival time, and contacts the customer.'));
+  return box;
 }
 
 function todayCard(d) {
@@ -180,6 +209,7 @@ async function load(force) {
     if (r.status === 401) { location.href = '/login'; return; }
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Could not load (' + r.status + ')');
+    if (!force && document.activeElement && document.activeElement.closest && document.activeElement.closest('.latebox')) return;
     const go = picking && goEl && !force && !d.trip ? goEl : goCard(d);   // keep an open picker as it is
     root.replaceChildren(nowCard(d), go, nextCard(d), todayCard(d));
     upd.textContent = 'Updated ' + d.now_text;

@@ -1748,6 +1748,11 @@ def calendar_for_day(cfg, date, stops, now):
         for st in stops:
             if st["id"] in taken or st["kind"] != "stop" or st["status"] in ("Personal", "Lunch", "Traffic"):
                 continue
+            # a stop that ended before the appointment began is the job before it (leaving at 9:45 for a 10:00
+            # appointment), unless it carries the appointment's name (you got there, then had to leave)
+            if st["depart_ts"] <= ev["start_ts"] and \
+                    (st["business_name"] or "").strip().lower() != (ev["name"] or "").strip().lower():
+                continue
             o = min(st["depart_ts"], ev["end_ts"] + CAL_SLACK_S) - max(st["arrive_ts"], ev["start_ts"] - CAL_SLACK_S)
             if o > best_o:
                 best, best_o = st, o

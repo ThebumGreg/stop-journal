@@ -67,12 +67,27 @@ Work down the list. Items marked **Tell Claude** are results to report back.
   - [ ] **Email report** with JSON + PDF. Then send the same day again: the subject should say "(update 2)".
 - [ ] A day with a fuel stop between two jobs: Total paid time includes both drives.
 
+## 7b. New in this update (2026-11-23 evening)
+- [ ] **Vendor stop → Bought here**: at a vendor (or an old vendor stop), open the stop. The Parts box is now **Bought
+      here**: pick a part, quantity (tick "sticks of 6" for raceway), $ paid, Add. Truck → the part: stock went UP.
+- [ ] An old vendor stop with parts on it shows **Move to Bought here**: tap it for each line (fixes the stock).
+- [ ] Vendor receipt photo (AI reader on): "Items on the receipt" → **+ Add as bought**.
+- [ ] **Delete permanently**: Truck → Parts → **Show removed** → open an old test part → **Delete permanently**. (Only
+      shows for parts that are on no stop.)
+- [ ] **Running late**: Settings → Alerts → Running late alert **on**, late by **10**. Settings → Email → **Send late
+      notices to** = your agent's address (blank = your work email). Pushover must be set up, and Settings → Pushover →
+      **App address for notification links** (e.g. http://192.168.128.245:8000) so the alert opens JobHub.
+- [ ] On a day with an on-site appointment: when you are running late, Home shows a red box. Try **Tell the customer**
+      once with a note and check the email your agent gets. **Tell Claude** if the alert came too early, too late, or never.
+
 ## 8. Work AI agent
 - [ ] Give it `docs/sample-report/` (the .eml, the JSON and README.md). Ask it to describe what it would write to HubSpot,
       without writing anything.
 - [ ] Then email it one real day and have it do the same dry run before it writes anything to HubSpot.
 - [ ] Tell it to accept reports only from your JobHub Gmail address.
 - [ ] Optional: Settings → Email → **Report signing key**; give the agent the same phrase and have it check the `Signature:` line.
+- [ ] Give it the late notice samples too (`late-notice-sample.json`, `late-notice-body.txt`, README "Late notices") and
+      ask how it would contact the customer.
 
 ## 9. Later
 - [ ] **https** for JobHub (so Share works in the Home Screen app). **Tell Claude** how you reach JobHub: home Wi-Fi only,

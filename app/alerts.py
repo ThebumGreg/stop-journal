@@ -138,6 +138,17 @@ def left_stop_conditions(conn, cfg, client, now, marks, in_window, sync=True):
     return out
 
 
+def late_conditions(conn, cfg, client, now, marks, search=None):
+    """Running late for the next on-site appointment (app/late.py). One alert per appointment."""
+    from . import late, places
+    if search is None:
+        try:
+            search = places.get_provider(cfg, "osm").search_text
+        except Exception:
+            search = None
+    return late.conditions(conn, cfg, client, now, marks["date"], search, Condition)
+
+
 def apply(conn, cfg, cond, now, send):
     """Send/re-arm for one condition. Returns True if a notification was delivered."""
     conn.execute("BEGIN IMMEDIATE")
@@ -194,6 +205,8 @@ def run_once(base, client, now=None, send=notify.send):
             conds += draft_conditions(conn, cfg, now, marks, in_work_day)
             conds += low_stock_conditions(conn, cfg)
             conds += left_stop_conditions(conn, cfg, client, now, marks, in_window)
+            if in_work_day and not marks["end"]:
+                conds += late_conditions(conn, cfg, client, now, marks)
         for cond in conds:
             apply(conn, cfg, cond, now, send)
         from . import calendar_out

@@ -1,0 +1,13 @@
+Subject: JobHub Late Notice 1043
+Attachment: jobhub-late-notice-2026-11-18-1330.json
+
+JobHub Late Notice: the technician is running late for an on-site appointment.
+Please let the customer know. Details are in the attached JSON.
+
+Technician: Sample Technician <tech@yourco.example>
+Customer: Sample Medical Clinic
+Address: 400 Health Pkwy, Los Angeles, CA 90017
+HubSpot ticket: 1043
+Appointment: 2026-11-18T13:30-08:00 to 2026-11-18T15:30-08:00
+New arrival time: 2026-11-18T13:48-08:00 (about 18 min late, road route)
+Note from the technician: Stuck in traffic on the 110

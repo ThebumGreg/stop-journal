@@ -70,23 +70,39 @@ def build(conn, cfg, date, now, live=None, search=None):
     if not nxt:
         return out
     n = {"name": nxt["name"], "start": nxt["start"], "end": nxt["end"], "location": nxt["location"],
-         "minutes_to_start": nxt["minutes_to_start"], "ticket": nxt["ticket"], "eta": None}
+         "minutes_to_start": nxt["minutes_to_start"], "ticket": nxt["ticket"], "eta": None,
+         "uid": nxt.get("uid", ""), "late": False}
+    from . import late
+    n["late_notice"] = late.last_sent(conn, date, n["uid"], cfg.app_tz)
     out["next"] = n
     pos = (live["lat"], live["lon"]) if live and live.get("lat") is not None else None
     if not pos or nxt["start_ts"] - now > ETA_WITHIN_S:
         return out
-    where = locate(conn, cfg, nxt, pos, search)
+    n["eta"], n["eta_note"] = eta(conn, cfg, nxt, now, live, search)
+    if not n["eta_note"]:
+        n.pop("eta_note")
+    e = n["eta"] or {}
+    n["late"] = bool(e.get("late_min") is not None and e["late_min"] >= cfg.alert_late_min)
+    return out
+
+
+def eta(conn, cfg, ev, now, live, search):
+    """(eta dict, note) for driving from the phone's position to an appointment. eta: {arrived} when within 150 m, else
+    minutes, miles, arrive (text), arrive_ts, early_min (negative = late), late_min (positive = late), leave_by."""
+    tz = ZoneInfo(cfg.app_tz)
+    clock = lambda ts: datetime.fromtimestamp(ts, tz).strftime("%-I:%M %p")
+    pos = (live["lat"], live["lon"]) if live and live.get("lat") is not None else None
+    if not pos:
+        return None, ""
+    where = locate(conn, cfg, ev, pos, search)
     if not where:
-        n["eta_note"] = "Could not find that address on the map."
-        return out
+        return None, "Could not find that address on the map."
     if haversine_m(pos[0], pos[1], where[0], where[1]) < 150:
-        n["eta"] = {"arrived": True}
-        return out
+        return {"arrived": True}, ""
     secs, meters, method = routing.drive_eta(conn, cfg, pos, (where[0], where[1]))
     arrive = now + int(secs)
-    early = round((nxt["start_ts"] - arrive) / 60)
-    moving = bool(live.get("moving"))
-    n["eta"] = {"minutes": max(1, round(secs / 60)), "miles": round(meters / 1609.344, 1), "method": method,
-                "found_by": where[2], "driving": moving, "arrive": clock(arrive), "early_min": early,
-                "leave_by": clock(nxt["start_ts"] - int(secs) - SLACK_MIN * 60)}
-    return out
+    early = round((ev["start_ts"] - arrive) / 60)
+    return {"minutes": max(1, round(secs / 60)), "miles": round(meters / 1609.344, 1), "method": method,
+            "found_by": where[2], "driving": bool(live.get("moving")), "arrive": clock(arrive), "arrive_ts": arrive,
+            "early_min": early, "late_min": -early if early < 0 else 0,
+            "leave_by": clock(ev["start_ts"] - int(secs) - SLACK_MIN * 60)}, ""

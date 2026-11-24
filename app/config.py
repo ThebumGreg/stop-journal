@@ -40,6 +40,9 @@ class Config:
     stop_short_min_s: int = 180
     alert_low_stock: str = "on"
     alert_left_stop: str = "on"
+    alert_late: str = "on"         # Pushover when the ETA says you will be late for an on-site appointment
+    alert_late_min: int = 10
+    late_notice_to: str = ""       # where "Tell the customer" emails the late notice (blank = MAIL_TO)
     calendar_url: str = ""       # published ICS link (secret); "" = off
     calendar_keyword: str = "onsite"
     receipt_reader: str = "off"       # off | google_vision (an AI reader can be added later)
@@ -105,6 +108,9 @@ class Config:
             stop_short_min_s=_int("STOP_SHORT_MIN_S", 180),
             alert_low_stock=e("ALERT_LOW_STOCK", "on"),
             alert_left_stop=e("ALERT_LEFT_STOP", "on"),
+            alert_late=e("ALERT_LATE", "on"),
+            alert_late_min=_int("ALERT_LATE_MIN", 10),
+            late_notice_to=e("LATE_NOTICE_TO", "").strip(),
             calendar_url=e("CALENDAR_URL", "").strip(),
             calendar_keyword=e("CALENDAR_KEYWORD", "onsite").strip() or "onsite",
             receipt_reader=e("RECEIPT_READER", "off").strip() or "off",

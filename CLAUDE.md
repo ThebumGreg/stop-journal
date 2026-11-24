@@ -577,9 +577,7 @@ A. Status 2026-11-23 evening (user)
 B. Next to build, in order (user-approved 2026-11-23)
   1. (built) Vendor stops = "Bought here" (see "Bought here" below).
   2. (built) Delete permanently for parts never used on a stop. (Clearing "Our cost" dropped: not needed.)
-  3. Late alerts: from the Home page ETA logic, run in the alert thread: Pushover (generic text) when the ETA is past an
-     on-site appointment's start; "Tell the customer" emails the work agent a `JobHub Late Notice` (ticket, customer,
-     appointment, new ETA). Never sent without a tap. Needs the agent's address and the lateness threshold.
+  3. (built) Late alerts (see "Running late" below).
   Later (user will review): estimates (sample estimate email, IMAP reading, Estimate box + Add quoted parts, quoted vs
   actual in the report); offline app shell after https.
 
@@ -736,3 +734,23 @@ D. Later / parked
   stop line or in a kit; deletes its inventory_log and purchases.
 - `swallowNextClick(rect)` (day.js, truck.js) now eats only a click inside where the pick list was, so a quick tap on Add
   right after picking is not lost.
+
+## Running late (built 2026-11-23)
+- `app/late.py`. Settings → Alerts: **Running late alert** (`ALERT_LATE` on|off, default on) and **alert when late by**
+  (`ALERT_LATE_MIN`, default 10); Settings → Email: **Send late notices to** (`LATE_NOTICE_TO`, blank = MAIL_TO).
+- Alert: the alert thread (`alerts.late_conditions`, during the work day until End day, Pushover configured, a calendar
+  link set) every 3 min (`CHECK_EVERY_S`) takes the phone's position from the last hour of points (fresh within 15 min),
+  the next upcoming on-site appointment starting within 3 h, and `summary.eta` (shared with the Home page). Late by
+  ALERT_LATE_MIN or more → one Pushover per appointment (`late:<event uid>`, once): "You may be about 15 min late for
+  your 10:00 appointment (arriving about 10:15)" — no names, places or tickets. It opens `/?late=1` (APP_URL).
+- Home page: the Next appointment card shows a red box when late (`next.late`, `next.uid`, `eta.late_min`, `eta.arrive_ts`),
+  an optional note and **Tell the customer** (confirm) → `POST /api/late-notice {uid, note}`: recomputes the ETA from the
+  live position (refuses when on time, already there, or the appointment is gone) and emails `JobHub Late Notice
+  <ticket|customer|time>`: body lines + `jobhub-late-notice-<date>-<hhmm>.json` (`late.notice`: technician, hubspot_ticket,
+  qbo_estimate, customer, address, contact, appointment_start/end, new_eta, minutes_late, eta_method, note,
+  calendar_event_uid), HMAC signature line with REPORT_SIGNING_KEY. Logged in `late_notices` (NOT email_log, which numbers
+  report versions); `next.late_notice` {time, minutes_late, mail_to} shows "✓ Late notice sent" and the button becomes
+  "Send an updated late notice". The page skips its minute refresh while the late box has focus.
+- Agent docs: `docs/sample-report/README.md` "Late notices", `late-notice-sample.json`, `late-notice-body.txt`.
+- Calendar matching fix: a stop that ended before an appointment began only matches it when it has the appointment's
+  name (the job before it no longer "uses up" the next appointment, which hid it from Home and the late alert).

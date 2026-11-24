@@ -154,6 +154,9 @@ SPEC = [
              help="A long random phrase that only JobHub and your work AI agent know (give the agent the same phrase). "
                   "Each emailed report then has a “Signature:” line: HMAC-SHA256 of the attached JSON file with this key, "
                   "so the agent can reject a report that JobHub did not make. Write-only."),
+        dict(key="late_notice_to", label="Send late notices to (optional)", kind="email",
+             help="Where “Tell the customer” (running late) sends the JobHub Late Notice: your work AI agent's "
+                  "address. Blank = the “Send reports to” address."),
         dict(key="calendar_invites", label="Put my stops on my work calendar", kind="choice", choices=["off", "on"],
              help="Each stop today is emailed as a calendar invite to the address above, so it shows on your Outlook "
                   "calendar (and to coworkers who can see it): type, customer name, address, ticket, times, finished. "
@@ -208,6 +211,12 @@ SPEC += [
         dict(key="alert_left_stop", label="Unfinished stop alert", kind="choice", choices=["on", "off"],
              help="Notify me a few minutes after I drive away from a stop that isn't finished (work type, notes, "
                   "visit result...). JobHub then checks the Recorder in the background during the work day."),
+        dict(key="alert_late", label="Running late alert", kind="choice", choices=["on", "off"],
+             help="Notify me when the drive time says I will be late for an on-site appointment on my calendar "
+                  "(Settings → Calendar). The alert never names the customer; tapping it opens JobHub, where "
+                  "“Tell the customer” emails your work AI agent a late notice. Nothing is sent without that tap."),
+        dict(key="alert_late_min", label="Running late: alert when late by (min)", kind="int", lo=1, hi=120,
+             help="How many minutes after the appointment start your arrival has to be."),
         dict(key="work_days", label="Work days", kind="days", help="For example Mon-Fri or Mon,Tue,Thu."),
         dict(key="work_start", label="Work day starts", kind="time", help="24-hour time, local."),
         dict(key="work_end", label="Work day ends", kind="time", help="24-hour time, local."),

@@ -225,6 +225,15 @@ CREATE TABLE IF NOT EXISTS undo_log (
 );
 CREATE INDEX IF NOT EXISTS idx_undo_date ON undo_log(date, id);
 
+CREATE TABLE IF NOT EXISTS late_notices (
+  id INTEGER PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  event_uid TEXT NOT NULL,
+  minutes_late INTEGER, eta_ts INTEGER,
+  mail_to TEXT, ok INTEGER, error TEXT, note TEXT
+);
+
 CREATE TABLE IF NOT EXISTS email_log (
   id INTEGER PRIMARY KEY,
   ts INTEGER NOT NULL,

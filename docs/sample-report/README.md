@@ -73,3 +73,21 @@ A made-up day (all names, addresses and coordinates are invented) that uses ever
 - Time totals: `paid_minutes` = on-site + `drive_minutes` + lunch when `lunch_paid` is true. `drive_minutes` includes
   `traffic_minutes` (time at fuel stops, short breaks and traffic: `fuel_stop_minutes` and `short_break_minutes` are part
   of it). The `timesheet` rows with `paid: true` add up to `paid_minutes`.
+
+## Late notices (`JobHub Late Notice <ticket>`)
+
+A second kind of email, sent only when the technician taps **Tell the customer** because they will be late for an
+on-site appointment. Samples: `late-notice-body.txt` (the email body) and `late-notice-sample.json` (the attachment,
+`jobhub-late-notice-<date>-<hhmm>.json`).
+
+- `type` is `jobhub_late_notice` (`schema_version` "1"). Use it to tell the customer the technician is running late.
+- `hubspot_ticket` (may be blank) and `customer` / `address` identify the job; match the HubSpot company by name and
+  address when there is no ticket. `contact` is the contact line from the technician's calendar, when there was one;
+  prefer the ticket's or company's contact in HubSpot.
+- `appointment_start` / `appointment_end`: the booked window. `new_eta`: when the technician now expects to arrive;
+  `minutes_late` is the difference. `eta_method` is "road route" (drive time without traffic) or "estimate".
+- `note`: the technician's own words for the customer (may be blank). Pass it on politely; do not invent a reason.
+- More than one notice can arrive for the same appointment (`calendar_event_uid`): the newest one wins. Tell the
+  customer once, then only again if the new time changes by 10 minutes or more.
+- Same rules as reports: accept it only from the JobHub Gmail address, and check the `Signature:` line when the office
+  set a signing key.
