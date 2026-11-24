@@ -262,3 +262,12 @@ body.sheet-open { overflow:hidden; }
 .phrases button { border-radius:999px; font-size:13px; padding:4px 10px; min-height:32px; }
 
 .live-more { padding:8px 10px; }
+
+/* Send for invoice */
+.invoice { margin:12px 0; padding:10px; border:1px solid var(--line); border-radius:10px; display:grid; gap:8px; }
+.invoice h4 { margin:0; }
+.invprev { display:grid; gap:4px; }
+.invprev .n { font-weight:600; }
+.invprev .m { color:var(--muted, #666); font-size:14px; margin-top:4px; }
+.invprev .li { padding-left:10px; }
+.invprev .warn { color:var(--err); font-size:14px; }

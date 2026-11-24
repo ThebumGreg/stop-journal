@@ -149,11 +149,6 @@ def main():
     os.makedirs(out, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         c, cfg = build(tmp)
-        chk = ok(c.get(f"/api/export/check?from={D}"))
-        name = f"jobhub-daily-summary-{D}"
-        open(os.path.join(out, name + ".json"), "wb").write(c.get(f"/api/export.json?from={D}").data)
-        open(os.path.join(out, name + ".pdf"), "wb").write(c.get(f"/api/export.pdf?from={D}").data)
-
         sent = []
 
         class Fake:
@@ -169,6 +164,23 @@ def main():
         for k, v in {"mail_to": "agent@work.example", "smtp_user": "tech@gmail.example", "smtp_password": "x"}.items():
             conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)", (k, v))
         conn.commit(); conn.close()
+        # Send for invoice on the Time & Material stop first (as during the day); the day report then shows it
+        tm = next(s for s in ok(c.get(f"/api/day/{D}"))["stops"] if s.get("work_category") == "Time & Material")
+        ok(c.post(f"/api/stops/{tm['id']}/invoice-request", json={"pdf": True, "photos": False}))
+        inv = sent.pop(0)
+        for part in inv.iter_attachments():
+            fn = part.get_filename()
+            if fn.endswith(".json") or fn.endswith(".pdf"):
+                data = part.get_content()
+                open(os.path.join(out, "invoice-request-sample" + fn[-5 if fn.endswith(".json") else -4:]), "wb").write(
+                    data if isinstance(data, bytes) else data.encode())
+        open(os.path.join(out, "invoice-request-body.txt"), "w").write(
+            "Subject: " + inv["Subject"] + "\n\n" + inv.get_body(("plain",)).get_content())
+
+        chk = ok(c.get(f"/api/export/check?from={D}"))
+        name = f"jobhub-daily-summary-{D}"
+        open(os.path.join(out, name + ".json"), "wb").write(c.get(f"/api/export.json?from={D}").data)
+        open(os.path.join(out, name + ".pdf"), "wb").write(c.get(f"/api/export.pdf?from={D}").data)
         ok(c.post(f"/api/export/email?from={D}", json={"json": True, "pdf": True, "photos": True}))
         open(os.path.join(out, name + ".eml"), "wb").write(bytes(sent[0]))
         open(os.path.join(out, "email-body.txt"), "w").write(

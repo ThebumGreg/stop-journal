@@ -80,6 +80,12 @@ Work down the list. Items marked **Tell Claude** are results to report back.
 - [ ] On a day with an on-site appointment: when you are running late, Home shows a red box. Try **Tell the customer**
       once with a note and check the email your agent gets. **Tell Claude** if the alert came too early, too late, or never.
 
+## 7c. Send for invoice
+- [ ] Finish a **Time & Material** job, then in the sheet: **Invoice → Send for invoice…**. Check the preview (labor
+      time, parts and prices), then **Send**. The stop then says "✓ Sent for invoice".
+- [ ] Give your agent `invoice-request-sample.json` / `.pdf` / `invoice-request-body.txt` and the README section
+      "Invoice requests" first, and have it describe the invoice it would create before it creates real ones.
+
 ## 8. Work AI agent
 - [ ] Give it `docs/sample-report/` (the .eml, the JSON and README.md). Ask it to describe what it would write to HubSpot,
       without writing anything.

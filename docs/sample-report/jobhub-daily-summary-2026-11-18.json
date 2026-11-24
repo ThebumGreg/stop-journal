@@ -8,7 +8,7 @@
   "date_from": "2026-11-18",
   "date_to": "2026-11-18",
   "timezone": "America/Los_Angeles",
-  "generated_at": "2026-11-23T21:45:46-08:00",
+  "generated_at": "2026-11-23T22:39:33-08:00",
   "days": [
     {
       "date": "2026-11-18",
@@ -182,7 +182,7 @@
             "from": "Home",
             "to": "Sample Dental Office",
             "to_id": 2,
-            "to_stop_uid": "742edb9e-694e-4ddc-84ae-222eae8eb4eb",
+            "to_stop_uid": "b3aaf285-bbd0-4486-a247-55d1bc138353",
             "miles": 4.5,
             "method": "gps"
           },
@@ -190,7 +190,7 @@
             "from": "Sample Dental Office",
             "to": "Sample Supply House",
             "to_id": 4,
-            "to_stop_uid": "8eeb7c52-106c-4019-8b04-91a31b077f44",
+            "to_stop_uid": "608d20de-b919-49df-ad97-2b2a90c256c2",
             "miles": 3.6,
             "method": "gps"
           },
@@ -198,7 +198,7 @@
             "from": "Sample Supply House",
             "to": "Sample Medical Clinic",
             "to_id": 6,
-            "to_stop_uid": "488236b8-e3ce-4c49-a966-1405eecaeb55",
+            "to_stop_uid": "980bfb87-9000-4b5a-a737-b8822218eab7",
             "miles": 6.2,
             "method": "estimate"
           },
@@ -223,7 +223,7 @@
       "stops": [
         {
           "stop_number": 1,
-          "stop_uid": "742edb9e-694e-4ddc-84ae-222eae8eb4eb",
+          "stop_uid": "b3aaf285-bbd0-4486-a247-55d1bc138353",
           "added_from_receipt": false,
           "business_name": "Sample Dental Office",
           "address": "100 Example Ave, Los Angeles, CA 90012",
@@ -312,11 +312,17 @@
           "photos": [
             1,
             2
-          ]
+          ],
+          "invoice_request": {
+            "version": 1,
+            "sent_at": "2026-11-23T22:39-08:00",
+            "billed_through": "10:30",
+            "time_on_site_minutes": 150
+          }
         },
         {
           "stop_number": 2,
-          "stop_uid": "8eeb7c52-106c-4019-8b04-91a31b077f44",
+          "stop_uid": "608d20de-b919-49df-ad97-2b2a90c256c2",
           "added_from_receipt": false,
           "business_name": "Sample Supply House",
           "address": "200 Vendor Way, Los Angeles, CA 90012",
@@ -370,11 +376,12 @@
             }
           ],
           "follow_ups": [],
-          "photos": []
+          "photos": [],
+          "invoice_request": null
         },
         {
           "stop_number": 3,
-          "stop_uid": "488236b8-e3ce-4c49-a966-1405eecaeb55",
+          "stop_uid": "980bfb87-9000-4b5a-a737-b8822218eab7",
           "added_from_receipt": false,
           "business_name": "Sample Medical Clinic",
           "address": "300 Example Blvd, Los Angeles, CA 90013",
@@ -451,7 +458,8 @@
               "follow_up_id": 2
             }
           ],
-          "photos": []
+          "photos": [],
+          "invoice_request": null
         }
       ],
       "excluded": [
@@ -482,7 +490,7 @@
     {
       "date": "2026-11-18",
       "stop_number": 1,
-      "stop_uid": "742edb9e-694e-4ddc-84ae-222eae8eb4eb",
+      "stop_uid": "b3aaf285-bbd0-4486-a247-55d1bc138353",
       "business_name": "Sample Dental Office",
       "address": "100 Example Ave, Los Angeles, CA 90012",
       "arrival": "08:00",
@@ -517,7 +525,7 @@
     {
       "date": "2026-11-18",
       "stop_number": 2,
-      "stop_uid": "8eeb7c52-106c-4019-8b04-91a31b077f44",
+      "stop_uid": "608d20de-b919-49df-ad97-2b2a90c256c2",
       "business_name": "Sample Supply House",
       "address": "200 Vendor Way, Los Angeles, CA 90012",
       "arrival": "11:06",
@@ -545,7 +553,7 @@
     {
       "date": "2026-11-18",
       "stop_number": 3,
-      "stop_uid": "488236b8-e3ce-4c49-a966-1405eecaeb55",
+      "stop_uid": "980bfb87-9000-4b5a-a737-b8822218eab7",
       "business_name": "Sample Medical Clinic",
       "address": "300 Example Blvd, Los Angeles, CA 90013",
       "arrival": "12:21",
@@ -575,7 +583,7 @@
     {
       "date": "2026-11-18",
       "stop_number": 3,
-      "stop_uid": "488236b8-e3ce-4c49-a966-1405eecaeb55",
+      "stop_uid": "980bfb87-9000-4b5a-a737-b8822218eab7",
       "business_name": "Sample Medical Clinic",
       "what": "Send the customer a quote for 6 patch cords",
       "owner": "Office",
@@ -586,7 +594,7 @@
     {
       "date": "2026-11-18",
       "stop_number": 3,
-      "stop_uid": "488236b8-e3ce-4c49-a966-1405eecaeb55",
+      "stop_uid": "980bfb87-9000-4b5a-a737-b8822218eab7",
       "business_name": "Sample Medical Clinic",
       "what": "Return visit",
       "owner": "Me",

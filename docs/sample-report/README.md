@@ -91,3 +91,29 @@ on-site appointment. Samples: `late-notice-body.txt` (the email body) and `late-
   customer once, then only again if the new time changes by 10 minutes or more.
 - Same rules as reports: accept it only from the JobHub Gmail address, and check the `Signature:` line when the office
   set a signing key.
+
+## Invoice requests (`JobHub Invoice Request <date> – <customer>`)
+
+Sent only when the technician taps **Send for invoice** on a finished **Time & Material** stop, usually while still
+on site, so the customer can pay before the technician leaves. Samples: `invoice-request-body.txt` (the email body),
+`invoice-request-sample.json` (the attachment `jobhub-invoice-request-<date>-stop-<n>-<customer>.json`) and
+`invoice-request-sample.pdf`.
+
+- `type` is `jobhub_invoice_request` (`schema_version` "1", `invoice_requested: true`). Create the QuickBooks invoice
+  for this one visit and handle sending it and collecting payment as the company does.
+- Customer: `customer.hubspot_company_id` when set, else match by `business_name` + `address`. Ticket: `hubspot_ticket`
+  (blank → follow `ticket_action` as in the daily summary). `qbo_estimate` is informational for T&M.
+- **Labor** is documented, not priced: `labor.time_on_site_minutes` (and `hours`) from `arrival` to `billed_through`.
+  Lunch and personal breaks are already taken out (listed in `lunch_non_billable` / `personal_breaks_unpaid`).
+  `still_on_site: true` means the time ran to the moment of sending. Apply the company's labor rates and rules
+  (minimums, increments) yourself. `drive_from_previous_stop` is there in case the company bills travel; JobHub does not.
+- **Parts**: `parts` are billable, `unit_cost` = the price charged per unit, `line_cost` = quantity x price,
+  `qbo_item` = the QuickBooks item when known. `parts_not_billed` are for the record only. `expenses` are billable
+  expenses (`line_cost`); `expenses_not_billed` are not.
+- `request_version` > 1 (subject "(update n)") replaces the earlier request for the same `stop_uid`: if that invoice is
+  not paid yet, update it; if it is paid, do not change it, tell the technician what differs.
+- **The daily summary later lists the same stop again** with `invoice_request` {version, sent_at, billed_through,
+  time_on_site_minutes}. Never invoice that stop a second time from the summary. If the summary's minutes or parts
+  differ from the invoice request, flag the difference to the technician instead of changing the invoice.
+- Same rules as the other emails: only from the JobHub Gmail address, and check the `Signature:` line when the
+  office set a signing key.

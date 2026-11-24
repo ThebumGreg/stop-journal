@@ -1,0 +1,100 @@
+{
+  "type": "jobhub_invoice_request",
+  "schema_version": "1",
+  "invoice_requested": true,
+  "timezone": "America/Los_Angeles",
+  "technician": {
+    "name": "Sample Technician",
+    "email": "tech@work.example"
+  },
+  "date": "2026-11-18",
+  "report_key": "2026-11-18",
+  "stop_uid": "b3aaf285-bbd0-4486-a247-55d1bc138353",
+  "stop_number": 1,
+  "customer": {
+    "business_name": "Sample Dental Office",
+    "address": "100 Example Ave, Los Angeles, CA 90012",
+    "hubspot_company_id": "18200000001"
+  },
+  "hubspot_ticket": "24681357913",
+  "ticket_action": "use",
+  "qbo_estimate": "",
+  "category": "Time & Material",
+  "billing": "hourly",
+  "visit_result": "Complete",
+  "labor": {
+    "arrival": "08:00",
+    "billed_through": "10:30",
+    "still_on_site": false,
+    "time_on_site_minutes": 150,
+    "hours": 2.5,
+    "lunch_non_billable": [],
+    "personal_breaks_unpaid": []
+  },
+  "drive_from_previous_stop": {
+    "minutes": 20,
+    "miles_approx": 4.5,
+    "miles_method": "gps",
+    "from": "Home",
+    "from_type": "Home",
+    "notes": "",
+    "estimated": false,
+    "minutes_estimated": false,
+    "no_location_data": null
+  },
+  "parts": [
+    {
+      "name": "Cat 6 cable",
+      "part_number": "C6-1000-BLU",
+      "quantity": 140.0,
+      "unit": "ft",
+      "unit_cost": 0.45,
+      "line_cost": 63.0,
+      "billable": true,
+      "qbo_item": "",
+      "notes": ""
+    },
+    {
+      "name": "Keystone jack Cat 6 - white",
+      "part_number": "KJ-C6-W",
+      "quantity": 4.0,
+      "unit": "ea",
+      "unit_cost": 6.5,
+      "line_cost": 26.0,
+      "billable": true,
+      "qbo_item": "",
+      "notes": ""
+    }
+  ],
+  "parts_not_billed": [],
+  "expenses": [],
+  "expenses_not_billed": [
+    {
+      "name": "Parking",
+      "part_number": "",
+      "quantity": 1.0,
+      "unit": "ea",
+      "unit_cost": 12.0,
+      "line_cost": 12.0,
+      "billable": false,
+      "qbo_item": "",
+      "notes": ""
+    }
+  ],
+  "work_performed": "Ran two Cat 6 drops from the network rack to the front desk.\nTerminated both ends with keystone jacks and tested: both pass.\nRelabeled the patch panel ports 12 and 13.",
+  "follow_ups": [],
+  "photos": [
+    {
+      "attachment": "photos_2026_11_18_stop-1-sample-dental-office-receipt-1.jpg",
+      "kind": "receipt",
+      "label": "Receipt: Stop 1, Sample Dental Office, 08:00. Parking receipt"
+    },
+    {
+      "attachment": "photos_2026_11_18_stop-1-sample-dental-office-photo-2.jpg",
+      "kind": "photo",
+      "label": "Photo: Stop 1, Sample Dental Office, 08:00. Patch panel after relabel"
+    }
+  ],
+  "request_version": 1,
+  "sent_at": "2026-11-23T22:39-08:00"
+}

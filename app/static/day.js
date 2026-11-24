@@ -1251,6 +1251,7 @@ function refreshSheet() {
   sh.finish.replaceChildren();
   if (done) {
     sh.finish.append(el('div', 'done', '✓ Finished. Changes you make here still save.'));
+    if (s.stop_type === 'job' && s.work_category === 'Time & Material') sh.finish.append(invoiceBlock(s, sh.err));
     const c = el('button', 'primary wide', 'Close'); c.type = 'button'; c.onclick = () => closeSheet();
     sh.finish.append(c);
   } else {
@@ -1260,6 +1261,65 @@ function refreshSheet() {
     sh.finish.append(fin, later);
   }
   sh.tools.replaceChildren(toolsBlock(s, sh.err, true));
+}
+
+// ---- Send for invoice (finished Time & Material stop) ------------------------------------
+// A preview of exactly what the agent gets (labor minutes through now, billable parts and expenses), then one tap
+// sends it. Never automatic. The agent prices labor and handles the invoice and payment.
+function invoiceBlock(s, err) {
+  const box = el('div', 'invoice');
+  const sent = s.invoice_request;
+  box.append(el('h4', null, 'Invoice'));
+  if (sent) box.append(el('div', 'done', '✓ Sent for invoice ' + sent.sent_time + ' (' + sent.time_on_site_minutes +
+                                          ' min, through ' + sent.billed_through + ')' + (sent.version > 1 ? ', update ' + sent.version : '') + '.'));
+  const go = el('button', sent ? 'wide' : 'primary wide', sent ? 'Send an updated invoice request…' : 'Send for invoice…');
+  go.type = 'button';
+  const pv = el('div', 'invprev'); pv.hidden = true;
+  go.onclick = async () => {
+    go.disabled = true; err.textContent = '';
+    try { showInvoicePreview(pv, s, await api('GET', '/api/stops/' + s.id + '/invoice-request'), err); pv.hidden = false; go.hidden = true; }
+    catch (e) { err.textContent = e.message; }
+    go.disabled = false;
+  };
+  box.append(go, pv);
+  return box;
+}
+function showInvoicePreview(pv, s, d, err) {
+  const r = d.request, lab = r.labor;
+  const money = v => v == null ? 'no price' : '$' + Number(v).toFixed(2);
+  const hm = m => m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min';
+  pv.replaceChildren(el('div', 'n', r.customer.business_name + (r.hubspot_ticket ? ' · ticket ' + r.hubspot_ticket : '') +
+                                    (r.qbo_estimate ? ' · estimate ' + r.qbo_estimate : '')));
+  pv.append(el('div', null, 'Labor: ' + lab.arrival + ' – ' + lab.billed_through + ' = ' + hm(lab.time_on_site_minutes) +
+                            (lab.still_on_site ? ' (through now)' : '') + (lab.lunch_non_billable.length ? ', lunch left out' : '')));
+  pv.append(el('div', 'hint', lab.still_on_site ? 'You are still here, so time runs to the moment you send.'
+                                                 : 'Ends at your departure. Wrong? Fix “Left” (✎ Edit above) first.'));
+  const list = (title, items, line) => {
+    if (!items.length) return;
+    pv.append(el('div', 'm', title));
+    items.forEach(x => pv.append(el('div', 'li', line(x))));
+  };
+  list('Parts (billed)', r.parts, p => p.quantity + ' ' + p.unit + ' × ' + p.name + (p.part_number ? ' (' + p.part_number + ')' : '') +
+                                       ' · ' + money(p.unit_cost) + (p.unit_cost != null ? ' each = ' + money(p.line_cost) : ''));
+  if (!r.parts.length) pv.append(el('div', 'm', 'No billable parts.'));
+  list('Not billed', r.parts_not_billed, p => p.quantity + ' × ' + p.name);
+  list('Expenses (billed)', r.expenses, x => x.name + (x.notes ? ' (' + x.notes + ')' : '') + ' · ' + money(x.line_cost));
+  (d.warnings || []).forEach(w => pv.append(el('div', 'warn', '⚠ ' + w)));
+  const ticks = el('div', 'row');
+  const tick = (label, on) => { const l = el('label', 'chk'); const c = el('input'); c.type = 'checkbox'; c.checked = on; l.append(c, ' ' + label); ticks.append(l); return c; };
+  const pdfT = tick('PDF', true), picT = tick('Photos (' + r.photos.length + ')', r.photos.length > 0);
+  if (!r.photos.length) picT.disabled = true;
+  pv.append(el('div', 'm', 'The JSON is always attached.'), ticks);
+  if (!d.ready) pv.append(el('div', 'warn', '⚠ Email is not set up yet (Settings → Email).'));
+  const send = el('button', 'primary wide', 'Send to ' + (d.to || 'your agent')); send.type = 'button';
+  const cancel = el('button', 'wide', 'Cancel'); cancel.type = 'button';
+  cancel.onclick = () => { pv.hidden = true; pv.previousSibling.hidden = false; };
+  send.onclick = () => {
+    send.disabled = true; send.textContent = 'Sending…';
+    run(() => api('POST', '/api/stops/' + s.id + '/invoice-request', {pdf: pdfT.checked, photos: picT.checked}), err,
+        () => { jl('info', 'invoice request sent'); }).finally(() => { send.disabled = false; });
+  };
+  pv.append(send, cancel, el('div', 'hint', 'Labor is sent as time on site; your agent applies the rates, creates the invoice and handles payment.'));
 }
 
 // ---- stop card ---------------------------------------------------------

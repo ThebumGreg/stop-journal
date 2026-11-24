@@ -279,6 +279,10 @@ def build_day(payload, cfg):
                             "due": f["due"], "follow_up_id": f.get("id")}
                            for f in s["follow_ups"]],
             "photos": [p["id"] for p in s.get("photos") or []],
+            # sent for invoice from the stop (Send for invoice): the agent already invoiced this; flag differences
+            "invoice_request": ({k: s["invoice_request"][k] for k in ("version", "sent_at", "billed_through",
+                                                                      "time_on_site_minutes")}
+                                if s.get("invoice_request") else None),
         })
         pic_from.append((f"Stop {len(out_stops)}, {s['business_name'] or 'no name'}, {s['arrive']}",
                          f"stop-{len(out_stops)}-{_slug(s['business_name'])}", s.get("photos") or []))

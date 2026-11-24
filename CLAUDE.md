@@ -754,3 +754,26 @@ D. Later / parked
 - Agent docs: `docs/sample-report/README.md` "Late notices", `late-notice-sample.json`, `late-notice-body.txt`.
 - Calendar matching fix: a stop that ended before an appointment began only matches it when it has the appointment's
   name (the job before it no longer "uses up" the next appointment, which hid it from Home and the late alert).
+
+## Send for invoice (built 2026-11-23, user decisions)
+- Goal: the work agent invoices a visit while the technician is still on site so the customer can pay there. User
+  decisions: labor is DOCUMENTED only (minutes; the agent applies rates and rules); Time & Material stops only for now;
+  the agent handles who gets the invoice, payment, and any trip charge. Same address as reports (MAIL_TO).
+- `app/invoice_request.py`. A finished (Confirmed, nothing in `needs`) job stop with category Time & Material shows an
+  **Invoice** box under "✓ Finished" in the sheet (`invoiceBlock`, day.js): **Send for invoice…** →
+  `GET /api/stops/<id>/invoice-request` preview (labor from–through = minutes, billable parts with prices, billed
+  expenses, not-billed lines, warnings: no HubSpot company ID, billable part without price or part #, visit result not
+  Complete, technician not set) with PDF / Photos ticks → **Send to <address>** → `POST` (only on that tap).
+- The request is the day report's own block for the stop (`report.build_day`), reshaped: type `jobhub_invoice_request`,
+  customer, ticket/ticket_action/estimate, category/billing/visit_result, `labor` {arrival, billed_through,
+  still_on_site, time_on_site_minutes, hours, lunch_non_billable, personal_breaks_unpaid}, drive_from_previous_stop,
+  parts / parts_not_billed, expenses / expenses_not_billed, work_performed, follow_ups, photos (attachment names),
+  request_version, sent_at. Billed through NOW only when the stop is "Here now" (fresh GPS inside it) and its departure
+  is not typed; otherwise through the departure (a drive away is never billed).
+- Email `JobHub Invoice Request <date> – <customer>[ (update n)]`: body lines, JSON always, PDF (`pdf.render_invoice_request`)
+  and photos when ticked, HMAC signature line with REPORT_SIGNING_KEY. Logged in `invoice_requests` (stop_uid, version,
+  billed_through, minutes, ok); NOT email_log. Day payload stop `invoice_request` (newest sent) → the sheet shows
+  "✓ Sent for invoice 11:43 (150 min, through 11:42)" and "Send an updated invoice request…"; the day report adds
+  `invoice_request` {version, sent_at, billed_through, time_on_site_minutes} (else null) on every stop so the agent
+  never invoices twice and flags differences. Agent docs: sample-report README "Invoice requests" + samples
+  (made by `scripts/make_sample_report.py`).

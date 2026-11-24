@@ -522,3 +522,52 @@ def render(report, load_photo=None):
                               [_p(f"{i}. {t}", st["small"]) for i, t in enumerate(notes, 1)]))
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     return buf.getvalue()
+
+
+def render_invoice_request(req, photos=(), load_photo=None):
+    """One finished Time & Material stop for the agent to invoice (invoice_request.send)."""
+    _fonts()
+    st = _styles()
+    buf = io.BytesIO()
+
+    def footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("JH", 7.5)
+        canvas.setFillColor(colors.grey)
+        canvas.drawString(0.75 * inch, 0.5 * inch, f"JobHub invoice request, schema version {req['schema_version']}")
+        canvas.drawRightString(letter[0] - 0.75 * inch, 0.5 * inch, f"Page {doc.page}")
+        canvas.restoreState()
+
+    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.75 * inch, rightMargin=0.75 * inch,
+                            topMargin=0.7 * inch, bottomMargin=0.8 * inch, title="JobHub invoice request", author="JobHub")
+    lab, cust, tech = req["labor"], req["customer"], req["technician"]
+    rows = [("Date", req["date"]), ("Version", str(req.get("request_version", 1))),
+            ("Technician", " ".join(x for x in (tech.get("name"), f"({tech['email']})" if tech.get("email") else "") if x)),
+            ("Customer", cust["business_name"]), ("Address", cust["address"]),
+            ("HubSpot company ID", cust["hubspot_company_id"]),
+            ("HubSpot ticket", req["hubspot_ticket"] or _TICKET_TEXT.get(req["ticket_action"], "")),
+            ("QuickBooks estimate #", req["qbo_estimate"]), ("Category", f"{req['category']} (billed hourly)"),
+            ("Labor (time on site)", f"{lab['arrival']} to {lab['billed_through']}: {_hm(lab['time_on_site_minutes'])}" + (", still on site when sent" if lab["still_on_site"] else ""))]
+    if lab["lunch_non_billable"]:
+        rows.append(("Lunch (not billed)", "; ".join(f"{x['from']} to {x['to']}, {x['minutes']} min" for x in lab["lunch_non_billable"])))
+    if lab["personal_breaks_unpaid"]:
+        rows.append(("Personal break (not billed)", "; ".join(f"{x['from']} to {x['to']}, {x['minutes']} min" for x in lab["personal_breaks_unpaid"])))
+    rows.append(("Visit result", req["visit_result"]))
+    for i, piece in enumerate(_fit(req["work_performed"], st["base"], 7 * inch - LABEL_W - 12, MAX_ROW_H)):
+        rows.append(("Work performed" if i == 0 else "Work performed (continued)", piece))
+    rows.append(("Parts (billable)", _parts_table(req["parts"], st)))
+    if req["parts_not_billed"]:
+        rows.append(("Parts (not billed)", _parts_table(req["parts_not_billed"], st)))
+    if req["expenses"]:
+        rows.append(("Expenses (billable)", _expenses_table(req["expenses"], st)))
+    if req["follow_ups"]:
+        rows.append(("Follow-ups", _followups_table(req["follow_ups"], st, total=4.7)))
+    rows.append(("Stop ID", req["stop_uid"]))
+    story = [Paragraph("JobHub Invoice Request", st["title"]), Spacer(1, 6), _kv(rows, st, label_w=LABEL_W),
+             Spacer(1, 8), _p("Labor is documented as time on site; apply the company's labor rates and rules. Parts "
+                              "show the price charged per unit. A later daily summary lists this stop again with "
+                              "invoice_request set: do not invoice it twice.", st["small"])]
+    if photos and load_photo:
+        story += _photos({"days": [{"photos": [dict(p, file=p["attachment"]) for p in photos]}]}, st, load_photo)
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    return buf.getvalue()

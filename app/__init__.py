@@ -14,7 +14,7 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import ai, equipment, kits, late, logs, mailer, photos, receipt_inbox, receipts, summary, vendors
+from . import ai, equipment, invoice_request, kits, late, logs, mailer, photos, receipt_inbox, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .geo import haversine_m
@@ -304,6 +304,29 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             except mailer.MailError as e:
                 raise service.EditError(str(e))
             return jsonify(ok=True, **sent, history=mailer.history(conn, a, z))
+        return with_conn(go)
+
+    # ---- Send for invoice (one finished Time & Material stop) ----------------------
+    @app.get("/api/stops/<int:sid>/invoice-request")
+    def invoice_preview(sid):
+        def go(conn, cfg):
+            req, warn, _ = invoice_request.build(conn, cfg, sid)
+            return jsonify(request=req, warnings=warn, to=cfg.mail_to, ready=mailer.enabled(cfg),
+                           history=invoice_request.history(conn, req["stop_uid"], cfg.app_tz))
+        return with_conn(go)
+
+    @app.post("/api/stops/<int:sid>/invoice-request")
+    def invoice_send(sid):
+        b = request.get_json(silent=True) or {}
+
+        def go(conn, cfg):
+            load = lambda pid: photos.get(conn, cfg.data_dir, pid)
+            try:
+                r = invoice_request.send(conn, cfg, sid, {k: bool(b.get(k)) for k in ("pdf", "photos")},
+                                         lambda req, pics: pdf.render_invoice_request(req, pics, load), load)
+            except mailer.MailError as e:
+                raise service.EditError(str(e))
+            return payload(conn, cfg, conn.execute("SELECT date FROM stops WHERE id=?", (sid,)).fetchone()["date"])
         return with_conn(go)
 
     @app.get("/api/export/emails")

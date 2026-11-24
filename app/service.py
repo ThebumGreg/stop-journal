@@ -1323,6 +1323,8 @@ def _looks_like_vendor(stop, vendor_names):
 def day_payload(conn, cfg, date, include_path=False):
     used = parts.for_day(conn, date)
     bought = parts.bought_for_day(conn, date)
+    from . import invoice_request
+    invoiced = invoice_request.sent_for_day(conn, date, cfg.app_tz)
     fups = followups_for_day(conn, date)
     fuel = fuel_for_day(conn, date)
     pics = photo_store.for_day(conn, date)
@@ -1332,7 +1334,7 @@ def day_payload(conn, cfg, date, include_path=False):
     stops = [{
         "site_kind": site_kind.get(r["known_site_id"]) or "",
         "vendor_hint": site_kind.get(r["known_site_id"]) in (None, "client") and _looks_like_vendor(r, vendor_names),
-        "parts": used.get(r["id"], []), "bought": bought.get(r["id"], []), "follow_ups": fups.get(r["id"], []),
+        "parts": used.get(r["id"], []), "bought": bought.get(r["id"], []), "invoice_request": invoiced.get(r["uid"]), "follow_ups": fups.get(r["id"], []),
         "work_category": r["work_category"] or "", "ticket": r["ticket"] or "", "qbo_estimate": r["qbo_estimate"] or "",
         "ticket_action": r["ticket_action"] or "", "from_receipt": bool(r["from_receipt"]),
         # a visit after one that ended "return visit" / "waiting" is most likely the same job
