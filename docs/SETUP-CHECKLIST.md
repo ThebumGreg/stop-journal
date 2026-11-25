@@ -131,6 +131,8 @@ Do these **in order**, and the first part on your home network.
 - [ ] Test from the phone on cellular (Wi-Fi off): Cloudflare sign-in, then JobHub sign-in; open a day, add a part, add a
       photo, Email report. Then on the iPhone delete the old Home Screen icon and add it again from the https address
       (Share → Add to Home Screen). **Tell Claude** if anything says "came from another website".
+- [ ] In the new Home Screen app: Reports → Download PDF → **View here** (every page, with **Share / Save** at the top)
+      and **Share / Save to Files** (Save to Files, Mail, AirDrop). Also Truck → shopping list → Share.
 - [ ] OwnTracks: its own hostname (e.g. `owntracks.<your domain>`) through the tunnel to NPM, with NPM's login (basic
       auth) on everything. In Cloudflare Access that hostname needs a **Bypass** policy (the OwnTracks app can't do the
       Cloudflare sign-in), so NPM's login is its only lock: use a long password. In OwnTracks: Mode HTTP, URL

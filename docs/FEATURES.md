@@ -814,4 +814,7 @@ For the Cloudflare tunnel (Cloudflare Access in front, JobHub's own login behind
 - `clientlog.js` wraps `fetch`: when a request fails like a lost connection it asks `/health` without following
   redirects; a redirect (Cloudflare Access expired) reloads the page once a minute at most, so Cloudflare can sign in.
 - Safari download tokens no longer cover backups (`FILE_PATHS`).
+- iPhone Home Screen app on the https address: the file panel leads with View here (PDF) and **Share / Save to Files**
+  (Web Share needs https); "Copy link for Safari" moves under "Other". The PDF viewer's bar has **Share / Save**. On the
+  http home address nothing changes (View here + Copy link for Safari).
 

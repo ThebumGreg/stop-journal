@@ -54,8 +54,10 @@ and add or update a section there when you build something. This file holds only
 - **No HTTP DELETE or PUT on the wire.** The user's UniFi intrusion prevention blocks the sending device for minutes
   after a DELETE (found 2026-11-23). Pages send DELETE/PUT as POST + `X-Method-Override` (`wireMethod`/`overrideHeader`
   in each page script); a WSGI wrapper in `create_app` restores the method. Any new page or fetch must do the same.
-- **iPhone Home Screen app on http**: no Web Share, iOS shows only page 1 of a PDF, window.open stays in the app. PDFs
-  open in `/api/export.view` (pages rendered by `pypdfium2`); "Copy link for Safari" uses a 10-minute token.
+- **iPhone Home Screen app**: iOS shows only page 1 of a PDF and window.open stays in the app, so PDFs open in
+  `/api/export.view` (pages rendered by `pypdfium2`). Web Share (Share / Save to Files) works only on https (the tunnel
+  address); on the http home address the fallback is "Copy link for Safari" (10-minute token). share.js picks by
+  whether `navigator.canShare` exists.
 - **Part search** picks on pointerup (finger-up), then `swallowNextClick(rect)` eats the browser's following click only
   inside where the list was (else it lands on a link underneath, or eats a quick tap on Add).
 - Static files are served with no-cache (`SEND_FILE_MAX_AGE_DEFAULT=0`) so phones pick up new scripts at once.

@@ -3,10 +3,11 @@
 // iOS answers x-safari-https:// with "address is invalid"). So links marked data-file="PDF" open a small panel:
 //   - "View here" (PDFs): an in-page viewer with Share and Close in a bar at the top. It shows /api/export.view (every
 //     page as a picture), because iOS draws only the first page of a PDF inside a Home Screen app.
+//   - "Share / Save to Files": the iOS share sheet (Save to Files, Mail, AirDrop...). iOS offers it only on https (the
+//     Cloudflare tunnel address) and only from a fresh tap, so the file is fetched while the panel is open and the
+//     button turns on when it is ready. The PDF viewer has the same button in its top bar.
 //   - "Copy link for Safari": the link with a 10-minute download token (`ft=`, Safari has no login cookie), to paste
-//     into Safari. Needed while the app is on plain http, where iOS gives web pages no Share sheet.
-//   - "Share / Save to Files": the iOS share sheet. iOS only opens it from a fresh tap, so the file is fetched
-//     while the panel is open and the button turns on when it is ready.
+//     into Safari. The only way out on plain http (home network address); on https it is a fallback under "Other".
 // Everywhere else (Safari, desktop) the link downloads as normal.
 (function () {
   const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
@@ -29,7 +30,7 @@
   css.textContent = '.fsheet{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-end}' +
     '.fsheet>div{background:var(--bg,#fff);color:inherit;width:100%;padding:16px 16px calc(16px + env(safe-area-inset-bottom));' +
     'border-radius:14px 14px 0 0;display:grid;gap:10px}.fsheet b{font-size:17px}.fsheet button{min-height:48px;font-size:16px}' +
-    '.fsheet .fmsg{font-size:14px;opacity:.75}.fsheet input{font-size:14px;padding:10px;width:100%;box-sizing:border-box}' +
+    '.fsheet .fmsg{font-size:14px;opacity:.75}.fsheet .flink{min-height:36px;background:none;border:0;color:var(--acc,#0b66d0);font-size:14px}.fsheet input{font-size:14px;padding:10px;width:100%;box-sizing:border-box}' +
     '.fview{position:fixed;inset:0;z-index:10000;background:#fff;color:#111;display:flex;flex-direction:column}' +
     '.fview>div{display:flex;gap:8px;align-items:center;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;' +
     'border-bottom:1px solid #ccc}.fview>div b{flex:1;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
@@ -61,7 +62,7 @@
     const v = document.createElement('div'); v.className = 'fview';
     const bar = document.createElement('div');
     const t = document.createElement('b'); t.textContent = label;
-    const sh = document.createElement('button'); sh.type = 'button'; sh.textContent = 'Share'; sh.disabled = true;
+    const sh = document.createElement('button'); sh.type = 'button'; sh.textContent = 'Share / Save'; sh.disabled = true;
     const done = document.createElement('button'); done.type = 'button'; done.className = 'primary'; done.textContent = 'Close';
     done.onclick = () => v.remove();
     const f = document.createElement('iframe'); f.src = url; f.title = label;
@@ -83,10 +84,13 @@
     const share = document.createElement('button'); share.type = 'button'; share.textContent = 'Preparing…'; share.disabled = true;
     if (!isPdf) share.className = 'primary';
     const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copy link for Safari';
+    const other = document.createElement('button'); other.type = 'button'; other.textContent = 'Other: copy a link for Safari';
+    other.className = 'flink'; other.hidden = true;
+    other.onclick = () => { other.hidden = true; copy.hidden = false; copy.click(); };
     const link = document.createElement('input'); link.readOnly = true; link.hidden = true;
     const linkMsg = document.createElement('div'); linkMsg.className = 'fmsg'; linkMsg.hidden = true;
     const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel';
-    box.append(title, msg, view, share, copy, link, linkMsg, cancel); wrap.append(box);
+    box.append(title, msg, view, share, copy, other, link, linkMsg, cancel); wrap.append(box);
     copy.onclick = async () => {
       if (!token || Date.now() - tokenAt > 4 * 60 * 1000) await getToken();
       if (!token) { linkMsg.hidden = false; linkMsg.textContent = 'Could not make a link (no connection?). Try again.'; return; }
@@ -115,12 +119,14 @@
         (isPdf ? 'View here shows every page; to save the file, copy the link into Safari.' : 'To save the file, copy the link into Safari.');
       return;
     }
+    copy.hidden = true; other.hidden = false;        // https: Share is the way to save; the Safari link is a fallback
     filePromise.then(file => {
       share.disabled = false; share.textContent = 'Share / Save to Files';
-      msg.textContent = 'Ready: ' + file.name + ' (' + Math.max(1, Math.round(file.size / 1024)) + ' KB).';
+      msg.textContent = 'Ready: ' + file.name + ' (' + Math.max(1, Math.round(file.size / 1024)) + ' KB).' +
+        (isPdf ? ' View here shows every page; Share / Save to Files keeps the PDF.' : '');
       share.onclick = async () => { if (await shareFile(file, msg)) close(); };
     }).catch(e => {
-      share.hidden = true;
+      share.hidden = true; other.hidden = true; copy.hidden = false;
       msg.textContent = 'Share is not available: ' + e.message + '.';
     });
   }
