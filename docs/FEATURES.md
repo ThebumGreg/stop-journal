@@ -818,3 +818,19 @@ For the Cloudflare tunnel (Cloudflare Access in front, JobHub's own login behind
   (Web Share needs https); "Copy link for Safari" moves under "Other". The PDF viewer's bar has **Share / Save**. On the
   http home address nothing changes (View here + Copy link for Safari).
 
+## Native notifications (Web Push, built 2026-11-25, the user approved the pywebpush package)
+Replaces Pushover over time. `app/webpush.py`, `app/notify.py`, `app/static/sw.js`, `app/static/account.js`.
+- `notify.send` is the one way out for every alert: it sends on each channel in `notify.channels(cfg)` (Settings →
+  "Send alerts to": both / iphone / pushover; a channel counts only when set up: devices signed up, or Pushover keys)
+  and succeeds when one channel delivered. `notify.configured` = any channel, so all alerts work with only an iPhone.
+- Sign-up: Account page → the browser registers `/sw.js` (served from / for full scope, open without login, no-cache),
+  `pushManager.subscribe` with JobHub's VAPID public key (P-256, made once, `_vapid_private` / `_vapid_public` in the
+  settings table) → `POST /api/push/subscribe`. Only https endpoints on Apple/Google/Mozilla/Microsoft push hosts are
+  accepted (a subscription can't make JobHub post elsewhere). `push_devices` holds endpoint, keys, label (from the
+  user agent), user_id, last delivered, last problem. Remove per device; turning off on the device unsubscribes.
+- Sending: pywebpush (aes128gcm), TTL 4 h, Urgency high for priority alerts; the VAPID `sub` is the App address when it
+  is https, else a placeholder (never the user's email). Payload: title, body, the link's path only (opened on our
+  own origin), tag. 404/410 removes the device. The service worker always shows a notification (iOS requires it) and
+  a tap focuses JobHub and opens the path.
+- No offline caching yet: `sw.js` has no fetch handler (the offline app shell will add one).
+

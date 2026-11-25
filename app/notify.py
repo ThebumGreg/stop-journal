@@ -1,5 +1,7 @@
-"""Outbound notifications (Pushover). Message text must never contain coordinates
-or addresses: it leaves the server for a third party."""
+"""Outbound notifications: native ones on the iPhone / browser (Web Push, app/webpush.py) and Pushover.
+Settings → Notifications → "Send alerts to" picks iPhone, Pushover or both (each only when set up).
+Message text must never contain coordinates, addresses, business names or ticket numbers: it passes through a third
+party (Apple's / the browser's push service, or Pushover)."""
 import time
 
 import requests
@@ -11,12 +13,49 @@ class NotifyError(Exception):
     """Delivery failure; the message is safe to show (never contains credentials)."""
 
 
-def configured(cfg):
+def pushover_configured(cfg):
     return bool(cfg.pushover_token and cfg.pushover_user)
 
 
+def channels(cfg):
+    """The ways an alert goes out now: "iphone" (Web Push devices) and/or "pushover"."""
+    from . import webpush
+    want = (getattr(cfg, "notify_channel", "") or "both").lower()
+    out = []
+    if want in ("both", "iphone") and webpush.has_devices(cfg.data_dir):
+        out.append("iphone")
+    if want in ("both", "pushover") and pushover_configured(cfg):
+        out.append("pushover")
+    return out
+
+
+def configured(cfg):
+    return bool(channels(cfg))
+
+
 def send(cfg, title, message, priority=0, url=None, session=None):
-    if not configured(cfg):
+    """Send on every channel in use; it counts as sent when one of them delivered."""
+    from . import webpush
+    chans = channels(cfg)
+    if not chans:
+        raise NotifyError("Notifications aren't set up: turn them on in Settings → Account (iPhone), "
+                          "or add the Pushover keys.")
+    errors, ok = [], False
+    for ch in chans:
+        try:
+            if ch == "iphone":
+                webpush.send_all(cfg, title, message, priority, url)
+            else:
+                send_pushover(cfg, title, message, priority, url, session)
+            ok = True
+        except (NotifyError, webpush.PushError) as e:
+            errors.append(("iPhone: " if ch == "iphone" else "") + str(e))
+    if not ok:
+        raise NotifyError("; ".join(errors))
+
+
+def send_pushover(cfg, title, message, priority=0, url=None, session=None):
+    if not pushover_configured(cfg):
         raise NotifyError("Pushover isn't set up. Add the application token and user key in Settings.")
     data = {"token": cfg.pushover_token, "user": cfg.pushover_user,
             "title": title[:250], "message": message[:1000], "priority": priority}

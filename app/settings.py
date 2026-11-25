@@ -196,12 +196,16 @@ SPEC = [
 ]
 SPEC += [
     ("Notifications (Pushover)", [
+        dict(key="notify_channel", label="Send alerts to", kind="choice", choices=["both", "iphone", "pushover"],
+             help="iphone: native notifications on the phones and browsers you turned on in Settings → Account (needs "
+                  "the https address). pushover: the Pushover app. both: every one that is set up."),
         dict(key="pushover_token", label="Pushover application token", kind="secret",
              help="From pushover.net → Your Applications → create an application named JobHub."),
         dict(key="pushover_user", label="Pushover user key", kind="secret",
              help="Shown at the top of your pushover.net dashboard."),
-        dict(key="app_url", label="App address for notification links", kind="url",
-             help="Tapping a notification opens this, e.g. http://192.168.1.50:5000"),
+        dict(key="app_url", label="App address", kind="url",
+             help="JobHub's public https address, e.g. https://jobhub.example.com. Used for notification links and "
+                  "password reset emails, and accepted as JobHub's own site."),
     ]),
     ("Alerts", [
         dict(key="alert_no_data", label="No-data alert", kind="choice", choices=["on", "off"],

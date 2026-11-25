@@ -75,7 +75,7 @@ def test_pushover_payload_and_errors():
     with pytest.raises(notify.NotifyError, match="application token is invalid") as e:
         notify.send(cfg, "T", "M", session=Sess(Resp(400, {"status": 0, "errors": ["application token is invalid"]})))
     assert "TOK" not in str(e.value) and "USR" not in str(e.value)
-    with pytest.raises(notify.NotifyError, match="isn't set up"):
+    with pytest.raises(notify.NotifyError, match="set up"):
         notify.send(CFG, "T", "M")
 
 
@@ -198,7 +198,7 @@ def test_pushover_secrets_write_only_and_test_route(tmp_path, monkeypatch):
     page = c.get("/settings").data.decode()
     assert "SECRETTOK1234" not in page and "SECRETUSR5678" not in page and "…1234" in page
     sent = []
-    monkeypatch.setattr(notify, "send", lambda cfg, *a, **k: sent.append(a))
+    monkeypatch.setattr(notify, "send_pushover", lambda cfg, *a, **k: sent.append(a))
     assert c.post("/settings/test-pushover").json["ok"] is True and sent
     page = c.get("/settings").data.decode()
     assert "JobHub test" in page and "delivered" in page                 # shows in the recent list

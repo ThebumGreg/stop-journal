@@ -140,3 +140,16 @@ Do these **in order**, and the first part on your home network.
       (Settings → Recorder stays as it is).
 - [ ] Keep the VPN as a way in if Cloudflare is ever down.
 
+## 11. iPhone notifications instead of Pushover (built 2026-11-25)
+Needs section 10 done (the https address) and iOS 16.4 or later.
+- [ ] Update the server (section 1; this update adds a package, so the rebuild takes a little longer).
+- [ ] Open JobHub from the Home Screen icon you added from the https address → Settings → **Account and password** →
+      Notifications → **Turn on notifications on this device** → Allow.
+- [ ] **Send test notification**: it should show on the lock screen within seconds; tapping it opens JobHub.
+      **Tell Claude** if it doesn't (and what the device list says under "problem").
+- [ ] Optional: do the same in Firefox on the PC (desktop notifications).
+- [ ] Settings → Pushover → **Send alerts to** = both (the default) for a week; compare the two apps. Then set it to
+      **iphone**, and Pushover can be cancelled.
+- [ ] If notifications stop: iPhone Settings → Notifications → JobHub must be allowed; deleting the Home Screen icon
+      turns them off (turn them on again after re-adding it).
+

@@ -407,6 +407,8 @@ def connect(data_dir):
     conn.executescript(SCHEMA)
     from . import auth              # sign-in accounts and password reset links
     conn.executescript(auth.SCHEMA)
+    from . import webpush           # phones and browsers signed up for notifications
+    conn.executescript(webpush.SCHEMA)
     _migrate(conn)
     from . import photos             # pictures stored in the database by the first version move to files
     photos.move_to_files(conn, data_dir)

@@ -29,6 +29,7 @@ class Config:
     pushover_token: str = ""
     pushover_user: str = ""
     app_url: str = ""
+    notify_channel: str = "both"   # both | iphone | pushover (each only when set up)
     alert_no_data: str = "on"
     alert_no_data_min: int = 60
     work_days: str = "Mon-Fri"
@@ -98,6 +99,7 @@ class Config:
             pushover_token=e("PUSHOVER_TOKEN", ""),
             pushover_user=e("PUSHOVER_USER", ""),
             app_url=e("APP_URL", "").rstrip("/"),
+            notify_channel=e("NOTIFY_CHANNEL", "both"),
             alert_no_data=e("ALERT_NO_DATA", "on"),
             alert_no_data_min=_int("ALERT_NO_DATA_MIN", 60),
             work_days=e("WORK_DAYS", "Mon-Fri"),

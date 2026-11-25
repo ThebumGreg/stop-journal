@@ -16,7 +16,7 @@ from flask.sessions import SecureCookieSessionInterface
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import ai, auth, equipment, invoice_request, kits, late, logs, mailer, message_v2, photos, receipt_inbox, receipts, summary, vendors
+from . import ai, auth, webpush, equipment, invoice_request, kits, late, logs, mailer, message_v2, photos, receipt_inbox, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .geo import haversine_m
@@ -33,7 +33,7 @@ FILE_TOKEN_S = 600       # a download link made for Safari works for 10 minutes
 FILE_PATHS = ("/api/export.", "/api/debug/", "/api/parts/template.csv", "/api/parts/export.csv", "/api/tools/export.csv",
               "/api/tools/template.csv", "/api/places/export.csv", "/settings/log")
 # (backups are not on this list: a leaked link must never hand out the whole database)
-OPEN_ENDPOINTS = ("health", "login", "logout", "static", "manifest", "forgot", "reset_password")
+OPEN_ENDPOINTS = ("health", "login", "logout", "static", "manifest", "forgot", "reset_password", "service_worker")
 SESSION_DAYS = 30        # stay signed in this long after the last visit (the Home Screen app would otherwise ask daily)
 
 class _Sessions(SecureCookieSessionInterface):
@@ -359,6 +359,68 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return render_template("reset.html", bad=False, error=err, username=u["username"]), (400 if err else 200)
         finally:
             conn.close()
+
+    # ---- native notifications (Web Push) ---------------------------------------------------------------------------
+    @app.get("/sw.js")
+    def service_worker():
+        """The phone's background script (shows notifications). Served from / so it covers every page."""
+        resp = send_file(os.path.join(app.static_folder, "sw.js"), mimetype="text/javascript", max_age=0)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+    def _uid():
+        return session.get("uid")
+
+    @app.get("/api/push")
+    def push_info():
+        conn = _db()
+        try:
+            _, pub = webpush.keys(conn)
+            return jsonify(key=pub, devices=[{k: d[k] for k in ("id", "label", "created_ts", "last_ok_ts", "last_error")}
+                                             | {"endpoint_tail": d["endpoint"][-12:]} for d in webpush.devices(conn)])
+        finally:
+            conn.close()
+
+    @app.post("/api/push/subscribe")
+    def push_subscribe():
+        conn = _db()
+        try:
+            webpush.subscribe(conn, _uid(), (request.get_json(silent=True) or {}).get("subscription"),
+                              request.headers.get("User-Agent", ""))
+            logs.get("notify").info("a device turned notifications on")
+            return jsonify(ok=True)
+        except webpush.PushError as e:
+            return jsonify(error=str(e)), 400
+        finally:
+            conn.close()
+
+    @app.post("/api/push/remove")
+    def push_remove():
+        b = request.get_json(silent=True) or {}
+        conn = _db()
+        try:
+            if b.get("endpoint"):
+                webpush.remove(conn, endpoint=str(b["endpoint"]))
+            else:
+                webpush.remove(conn, device_id=int(b.get("id") or 0))
+            return jsonify(ok=True)
+        finally:
+            conn.close()
+
+    @app.post("/api/push/test")
+    def push_test():
+        cfg = eff()
+        try:
+            n = webpush.send_all(cfg, "JobHub", "Test notification – notifications are working.", 0, "/account")
+            ok, msg = True, f"Sent to {n} device{'s' if n != 1 else ''}. It should appear in a few seconds."
+        except webpush.PushError as e:
+            ok, msg = False, str(e)
+        conn = _db()
+        try:
+            notify.record(conn, "JobHub test (iPhone)", "Test notification", ok, None if ok else msg)
+        finally:
+            conn.close()
+        return jsonify(ok=ok, message=msg)
 
     @app.route("/account", methods=["GET", "POST"])
     def account_page():
@@ -1606,7 +1668,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         return dict(tabs=tabs, values=values, defaults=defaults, secret_info=secret_info,
                     usage=UsageCounter(base.data_dir, "google").count(),
                     cap=cfg.google_daily_cap, provider=cfg.places_provider,
-                    pushover_ready=notify.configured(cfg), recent=recent,
+                    pushover_ready=notify.pushover_configured(cfg), recent=recent,
                     backups=backup.list_backups(base.data_dir),
                     has_password=bool(base.app_password) or has_users, **extra)
 
@@ -1764,7 +1826,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         """Send one real test notification to validate the Pushover keys."""
         cfg = eff()
         try:
-            notify.send(cfg, "JobHub", "Test notification – Pushover is working.", 0,
+            notify.send_pushover(cfg, "JobHub", "Test notification – Pushover is working.", 0,
                         cfg.app_url or None)
             ok, msg = True, "Sent. Check your phone."
         except notify.NotifyError as e:

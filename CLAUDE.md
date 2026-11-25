@@ -36,9 +36,10 @@ and add or update a section there when you build something. This file holds only
 ## Privacy and security (hard rules)
 - Location data stays on the server. Outbound calls are only: place lookups (coordinates and search text to the chosen
   provider, cached), map tiles, road routing (coordinates rounded to ~100 m), the published calendar link, the
-  optional Google Vision / Claude / LanguageTool calls (only the receipt photo or the note text), Pushover, and Gmail.
-- Pushover text must never contain coordinates, addresses, business names or ticket numbers: it passes through a third
-  party. Use generic text ("your 10:00 appointment", "the stop you arrived at 9:12").
+  optional Google Vision / Claude / LanguageTool calls (only the receipt photo or the note text), Pushover, Web Push
+  (to the push service of each phone/browser the user turned on: Apple, Google, Mozilla, Microsoft only), and Gmail.
+- Notification text (Pushover and Web Push alike, all through `notify.send`) must never contain coordinates,
+  addresses, business names or ticket numbers: it passes through a third party. Use generic text ("your 10:00 appointment", "the stop you arrived at 9:12").
 - Emails to the user's work address (all user-approved 2026-11-23), never sent automatically except invites:
   - Email report (full report): only when the user taps Email report.
   - Send for invoice (one stop) and Tell the customer (late notice): only on that tap, after a confirm.
@@ -87,8 +88,9 @@ and add or update a section there when you build something. This file holds only
   `photos.py`.
 - `app/places/` (known sites, OSM/Google providers, ranking, cache), `routing.py` (OSRM), `grammar.py` (LanguageTool).
 - `app/auth.py`: accounts, sign-in throttle, password reset tokens, console (`python -m app.auth`).
-- `app/alerts.py` (background thread, every 60 s: Pushover alerts, invites, weekly `housekeeping.maybe_prune`),
-  `notify.py` (Pushover), `logs.py` (logging, watchdog, freeze detector), `backup.py`, `db.py` (schema + MIGRATIONS).
+- `app/alerts.py` (background thread, every 60 s: alerts, invites, weekly `housekeeping.maybe_prune`),
+  `notify.py` (sends to iPhone and/or Pushover), `webpush.py` (native notifications: keys, devices, sending;
+  `static/sw.js` shows them, `static/account.js` turns them on), `logs.py` (logging, watchdog, freeze detector), `backup.py`, `db.py` (schema + MIGRATIONS).
 - Pages: `app/templates/*.html` and `app/static/{day,truck,places,tools,home}.js` (vanilla JS, each with its own copy of
   the helpers: see plan E), `clientlog.js` (page errors to `/api/client-log`), `share.js`.
 

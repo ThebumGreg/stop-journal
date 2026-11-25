@@ -93,7 +93,9 @@ def test_calendar_errors_and_settings(tmp_path, feed):
     feed["status"] = 200
     calendar_feed.clear_cache()
     assert "did not return a calendar" in c.get(f"/api/day/{D}").json["calendar_error"]
-    feed["ics"] = ics(ev("x", "20261125T090000", "20261125T100000", "on site: Acme"))
+    from datetime import datetime as _dt, timedelta as _td
+    tomorrow = (_dt.now() + _td(days=1)).strftime("%Y%m%d")          # the check looks at the next 7 days from now
+    feed["ics"] = ics(ev("x", tomorrow + "T090000", tomorrow + "T100000", "on site: Acme"))
     r = c.post("/settings/test-calendar", data={"calendar_keyword": "onsite"}).json
     assert r["ok"] and "1 marked" in r["message"]
     assert c.post("/settings", data={"calendar_url": "http://insecure"}).status_code in (200, 400)

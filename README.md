@@ -52,7 +52,8 @@ Single user. Your location data stays on your own server.
   tap a visit to open it.
 - **Outlook calendar** (optional): paste the published ICS link in Settings → Calendar; appointments with "onsite" in them show
   on the day, next to the stop they match, with a one-tap "Use calendar" to fill in the name and address.
-- **Alerts** to your phone through Pushover (for example: no location data during work hours, or you drove away from a stop
+- **Alerts** to your phone as native iPhone notifications (Settings → Account → Notifications, on the https address)
+  and/or through Pushover (for example: no location data during work hours, or you drove away from a stop
   you had not finished; tapping that one opens the stop).
 - A **live status** box: where the phone is now and how long it has been there.
 - Sync, Confirm all known and Undo are on the **Reports** page. Once the day is ended, no more stops are added to it.
@@ -129,8 +130,9 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `PLACES_PROVIDER` | `osm` | `osm`, `osm_google` (OSM first, Google only when OSM comes up short) or `google` |
 | `GOOGLE_PLACES_KEY`, `GOOGLE_DAILY_CAP` | | Google is optional and costs money; the cap limits requests per day |
 | `OVERPASS_URL` | public server | point at a mirror if lookups fail |
-| `PUSHOVER_TOKEN`, `PUSHOVER_USER` | | notifications; see Settings |
-| `APP_URL` | | address that notification taps open, e.g. `http://192.168.x.x:8000` |
+| `PUSHOVER_TOKEN`, `PUSHOVER_USER` | | Pushover notifications; see Settings |
+| `NOTIFY_CHANNEL` | `both` | where alerts go: `both`, `iphone` (native notifications) or `pushover`; each only when set up |
+| `APP_URL` | | JobHub's public https address (notification links, password reset emails) |
 | `ALERT_NO_DATA`, `ALERT_NO_DATA_MIN`, `WORK_DAYS`, `WORK_START`, `WORK_END`, `ALERT_REPEAT_MIN` | on, 60, Mon-Fri, 07:00, 17:00, 0 | the no-data alert (tapping Start/End day overrides the work hours for that day) |
 | `ALERT_DRAFTS`, `ALERT_LOW_STOCK`, `ALERT_LEFT_STOP` | on, on, on | end-of-day "stops still in Draft" reminder, low truck stock alert, "you left a stop that isn't finished" (generic text only) |
 | `ALERT_LATE`, `ALERT_LATE_MIN` | on, 10 | "running late" alert when the drive time says you will reach an on-site appointment this many minutes after it starts |
@@ -233,7 +235,9 @@ Settings → Docker (Docker log rotation) so the container log cannot fill the d
   backups.
 - The only outbound calls are place lookups (coordinates and search text go to the provider you
   choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, reading your published calendar (only if you set the link), Google Vision for receipts and Claude for Polish notes (only if
-  turned on; receipt photos and the note text respectively), map tiles, and Pushover notifications (whose text never contains locations).
+  turned on; receipt photos and the note text respectively), map tiles, and notifications: Pushover and/or native ones through the push service of each phone or browser you turned
+  on (Apple, Google, Mozilla or Microsoft; JobHub accepts no other address). Their text never contains locations,
+  customers or tickets.
   With the running-late alert on, JobHub also looks up the drive time to your next appointment every few minutes during
   the work day (rounded coordinates to the routing server; the appointment's address to OpenStreetMap search, cached).
 - **Email report** (Settings → Email) sends the report, including customer names, addresses, notes and (unless you

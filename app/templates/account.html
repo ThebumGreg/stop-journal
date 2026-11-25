@@ -8,6 +8,7 @@
   main { max-width:520px; }
   form.acc { display:grid; gap:8px; margin:8px 0 18px; }
   form.acc label { font-size:14px; color:var(--muted); display:grid; gap:4px; }
+  .prow { display:flex; gap:8px; align-items:center; justify-content:space-between; padding:6px 0; border-top:1px solid var(--line); }
 </style>
 </head>
 <body>
@@ -61,6 +62,18 @@
         to your public https address so it always points there.{% endif %}</div>
     </form>
 
+    <h2>Notifications</h2>
+    <div id="push" class="box">
+      <div class="pmsg">Checking…</div>
+      <div class="row" style="margin:8px 0"><button type="button" class="primary" id="pushon" hidden>Turn on notifications on this device</button>
+        <button type="button" id="pushoff" hidden>Turn off on this device</button></div>
+      <div class="plist"></div>
+      <div class="row" style="margin-top:8px"><button type="button" id="pushtest">Send test notification</button><span id="pushtestmsg" class="help"></span></div>
+      <div class="help">Alerts (no data, end-of-day review, unfinished stop, running late, low stock, sign-in) show as
+        normal notifications; tapping one opens JobHub. Like Pushover, the text never names customers or places.
+        Which alerts go here or to Pushover: Settings → Pushover → “Send alerts to”.</div>
+    </div>
+
     <h2>Devices</h2>
     <div class="row">
       <form method="post" style="margin:0"><input type="hidden" name="action" value="everywhere">
@@ -70,5 +83,6 @@
     <p class="help">Locked out? From the Unraid console: <code>docker exec -it JobHub python -m app.auth reset {{ user.username }}</code></p>
   {% endif %}
 </main>
+<script src="{{ url_for('static', filename='account.js') }}"></script>
 </body>
 </html>
