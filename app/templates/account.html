@@ -58,7 +58,7 @@
       <button class="primary" type="submit">Save email</button>
       <div class="help">“Forgot password?” on the sign-in page sends a one-time link here.
         {% if not mail_ready %}<strong>Email is not set up yet (Settings → Email), so no link can be sent.</strong>{% endif %}
-        {% if not app_url %}The link uses the address you used to open JobHub; set Settings → Pushover → “App address”
+        {% if not app_url %}The link uses the address you used to open JobHub; set Settings → Address and access → “App address”
         to your public https address so it always points there.{% endif %}</div>
     </form>
 
@@ -71,7 +71,7 @@
       <div class="row" style="margin-top:8px"><button type="button" id="pushtest">Send test notification</button><span id="pushtestmsg" class="help"></span></div>
       <div class="help">Alerts (no data, end-of-day review, unfinished stop, running late, low stock, sign-in) show as
         normal notifications; tapping one opens JobHub. Like Pushover, the text never names customers or places.
-        Which alerts go here or to Pushover: Settings → Pushover → “Send alerts to”.</div>
+        Which alerts go here or to Pushover: Settings → My alerts → “Send alerts to”.</div>
     </div>
 
     <h2>Devices</h2>

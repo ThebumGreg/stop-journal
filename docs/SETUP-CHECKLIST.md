@@ -7,10 +7,10 @@ Work down the list. Items marked **Tell Claude** are results to report back. Tic
 - [x] On the iPhone, close the Home Screen app fully and open it again (loads the new pages).
 
 ## 1b. Check the update worked
-- [ ] Settings → General → Log → **View recent log** shows "JobHub started: …".
+- [ ] Settings → Log and backups → **View recent log** shows "JobHub started: …".
 - [ ] Reports → Download PDF → **View here** shows every page.
 
-## 2. Settings → General
+## 2. Settings → Me and Pay rules
 - [ ] **Technician**: your name and work email.
 - [ ] **Follow-up owners**: `Me` plus one line per person, e.g. `Office = office@yourco.com`.
 - [ ] **Pay rules → Lunch is paid**: leave on unless the company says lunch is unpaid.
@@ -25,7 +25,7 @@ Work down the list. Items marked **Tell Claude** are results to report back. Tic
 
 ## 4. Outlook calendar (appointments into JobHub)
 - [ ] Outlook on the web → Settings → Calendar → Shared calendars → Publish a calendar → "Can view all details" → copy the **ICS** link.
-- [ ] Settings → Calendar: paste the link → **Test calendar**.
+- [ ] JobHub Settings → My calendar: paste the link → **Test calendar**.
 - [ ] Format on-site events like this:
   - Title: `Onsite – Customer name`
   - Location: the full street address
@@ -74,9 +74,9 @@ Work down the list. Items marked **Tell Claude** are results to report back. Tic
 - [ ] Vendor receipt photo (AI reader on): "Items on the receipt" → **+ Add as bought**.
 - [ ] **Delete permanently**: Truck → Parts → **Show removed** → open an old test part → **Delete permanently**. (Only
       shows for parts that are on no stop.)
-- [ ] **Running late**: Settings → Alerts → Running late alert **on**, late by **10**. Settings → Email → **Send late
-      notices to** = your agent's address (blank = your work email). Pushover must be set up, and Settings → Pushover →
-      **App address for notification links** (e.g. http://192.168.128.245:8000) so the alert opens JobHub.
+- [ ] **Running late**: Settings → My alerts → Running late alert **on**, late by **10**. Settings → Work AI agent → **Send late
+      notices to** = your agent's address (blank = your work email). Pushover must be set up, and Settings → Address and access →
+      **App address** (now your https address) so the alert opens JobHub.
 - [ ] On a day with an on-site appointment: when you are running late, Home shows a red box. Try **Tell the customer**
       once with a note and check the email your agent gets. **Tell Claude** if the alert came too early, too late, or never.
 
@@ -95,7 +95,7 @@ Work down the list. Items marked **Tell Claude** are results to report back. Tic
 - [ ] Give your agent `docs/sample-report/v2/` and the README section "Message format 2" (updated after its review:
       on-site invoice, revision 2 with removed items, calendar link, real SKU example).
 - [ ] Reports → Email report with **Send as format 2 (test)** ticked for one real day; the agent checks it.
-- [ ] When the agent is happy: Settings → Email → **Message format: 2**. After a week with no format 1 emails, tell
+- [ ] When the agent is happy: Settings → Work AI agent → **Message format: 2**. After a week with no format 1 emails, tell
       Claude to remove format 1.
 - [ ] Office: put the HubSpot ticket **link** on the calendar appointment's `Ticket:` line (short numbers like 1043
       can't be looked up in HubSpot).
@@ -105,7 +105,7 @@ Work down the list. Items marked **Tell Claude** are results to report back. Tic
       without writing anything.
 - [x] Then email it one real day and have it do the same dry run before it writes anything to HubSpot.
 - [ ] Tell it to accept reports only from your JobHub Gmail address.
-- [ ] Optional: Settings → Email → **Report signing key**; give the agent the same phrase and have it check the `Signature:` line.
+- [ ] Optional: Settings → Work AI agent → **Report signing key**; give the agent the same phrase and have it check the `Signature:` line.
 - [ ] Give it the late notice samples too (`late-notice-sample.json`, `late-notice-body.txt`, README "Late notices") and
       ask how it would contact the customer.
 
@@ -126,7 +126,7 @@ Do these **in order**, and the first part on your home network.
 - [ ] Zero Trust → Access → Applications: a self-hosted app for that hostname, policy **Allow** = your email only.
       Session duration: 1 month (the Home Screen app then rarely asks). Do **not** add a Bypass rule for JobHub paths
       (not even `/health`): JobHub uses `/health` to notice an expired Cloudflare sign-in and reload the page.
-- [ ] JobHub Settings → Pushover → **App address**: `https://jobhub.<your domain>` (notification links and reset
+- [ ] JobHub Settings → Address and access → **App address**: `https://jobhub.<your domain>` (notification links and reset
       emails use it, and it is accepted as JobHub's own site for changes).
 - [ ] Test from the phone on cellular (Wi-Fi off): Cloudflare sign-in, then JobHub sign-in; open a day, add a part, add a
       photo, Email report. Then on the iPhone delete the old Home Screen icon and add it again from the https address
@@ -137,7 +137,7 @@ Do these **in order**, and the first part on your home network.
       auth) on everything. In Cloudflare Access that hostname needs a **Bypass** policy (the OwnTracks app can't do the
       Cloudflare sign-in), so NPM's login is its only lock: use a long password. In OwnTracks: Mode HTTP, URL
       `https://owntracks.<your domain>/pub`, user and password. JobHub keeps reading the Recorder on the home network
-      (Settings → Recorder stays as it is).
+      (Settings → OwnTracks Recorder stays as it is).
 - [ ] Keep the VPN as a way in if Cloudflare is ever down.
 
 ## 11. iPhone notifications instead of Pushover (built 2026-11-25)
@@ -148,7 +148,7 @@ Needs section 10 done (the https address) and iOS 16.4 or later.
 - [ ] **Send test notification**: it should show on the lock screen within seconds; tapping it opens JobHub.
       **Tell Claude** if it doesn't (and what the device list says under "problem").
 - [ ] Optional: do the same in Firefox on the PC (desktop notifications).
-- [ ] Settings → Pushover → **Send alerts to** = both (the default) for a week; compare the two apps. Then set it to
+- [ ] Settings → My alerts → **Send alerts to** = both (the default) for a week; compare the two apps. Then set it to
       **iphone**, and Pushover can be cancelled.
 - [ ] If notifications stop: iPhone Settings → Notifications → JobHub must be allowed; deleting the Home Screen icon
       turns them off (turn them on again after re-adding it).

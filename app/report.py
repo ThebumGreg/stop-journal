@@ -436,7 +436,7 @@ def warnings(report):
     if not tech.get("name") or not tech.get("email"):
         out.append("Technician " + ("name and email are" if not tech.get("name") and not tech.get("email")
                                     else "name is" if not tech.get("name") else "email is")
-                   + " not set (Settings → General → Technician): the report does not say who did the work.")
+                   + " not set (Settings → Me): the report does not say who did the work.")
     for day in report["days"]:
         for s in day["stops"]:
             who = f"{day['date']} stop {s['stop_number']} ({s['business_name']})"
@@ -470,8 +470,8 @@ def warnings(report):
                     out.append(f"{who}: follow-up “{f['what']}” has no {' or '.join(m.split(' ', 1)[1] for m in miss)}.")
                 if f["owner"] and not f.get("owner_email"):
                     out.append(f"{who}: follow-up “{f['what']}”: " + (
-                        "“Me” has no email (set Technician email in Settings → General)." if f["owner"].strip().lower() == "me"
-                        else f"owner “{f['owner']}” is not in Settings → General → Follow-up owners, so it has no email."))
+                        "“Me” has no email (set Technician email in Settings → Me)." if f["owner"].strip().lower() == "me"
+                        else f"owner “{f['owner']}” is not in Settings → Me → Follow-up owners, so it has no email."))
         for f in day.get("fuel") or []:
             if not f["total"]:
                 out.append(f"{day['date']} fuel stop at {f['arrival']}: no total paid entered.")

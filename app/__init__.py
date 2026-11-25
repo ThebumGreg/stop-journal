@@ -67,6 +67,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     app.wsgi_app = ProxyFix(method_override, x_for=0, x_proto=1, x_host=0)
     app.session_interface = _Sessions()
     tz = ZoneInfo(base.app_tz)
+    app.jinja_env.filters["slug"] = settings.slug
+    app.jinja_env.filters["split_help"] = settings.split_help
     app.jinja_env.filters["ts_local"] = lambda t: datetime.fromtimestamp(t, tz).strftime("%b %-d, %-I:%M %p")
     app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
                       SESSION_COOKIE_NAME="jobhub_session", PERMANENT_SESSION_LIFETIME=SESSION_DAYS * 86400,
@@ -145,7 +147,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return e
         code = logs.ref()
         logs.get("error").exception("error %s on %s %s", code, request.method, request.path)
-        msg = f"Something went wrong (error {code}). The details are in the JobHub log (Settings → General → Log)."
+        msg = f"Something went wrong (error {code}). The details are in the JobHub log (Settings → Log and backups)."
         if request.path.startswith("/api/") or request.method != "GET":
             return jsonify(error=msg), 500
         return Response(f"<p style='font:16px sans-serif;padding:16px'>{msg}</p>", status=500, mimetype="text/html")
@@ -519,7 +521,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
 
     def fetch_day(conn, cfg, date, refresh=False):
         if not (cfg.recorder_url and cfg.recorder_user and cfg.recorder_device):
-            raise service.EditError("Set up the Recorder first: Settings → Recorder → Find on Recorder.")
+            raise service.EditError("Set up the Recorder first: Settings → My phone (OwnTracks) → Find on Recorder.")
         points.load_day(conn, client, cfg, date, refresh=refresh)
 
     def ensure_day(conn, cfg, date, refresh=False):
@@ -601,7 +603,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         def go(conn, cfg):
             b = request.get_json(silent=True) or {}
             if not cfg.mail_to:
-                raise service.EditError("Email is not set up: add the address to send to in Settings → Email.")
+                raise service.EditError("Email is not set up: add the address to send to in Settings → Work AI agent.")
             full = build_report(conn, cfg, filtered=False)
             if reports.check(full)["not_confirmed"] and not b.get("anyway"):
                 raise service.EditError("Some stops are not confirmed yet. Confirm them, or tick “Export anyway”.")
@@ -1401,7 +1403,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def live_now(cfg, now):
         """(status dict, None, 200) or (None, error, http code): where the phone is and how long it has been there."""
         if not (cfg.recorder_url and cfg.recorder_user and cfg.recorder_device):
-            return None, "Set up the Recorder first: Settings → Recorder.", 400
+            return None, "Set up the Recorder first: Settings → OwnTracks Recorder and My phone.", 400
         try:
             pts = client.fetch(datetime.fromtimestamp(now - live.LOOKBACK_S, timezone.utc),
                                datetime.fromtimestamp(now, timezone.utc))
@@ -1648,6 +1650,44 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return service.save_place(conn, cfg, sid, b)
         return mutate(go)
 
+    def _settings_status(cfg, n_devices, backups_list):
+        """One short line per Settings group: (state, text); state ok / warn / "" (neutral)."""
+        chans = notify.channels(cfg)
+        alerts = " and ".join(({"iphone": f"iPhone ({n_devices} device{'s' if n_devices != 1 else ''})",
+                                "pushover": "Pushover"})[c] for c in chans)
+        app_url = cfg.app_url or ""
+        return {
+            "Me": ("ok", "Set") if cfg.tech_name and cfg.tech_email else ("warn", "Name or email missing"),
+            "Work hours": ("", f"{cfg.work_days}, {cfg.work_start}–{cfg.work_end}"),
+            "My phone (OwnTracks)": (("ok", f"{cfg.recorder_user} / {cfg.recorder_device}")
+                                     if cfg.recorder_user and cfg.recorder_device else ("warn", "Pick your phone")),
+            "My calendar": ("ok", "Link saved" + (" · invites on" if cfg.calendar_invites == "on" else ""))
+                           if cfg.calendar_url else ("", "Not set up"),
+            "My alerts": ("ok", "To " + alerts) if chans else ("warn", "No way to send alerts yet"),
+            "My notes": ("", f"{len([x for x in (cfg.note_phrases or '').splitlines() if x.strip()])} quick phrases"),
+            "Work AI agent": ("ok", f"Format {cfg.message_format}" + (" · signed" if cfg.report_signing_key else ""))
+                             if cfg.mail_to else ("warn", "No agent address"),
+            "Email": ("ok", "Set up") if cfg.smtp_user and cfg.smtp_password else ("warn", "Not set up"),
+            "Address and access": ("ok", app_url) if app_url.startswith("https://") else
+                                  (("warn", "Not https") if app_url else ("warn", "Not set")),
+            "Pay rules": ("", "Lunch paid" if cfg.lunch_paid == "on" else "Lunch unpaid"),
+            "OwnTracks Recorder": ("ok", "Set") if cfg.recorder_url else ("warn", "Not set up"),
+            "Places": ("", {"osm": "OpenStreetMap", "osm_google": "OpenStreetMap, then Google",
+                            "google": "Google"}.get(cfg.places_provider, cfg.places_provider)),
+            "AI": ("ok", "Key set") if cfg.anthropic_key else ("", "Off (optional)"),
+            "Receipts": ("", "Off" if cfg.receipt_reader == "off" else {"google_vision": "Google Vision",
+                                                                         "claude": "Claude"}.get(cfg.receipt_reader,
+                                                                                                  cfg.receipt_reader)),
+            "Pushover": ("ok", "Set") if cfg.pushover_token else ("", "Not used"),
+            "Road distance and grammar": ("", ", ".join(x for x, on in (("road distance", cfg.routing_url),
+                                                                      ("grammar", cfg.languagetool_url)) if on)
+                                          or "Off"),
+            "Parts import": ("", "Service items with SKU: " + cfg.qbo_service_with_sku),
+            "Stop detection": ("", f"Stops of {cfg.stop_min_minutes}+ min within {cfg.stop_radius_m} m"),
+            "Log and backups": ("", f"Log {cfg.log_level} · {len(backups_list)} backup"
+                                    f"{'s' if len(backups_list) != 1 else ''}"),
+        }
+
     # ---- settings page ------------------------------------------------
     def settings_context(**extra):
         conn = db.connect(base.data_dir)
@@ -1663,13 +1703,20 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         secret_info = {k: {"hint": settings.key_hint(getattr(cfg, k)),
                            "from_env": bool(getattr(base, k)) and not ov.get(k)}
                        for k in settings.SECRETS}
-        by_group = dict(settings.SPEC)
-        tabs = [(t, [(g, by_group[g]) for g in gs]) for t, gs in settings.TABS]
-        return dict(tabs=tabs, values=values, defaults=defaults, secret_info=secret_info,
+        conn = db.connect(base.data_dir)
+        try:
+            n_devices = len(webpush.devices(conn))
+            me = _signed_in(conn)
+            me_name = me["username"] if me is not None and me is not True else ""
+        finally:
+            conn.close()
+        backups_list = backup.list_backups(base.data_dir)
+        return dict(groups=settings.GROUPS, advanced=settings.ADVANCED, values=values,
+                    status=_settings_status(cfg, n_devices, backups_list), me_name=me_name, n_devices=n_devices, defaults=defaults, secret_info=secret_info,
                     usage=UsageCounter(base.data_dir, "google").count(),
                     cap=cfg.google_daily_cap, provider=cfg.places_provider,
                     pushover_ready=notify.pushover_configured(cfg), recent=recent,
-                    backups=backup.list_backups(base.data_dir),
+                    backups=backups_list,
                     has_password=bool(base.app_password) or has_users, **extra)
 
     @app.get("/settings")

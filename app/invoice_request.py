@@ -112,7 +112,7 @@ def build(conn, cfg, stop_id, now=None, info=None):
     if s["visit_result"] and s["visit_result"] != service.VISIT_RESULTS["complete"]:
         warn.append(f"Visit result is “{s['visit_result']}”: the job is not complete.")
     if not cfg.tech_name or not cfg.tech_email:
-        warn.append("Your name or work email is not set (Settings → General → Technician).")
+        warn.append("Your name or work email is not set (Settings → Me).")
     return req, warn, photos
 
 
@@ -207,7 +207,7 @@ def send(conn, cfg, stop_id, opts, render_pdf, load_photo, now=None):
     from . import message_v2 as v2
     from .places import known
     if not cfg.mail_to:
-        raise EditError("Email is not set up: add the address to send to in Settings → Email.")
+        raise EditError("Email is not set up: add the address to send to in Settings → Work AI agent.")
     now = int(now or time.time())
     bill_to = known.billing_email(opts.get("invoice_to_email")) or ""
     info = {}

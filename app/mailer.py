@@ -11,7 +11,7 @@ The message is made easy for an agent to pick up:
 - Subject `JobHub Daily Summary 2026-11-23` (a range: `... 2026-11-19 to 2026-11-23`); a second send of the same
   dates adds ` (update 2)`, and the body says it replaces the earlier one.
 - The body starts with fixed `Key: value` lines (Dates, Version, Confirmed stops, Attached), then a short stop list.
-- Attachments: the JSON (the data: format 1, or format 2 per Settings → Email → Message format), the PDF, and
+- Attachments: the JSON (the data: format 1, or format 2 per Settings → Work AI agent → Message format), the PDF, and
   optionally the pictures (named as in the report).
 """
 import json
@@ -147,7 +147,7 @@ def send_report(conn, cfg, rep, name, pdf_bytes, opts, load_photo, build_v2=None
     (message, [(attachment, photo id)]) makes the JSON format 2 instead (app/message_v2.py)."""
     from . import message_v2
     if not cfg.mail_to:
-        raise MailError("Add the address to send to in Settings → Email.")
+        raise MailError("Add the address to send to in Settings → Work AI agent.")
     if not (opts.get("pdf") or opts.get("json")):
         raise MailError("Tick the PDF or the JSON (or both) to attach.")
     a, b = rep["date_from"], rep["date_to"]

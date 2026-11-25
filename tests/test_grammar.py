@@ -59,13 +59,26 @@ def test_settings_test_button(tmp_path):
         assert "Could not reach" in c.post("/settings/test-grammar", data={"languagetool_url": "http://x"}).json["message"]
 
 
-def test_settings_page_has_one_tab_per_integration(tmp_path):
+def test_settings_page_my_and_app_groups(tmp_path):
     import re
+    from app import settings
     c = client(tmp_path)
     html = c.get("/settings").get_data(as_text=True)
-    tabs = re.findall(r'data-tab="\d+"[^>]*>([^<●]+)', html)
-    assert tabs == ["OwnTracks", "Places", "Pushover", "Road distance", "Calendar", "Receipts", "AI", "Email", "Notes", "General"]
-    from app import settings
-    assert sorted(g for _, gs in settings.TABS for g in gs) == sorted(g for g, _ in settings.SPEC)
-    bad = c.post("/settings", data={"stop_radius_m": "abc"}).get_data(as_text=True)
-    assert "●" in bad
+    assert html.index("My settings") < html.index("App settings")
+    groups = re.findall(r'<details class="grp" id="([a-z0-9-]+)"', html)
+    assert groups[:6] == ["me", "work-hours", "my-phone-owntracks", "my-calendar", "my-alerts", "my-notes"]
+    assert "work-ai-agent" in groups and "log-and-backups" in groups and len(groups) == 19
+    # every setting is on the page exactly once, and each is either the person's or the app's
+    laid = [k for _, _, gs in settings.LAYOUT for _, ks in gs for k in ks]
+    assert sorted(laid) == sorted(settings.FIELDS) and len(laid) == len(set(laid))
+    for k in settings.FIELDS:
+        assert html.count(f'name="{k}"') == 1, k
+    assert {"tech_name", "tech_email", "work_days", "recorder_device", "calendar_url", "alert_late", "pushover_user",
+            "note_phrases", "notify_channel"} <= settings.USER_KEYS
+    assert not {"mail_to", "smtp_password", "anthropic_key", "recorder_url", "lunch_paid", "app_url",
+                "pushover_token", "stop_radius_m"} & settings.USER_KEYS
+    assert 'class="adv"' in html and "Show advanced" in html
+    bad = c.post("/settings", data={"max_acc_m": "abc"}).get_data(as_text=True)
+    assert "●" in bad and '<details class="grp" id="stop-detection" open>' in bad
+    assert '<details class="adv" open>' in bad                         # the bad field is an advanced one: shown
+    assert settings.split_help("Your Recorder, e.g. http://x. Use it.") == ("Your Recorder, e.g. http://x.", "Use it.")

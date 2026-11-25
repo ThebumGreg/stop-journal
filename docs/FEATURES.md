@@ -280,7 +280,7 @@ clean, text-based and unambiguous. No screenshots of maps as the only source of 
 ## Notes: spell and grammar check (built)
 - The notes box sets spellcheck / autocorrect / autocapitalize explicitly (the iPhone keyboard does the spelling).
 - Grammar: **LanguageTool** (open source), self-hosted as its own container so notes stay on the network. `app/grammar.py`;
-  `LANGUAGETOOL_URL` env or Settings → Notes (blank = off, and the button is hidden). `POST /api/grammar {text}` forwards ONLY the
+  `LANGUAGETOOL_URL` env or Settings → Road distance and grammar (blank = off, and the button is hidden). `POST /api/grammar {text}` forwards ONLY the
   text to `{url}/v2/check` (language en-US, 5000 chars, 30 issues) and returns offset/length/message/replacements;
   `GET /api/grammar/status` says whether it is on. The sheet's "Check grammar" button lists issues with one-tap fixes.
 - Community image `erikvl87/languagetool` (port 8010, about 1 GB RAM) is a commented example in docker-compose.yml; confirm it
@@ -377,7 +377,7 @@ stop departed 12:21, and listed billable parts with no cost.
 - Not built: cleanup of orphaned photos (the user keeps them for now).
 
 ## Alerts, find, parts, backups (built 2026-11-22, later)
-- **Unfinished stop alert** (`ALERT_LEFT_STOP` / Settings → Alerts, default on): during the work day (work hours or after Start
+- **Unfinished stop alert** (`ALERT_LEFT_STOP` / Settings → My alerts, default on): during the work day (work hours or after Start
   day, until End day) the alert thread runs `service.catch_up` (the same incremental sync as the page, behind a lock) every
   AUTO_SYNC_MIN minutes (5 if that is 0), then `service.left_unfinished`: a work stop (job/vendor/office/gas or untyped, not
   Personal/Lunch/Traffic) with newer points 5+ min after its departure, left in the last 4 h, arrived after Start day, with
@@ -398,7 +398,7 @@ stop departed 12:21, and listed billable parts with no cost.
   unlinked same-name stops within 300 m), newest first, totals, 10 then "Show all"; each visit links to `/day/<date>?stop=<id>`.
   "Edit place" is folded below. Gas stations are not saved places: the filter "Gas stations (from fill-ups)" lists them from
   Gas stops grouped by name (`/api/gas-stations`, `/api/gas-stations/history?key=`), with fill-ups, spend and avg $/gal.
-- **Calendar** (`app/calendar_feed.py`): Office 365 / Outlook "Publish a calendar" ICS link in Settings → Calendar (secret,
+- **Calendar** (`app/calendar_feed.py`): Office 365 / Outlook "Publish a calendar" ICS link in Settings → My calendar (secret,
   write-only, up to 1000 chars, webcal:// accepted) and a keyword (default `onsite`; on-site / on site match) searched in
   title, location, notes and categories. All-day and cancelled events skipped; recurring events expanded
   (`recurring-ical-events`); Outlook's Windows time zone blocks work. Feed cached 10 min in memory. Event notes are only
@@ -439,7 +439,7 @@ stop departed 12:21, and listed billable parts with no cost.
 - Part rows: name with the line total ("$17.50 ($8.75 each)"), − qty + (whole steps; typing any amount still works; − stops at 1,
   ✕ removes), a labelled "Bill" switch.
 - With AI notes on, Check grammar (LanguageTool) is hidden: one writing helper.
-- Under Work performed: quick-phrase chips (Settings → Notes → Quick phrases, `NOTE_PHRASES` with | separators, kind "lines",
+- Under Work performed: quick-phrase chips (Settings → My notes → Quick phrases, `NOTE_PHRASES` with | separators, kind "lines",
   20 max; `GET /api/note-phrases`) that append to the notes, and on an empty note "↺ Start from last visit (date)" (payload
   `last_notes` from the last Confirmed stop with notes at the same saved place, else same name).
 - After Finish the toolbar message offers "Next: Stop 4 needs notes ›" (the next stop with needs, later ones first), opening it.
@@ -515,7 +515,7 @@ stop departed 12:21, and listed billable parts with no cost.
 - Parts plan: all 7 items and receipt reading are built.
 
 ## Email report and Go to a place (2026-11-23)
-- **Email report** (`app/mailer.py`, Gmail SMTP via smtplib, no new package): Settings → Email (`MAIL_TO`, `SMTP_USER`,
+- **Email report** (`app/mailer.py`, Gmail SMTP via smtplib, no new package): Settings → Work AI agent and Email (`MAIL_TO`, `SMTP_USER`,
   `SMTP_PASSWORD` secret = Gmail App password, spaces dropped for Gmail; `MAIL_FROM`, `SMTP_HOST` smtp.gmail.com, `SMTP_PORT`
   587 STARTTLS / 465 SSL) with **Send test email** (`/settings/test-email`, uses the form's values). Reports page has an Email
   report box under the downloads: ticks JSON / PDF / Receipts and photos (remembered per phone, `email_opts`), a confirm
@@ -536,7 +536,7 @@ stop departed 12:21, and listed billable parts with no cost.
   buttons.
 
 ## Calendar invites (Phase 1 of the plan below, built 2026-11-23)
-- `app/calendar_out.py`: Settings → Email "Put my stops on my work calendar" (`CALENDAR_INVITES` off|on) and "Update every (min)"
+- `app/calendar_out.py`: Settings → My calendar "Put my stops on my work calendar" (`CALENDAR_INVITES` off|on) and "Update every (min)"
   (`CALENDAR_INVITE_MIN`, 5-60, default 10). The background thread (`alerts.run_once` → `calendar_out.tick`) pulls new points
   during the work day and calls `sync(conn, cfg, today)`: one iCalendar REQUEST email per stop (Gmail → MAIL_TO, text/calendar
   alternative + invite.ics), re-sent with SEQUENCE+1 only when the event changes (hash in `cal_sync`), CANCEL when the stop is
@@ -557,7 +557,7 @@ stop departed 12:21, and listed billable parts with no cost.
   Merge keeps the earlier stop (its uid); split keeps the uid on the first part; re-detect gives each old uid to the new stop
   covering the middle of the old one (like photos). Report: `stop_uid` in `days[].stops[]`, `records_to_update[]`, top-level
   `follow_ups[]`; `follow_up_id` on every follow-up; day `report_key` = the date. Payload stop `uid`.
-- **Technician**: Settings → General → Technician (`TECH_NAME`, `TECH_EMAIL`). Report top-level `technician` {name, email};
+- **Technician**: Settings → Me (`TECH_NAME`, `TECH_EMAIL`). Report top-level `technician` {name, email};
   PDF top section "Technician" row when set; email body `Technician:` line after `Dates:`; export warns (never blocks) when either is blank.
 - **HubSpot company IDs**: `known_sites.hubspot_company_id` (digits only, `known.hubspot_id`) is edited in Places → Edit place
   (client places) or in bulk: Places → "HubSpot company IDs (CSV)": `GET /api/places/export.csv` (place_id, name, kind, address,
@@ -565,7 +565,7 @@ stop departed 12:21, and listed billable parts with no cost.
   unchanged; never creates places; a bad ID blocks the file). `known.fill_stop_hubspot` copies a place's ID to its CONFIRMED stops
   that have none (run by `service._finish`, place PATCH and import); a stop's ID is never rewritten, except that changing a stop's
   saved place clears it so the new place's ID is copied.
-- **Follow-up owners**: Settings → General → Follow-up owners (`FOLLOWUP_OWNERS`, `|`-separated; kind "owners", one `Name = email`
+- **Follow-up owners**: Settings → Me → Follow-up owners (`FOLLOWUP_OWNERS`, `|`-separated; kind "owners", one `Name = email`
   per line, Me may omit the email and uses the technician email; `settings.parse_owners` / `owner_emails`). Day payload
   `followup_owners` (names); the stop sheet's owner is a dropdown (an older typed owner shows as "(not in the list)"). Report:
   `owner_email` on every follow-up (stop list and top-level); blank when the owner is not in the list, and the export warns.
@@ -575,7 +575,7 @@ stop departed 12:21, and listed billable parts with no cost.
   records_to_update; PDF rows "HubSpot ticket #" and "QuickBooks estimate #", Records table column "Ticket / estimate".
   Warnings: Time & Material / Quoted project / White-label migration without a ticket, a ticket that is not digits, and Quoted /
   Migration without an estimate #. Calendar notes: `Estimate:` (or `Quote:`) line fills the estimate like `Ticket:`.
-- **Lunch is paid** setting: Settings → General → Pay rules (`LUNCH_PAID` on|off, default on = the rules above). Off: lunch
+- **Lunch is paid** setting: Settings → Pay rules (`LUNCH_PAID` on|off, default on = the rules above). Off: lunch
   timesheet rows are `paid: false`, lunch leaves `paid_minutes`, the PDF says "Lunch (unpaid)" and the recap lists it in brackets.
   `summary.lunch_paid` says which. Mileage is unchanged.
 - **QuickBooks parts import**: the parts CSV import recognises a QBO "Products and Services" export ("Product/Service Name"
@@ -592,7 +592,7 @@ stop departed 12:21, and listed billable parts with no cost.
   `dlv_item`, `vendor_sku`… → vendor_item; `qbo_name`… → qbo_item. Import `notes` say how a cost column was read. Export and
   template carry the three columns. Blank cells keep values. `part_dict` adds `margin`, `margin_pct` (of the sell price),
   `below_cost`; Truck list shows margin and a "Below cost" chip; part page "Our cost … · margin/LOSS"; shopping list shows the vendor #.
-- **QuickBooks Service items** (A1): `QBO_IMPORT_SERVICE_ITEMS_WITH_SKU` (Settings → General → Parts import, default on):
+- **QuickBooks Service items** (A1): `QBO_IMPORT_SERVICE_ITEMS_WITH_SKU` (Settings → Parts import, default on):
   Service rows with a SKU import as parts; without a SKU, Bundles and anything named/SKU'd Labor are skipped.
 - **Report (B1-B3)**: `summary.billable_on_site_minutes` (on-site minutes of stops whose billing is not non_billable); PDF top
   shows "On-site time" and "Billable on-site time". Each `days[].photos[]` has `attachment` (the exact email attachment name,
@@ -604,7 +604,7 @@ stop departed 12:21, and listed billable parts with no cost.
   buttons; payload `ticket_action_default` = continue when the last finished visit to the same place ended return/waiting.
   Report `ticket_action` on stops and records_to_update: use (ticket given) | continue | create | find (default). Warning only
   when a typed ticket is not digits. PDF "HubSpot ticket" row explains a blank one.
-- **C2 signature**: `REPORT_SIGNING_KEY` (secret, Settings → Email). With it, the report email body has
+- **C2 signature**: `REPORT_SIGNING_KEY` (secret, Settings → Work AI agent). With it, the report email body has
   `Signature: hmac-sha256=<hex> (of the attached JSON file)` = HMAC-SHA256 of the exact attached JSON bytes (`mailer.signature`).
 - **B4-B6**: mileage legs add `to_stop_uid` (None for Home; `to_id` kept). Each `drive_from_previous_stop` adds `miles_method`
   (gps | routed | estimate: how the MILES were found) and `minutes_estimated` (= `estimated`: the MINUTES are a distance
@@ -615,12 +615,12 @@ stop departed 12:21, and listed billable parts with no cost.
 
 ## Logging (2026-11-23)
 - `app/logs.py`: the `jobhub.*` loggers write to stdout (the container log) and a 1000-line memory ring. Every line passes
-  `logs.scrub` (numbers with 4+ decimals -> [coord]), tracebacks included. `LOG_LEVEL` / Settings → General → Log detail
+  `logs.scrub` (numbers with 4+ decimals -> [coord]), tracebacks included. `LOG_LEVEL` / Settings → Log and backups → Log detail
   (info | debug), applied on save. Requests: `jobhub.http` "GET /path 200 12ms" — PATH ONLY, never the query string; no static,
   health or manifest. Unhandled errors: `@app.errorhandler(Exception)` logs the traceback with an 8-character code and returns
   "Something went wrong (error <code>)…" (JSON for /api and non-GET). Events (counts only, no names or places): start-up summary,
   sync (`jobhub.sync`), alerts sent, report emails (subject = dates), calendar invites, backups, parts/places imports, receipt
-  reads, AI polish. `GET /settings/log[?n=&download=1]` (text) behind the login; Settings → General → Log has View / Download.
+  reads, AI polish. `GET /settings/log[?n=&download=1]` (text) behind the login; Settings → Log and backups has View / Download.
 
 ## Add stops from receipts (Truck → Receipts, 2026-11-23)
 - For catching up past gas and vendor stops (the user has no GPS for those days). `app/receipt_inbox.py`, table
@@ -688,8 +688,8 @@ stop departed 12:21, and listed billable parts with no cost.
   right after picking is not lost.
 
 ## Running late (built 2026-11-23)
-- `app/late.py`. Settings → Alerts: **Running late alert** (`ALERT_LATE` on|off, default on) and **alert when late by**
-  (`ALERT_LATE_MIN`, default 10); Settings → Email: **Send late notices to** (`LATE_NOTICE_TO`, blank = MAIL_TO).
+- `app/late.py`. Settings → My alerts: **Running late alert** (`ALERT_LATE` on|off, default on) and **alert when late by**
+  (`ALERT_LATE_MIN`, default 10); Settings → Work AI agent: **Send late notices to** (`LATE_NOTICE_TO`, blank = MAIL_TO).
 - Alert: the alert thread (`alerts.late_conditions`, during the work day until End day, Pushover configured, a calendar
   link set) every 3 min (`CHECK_EVERY_S`) takes the phone's position from the last hour of points (fresh within 15 min),
   the next upcoming on-site appointment starting within 3 h, and `summary.eta` (shared with the Home page). Late by
@@ -748,7 +748,7 @@ stop departed 12:21, and listed billable parts with no cost.
 - `app/message_v2.py` builds every format 2 object from `report.build_day(payload, cfg, keep_src=True)`: build_day keeps
   private `_` keys (timestamps, the merged source stop with its line/photo/follow-up uids, the gaps of a same-site
   lunch) and strips them unless `keep_src`, so format 1 output is unchanged and both formats share one calculation.
-- Setting `message_format` (Settings → Email, `MESSAGE_FORMAT`, default "1"). Email report has a one-off "Send as
+- Setting `message_format` (Settings → Work AI agent, `MESSAGE_FORMAT`, default "1"). Email report has a one-off "Send as
   format 2 (test)" (body `format: "2"`); `/api/export.json?format=2` downloads it (numbered as the next send).
 - Revisions: `message_v2.previous(conn, table, where)` counts successful sends (email_log by dates, invoice_requests by
   stop_uid, late_notices by event uid) and returns the last `message_id` for `supersedes`. Every send now stores a
@@ -789,7 +789,7 @@ stop departed 12:21, and listed billable parts with no cost.
   Message ID" in all three emails; the daily body names only what is attached; parts labelled as JobHub prices.
 - Late notice body is neutral (the agent does not contact customers until management decides).
 - QuickBooks import keeps the QuickBooks product/service name in `qbo_item` (format 2 `qbo_item_name`).
-- Lunch stays paid by default (user decision): the setting is in Settings → General → Pay rules.
+- Lunch stays paid by default (user decision): the setting is in Settings → Pay rules.
 
 ## Sign-in and public access (built 2026-11-25)
 For the Cloudflare tunnel (Cloudflare Access in front, JobHub's own login behind it). `app/auth.py`, routes in
@@ -833,4 +833,16 @@ Replaces Pushover over time. `app/webpush.py`, `app/notify.py`, `app/static/sw.j
   own origin), tag. 404/410 removes the device. The service worker always shows a notification (iOS requires it) and
   a tap focuses JobHub and opens the path.
 - No offline caching yet: `sw.js` has no fetch handler (the offline app shell will add one).
+
+## Settings page: My settings and App settings (2026-11-25)
+- `settings.LAYOUT` places every field (by key) in a group under **My settings** (`scope "user"`: Me, Work hours, My
+  phone, My calendar, My alerts, My notes) or **App settings** (`"app"`: Work AI agent, Email, Address and access, Pay
+  rules, OwnTracks Recorder, Places, AI, Receipts, Pushover, Road distance and grammar, Parts import, Stop detection,
+  Log and backups). `SPEC` still holds the field definitions; a test checks every key is placed exactly once.
+- **For more technicians later:** `settings.USER_KEYS` is the list of values that would move to per-user storage
+  (a `user_settings` table keyed by user, read in `settings.effective` for the signed-in user, with the alert thread
+  running per user); App settings would become admin-only. Today all values are still stored once for the whole app.
+- Each group is a closed `<details>` with a status line (`_settings_status` in `app/__init__.py`); a group with an
+  error opens itself; `/settings#<group-slug>` opens one (links from other pages use it). Keys in `settings.ADVANCED`
+  sit under "Show advanced". Help shows its first sentence; the rest is under "More" (`settings.split_help`).
 

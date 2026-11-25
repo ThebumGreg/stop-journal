@@ -649,7 +649,7 @@ function followBlock(s, err) {
     const row = el('div', 'fu');
     const patch = body => run(() => api('PATCH', '/api/follow-ups/' + f.id, body), err);
     const t = el('input'); t.value = f.text; t.onchange = () => patch({text: t.value});
-    const o = el('select'); o.title = 'Owner';                    // names from Settings → General → Follow-up owners
+    const o = el('select'); o.title = 'Owner';                    // names from Settings → Me → Follow-up owners
     const names = S.owners || ['Me'];
     const optFor = (v, t) => { const x = el('option', null, t); x.value = v; return x; };
     if (!f.owner) o.append(optFor('', 'Owner…'));
@@ -674,14 +674,14 @@ function followBlock(s, err) {
   };
   add.append(t, go);
   box.append(add);
-  box.append(el('div', 'hint', '“Me” is you; pick another owner if someone else has it (the list is in Settings → General). Pick a due date.'));
+  box.append(el('div', 'hint', '“Me” is you; pick another owner if someone else has it (the list is in Settings → Me). Pick a due date.'));
   return box;
 }
 
 // Optional grammar check (LanguageTool): the button only appears when the server has one configured.
 let grammarOn = null;
 let phrases = null;
-// Under Work performed: tap-to-add quick phrases (Settings → Notes) and, on an empty note, "Start from last visit here".
+// Under Work performed: tap-to-add quick phrases (Settings → My notes) and, on an empty note, "Start from last visit here".
 function notesHelpers(s, notes) {
   const box = el('div');
   const add = text => {

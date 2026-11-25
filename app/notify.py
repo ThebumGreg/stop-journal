@@ -1,5 +1,5 @@
 """Outbound notifications: native ones on the iPhone / browser (Web Push, app/webpush.py) and Pushover.
-Settings → Notifications → "Send alerts to" picks iPhone, Pushover or both (each only when set up).
+Settings → My alerts → "Send alerts to" picks iPhone, Pushover or both (each only when set up).
 Message text must never contain coordinates, addresses, business names or ticket numbers: it passes through a third
 party (Apple's / the browser's push service, or Pushover)."""
 import time

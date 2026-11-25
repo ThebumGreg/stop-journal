@@ -94,7 +94,7 @@ function exportForm() {
     c.onchange = () => { mopts[k] = c.checked; localStorage.setItem('email_opts', JSON.stringify(mopts)); };
     l.append(c, ' ' + t); mticks.append(l);
   });
-  // format 2 (the agent's new message format) for one send, before switching in Settings → Email (never remembered)
+  // format 2 (the agent's new message format) for one send, before switching in Settings → Work AI agent (never remembered)
   const v2Lab = el('label', 'hint'), v2Box = el('input'); v2Box.type = 'checkbox';
   v2Lab.append(v2Box, ' Send as format 2 (test for the agent)'); v2Lab.hidden = true;
   const send = el('button', 'primary', 'Email report');
@@ -117,7 +117,7 @@ function exportForm() {
       mailTo = m.to;
       if (!m.ready) {
         mailHead.replaceChildren('Set up Gmail in ');
-        const a = el('a', null, 'Settings → Email'); a.href = '/settings'; mailHead.append(a, ' to email the report to your work address.');
+        const a = el('a', null, 'Settings → Work AI agent and Email'); a.href = '/settings#work-ai-agent'; mailHead.append(a, ' to email the report to your work address.');
         send.disabled = true; mticks.hidden = true;
       } else {
         mailHead.textContent = 'Sends the report to ' + m.to + ' (with the Include choices above).' +

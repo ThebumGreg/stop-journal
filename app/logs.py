@@ -1,10 +1,10 @@
-"""Logging: what JobHub writes to the container log (docker logs JobHub) and keeps for Settings → General → Log.
+"""Logging: what JobHub writes to the container log (docker logs JobHub) and keeps for Settings → Log and backups.
 
 Privacy (CLAUDE.md): never write coordinates. Requests are logged by PATH only (no query string, which can carry lat/lon),
 event messages hold counts and times, not customer names or places, and every line passes `scrub`, which blanks anything
 that looks like a coordinate (a number with 4+ decimals) as a safety net, tracebacks included.
 
-LOG_LEVEL (env) or Settings → General → Log detail: info (default) or debug. The last RING_LINES lines are also kept in
+LOG_LEVEL (env) or Settings → Log and backups → Log detail: info (default) or debug. The last RING_LINES lines are also kept in
 memory for the Settings page (lost on restart; the container log keeps everything).
 """
 import collections

@@ -50,7 +50,7 @@ Single user. Your location data stays on your own server.
   use it.
 - **Places history**: tap a client, vendor, office or gas station to see every visit (date, time, work, parts, fill-ups) and
   tap a visit to open it.
-- **Outlook calendar** (optional): paste the published ICS link in Settings → Calendar; appointments with "onsite" in them show
+- **Outlook calendar** (optional): paste the published ICS link in Settings → My calendar; appointments with "onsite" in them show
   on the day, next to the stop they match, with a one-tap "Use calendar" to fill in the name and address.
 - **Alerts** to your phone as native iPhone notifications (Settings → Account → Notifications, on the https address)
   and/or through Pushover (for example: no location data during work hours, or you drove away from a stop
@@ -77,7 +77,7 @@ docker compose pull           # or: docker compose up -d --build  to build local
 docker compose up -d
 ```
 
-Open `http://<server>:8000`, go to **Settings → Recorder**, enter your Recorder address and press
+Open `http://<server>:8000`, go to **Settings → OwnTracks Recorder**, enter your Recorder address, then in **My phone (OwnTracks)** press
 **Find on Recorder** to pick your user and device. The database is `./data/stop_journal.db`.
 
 The image is published by GitHub Actions to `ghcr.io/thebumgreg/stop-journal`. The package is
@@ -98,8 +98,8 @@ wget -O /boot/config/plugins/dockerMan/templates-user/jobhub.xml \
 ```
 
 then go to **Docker → Add Container**, choose **JobHub** from the template list, set an
-**App password**, and press **Apply**. Then open JobHub, go to **Settings → Recorder**, enter the
-Recorder address and pick your user and device with **Find on Recorder**. The template
+**App password**, and press **Apply**. Then open JobHub, go to **Settings → OwnTracks Recorder**, enter the
+Recorder address, then pick your user and device in **My phone (OwnTracks)** with **Find on Recorder**. The template
 runs the container as `99:100` and maps `/mnt/user/appdata/jobhub` to `/data`.
 
 The image is pulled from GitHub's registry. If you have not made the package public (GitHub →
@@ -123,7 +123,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `RECORDER_URL`, `RECORDER_USER`, `RECORDER_DEVICE`, `RECORDER_AUTH` | | optional: normally set in the app (Settings → Recorder → Find on Recorder). Env values are only the starting default |
+| `RECORDER_URL`, `RECORDER_USER`, `RECORDER_DEVICE`, `RECORDER_AUTH` | | optional: normally set in the app (Settings → My phone (OwnTracks) → Find on Recorder). Env values are only the starting default |
 | `APP_TZ` | `America/Los_Angeles` | everything is shown in this zone, stored as UTC |
 | `APP_PASSWORD` | | only until you create your login (Settings → Account); ignored after that |
 | `STOP_MIN_MINUTES`, `STOP_RADIUS_M`, `STOP_MAX_GAP_MIN`, `STOP_MERGE_GAP_MIN`, `STOP_SHORT_MIN_S`, `MAX_ACC_M` | 10, 100, 15, 60, 180, 100 | detection tuning (STOP_SHORT_MIN_S: pauses shorter than this, like traffic lights, are ignored) |
@@ -145,7 +145,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `TECH_NAME`, `TECH_EMAIL`, `FOLLOWUP_OWNERS`, `LUNCH_PAID` | , , , on | technician on reports, follow-up owners (`Name = email`, `|`-separated), whether lunch is paid |
 | `ANTHROPIC_API_KEY`, `AI_NOTES`, `RECEIPT_READER` | , on, off | Claude for Polish notes and reading receipts (`claude`, or `google_vision`) |
 | `QBO_IMPORT_SERVICE_ITEMS_WITH_SKU` | on | QuickBooks parts import: Service items with a SKU count as parts |
-| `LOG_LEVEL` | info | `debug` adds page steps to the log (Settings → General → Log) |
+| `LOG_LEVEL` | info | `debug` adds page steps to the log (Settings → Log and backups) |
 | `AUTO_SYNC_MIN` | `2` | while today's day page is open, pick up new points and stops every this many minutes (0 = off); also a Settings value |
 | `LANGUAGETOOL_URL` | blank (off) | your own LanguageTool server, e.g. `http://192.168.1.10:8010`; adds a **Check grammar** button to the notes sheet. Only the note text is sent, to that address. Also a Settings value |
 | `ROUTING_URL` | public OSRM server | road distance used only to document miles from where the day ended to Home; coordinates are rounded to ~100 m; blank = off (estimate) |
@@ -155,18 +155,18 @@ Everything is an environment variable (`.env`). Many of these can also be change
 ## Email reports (Gmail)
 
 For a work AI agent that updates HubSpot from your mailbox: Reports page → **Email report** sends the JSON (every field,
-schema version 1, or 2 per Settings → Email → Message format) and the PDF, optionally the receipts and photos, to your work address. Subject
+schema version 1, or 2 per Settings → Work AI agent → Message format) and the PDF, optionally the receipts and photos, to your work address. Subject
 `JobHub Daily Summary 2026-11-23`; sending the same dates again adds `(update 2)` and the body says it replaces the
 earlier one. The body starts with `Dates:`, `Version:`, `Confirmed stops:` and `Attached:` lines and a short stop list.
 
 Setup: turn on 2-Step Verification on the Gmail account, then Google Account → Security → App passwords → create one
-named JobHub. In Settings → Email fill in "Send reports to", the Gmail address and the 16-letter App password, then
+named JobHub. In Settings → Work AI agent fill in "Send reports to"; in Settings → Email the Gmail address and the 16-letter App password, then
 **Send test email**. Env equivalents: `MAIL_TO`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `SMTP_HOST`
 (smtp.gmail.com), `SMTP_PORT` (587).
 
 ### Stops on your Outlook calendar
 
-Settings → Email → "Put my stops on my work calendar": every stop today is sent as a calendar invite to "Send reports to"
+Settings → My calendar → "Put my stops on my work calendar": every stop today is sent as a calendar invite to "Send reports to"
 (type, customer name, address, ticket, times, finished; never notes or prices), updated every 10 minutes when it changes and
 cancelled if the stop is deleted. Use "Send test calendar invite" first. Coworkers see the events if they can see your calendar.
 
@@ -176,15 +176,15 @@ The JSON report (schema version "1"; new fields are only ever added) is what the
 and a guide for the agent are in `docs/sample-report/` (regenerate with `python scripts/make_sample_report.py`). Key points:
 - `technician` {name, email}; each stop has a stable `stop_uid` (use it, not `stop_number`, to update earlier records),
   `hubspot_company_id` (from the saved place: Places → Edit place, or the places CSV), `hubspot_ticket` and `qbo_estimate`.
-- Follow-ups have `owner` and `owner_email` (Settings → General → Follow-up owners) and a `follow_up_id`.
-- `summary.paid_minutes` = on-site + drive + lunch (when `lunch_paid`; Settings → General → Pay rules). `drive_minutes`
+- Follow-ups have `owner` and `owner_email` (Settings → Me → Follow-up owners) and a `follow_up_id`.
+- `summary.paid_minutes` = on-site + drive + lunch (when `lunch_paid`; Settings → Pay rules). `drive_minutes`
   includes `traffic_minutes` (time at fuel stops and short breaks: `fuel_stop_minutes`, `short_break_minutes`, plus traffic).
   The `timesheet` rows marked paid add up to `paid_minutes`.
 - Vendor stops list `bought_here` (bought for truck stock, never billed). Stops already sent for invoice carry
   `invoice_request` {version, sent_at, billed_through, time_on_site_minutes}: the agent must not invoice them again.
 - Two more emails go to the agent, only when you tap: `JobHub Invoice Request <date> – <customer>` and
   `JobHub Late Notice <ticket>`. Their formats and samples are in `docs/sample-report/README.md`.
-- **Message format 2** (Settings → Email → Message format, `MESSAGE_FORMAT`): the agent's newer layout for all three
+- **Message format 2** (Settings → Work AI agent → Message format, `MESSAGE_FORMAT`): the agent's newer layout for all three
   emails: one envelope (`message_id`, `revision`, `supersedes`), the same Stop object in the daily summary and the
   invoice request, ISO times with seconds, money as text, UUIDs on every line, follow-up and photo, the address in parts
   (Places → Edit place: street, suite, city, state, ZIP). Samples in `docs/sample-report/v2/`. Send one test day first
@@ -209,7 +209,7 @@ JobHub writes one line per request (path only), errors with a short code (the pa
 such as syncs, emails, alerts, invites and backups. Coordinates are never written. Lines starting with `sent` are the
 server's delivery log (path only, never the query string): a request with no `sent` line never reached the phone.
 Once a week old working data is trimmed (calendar-invite log, map and route caches, old one-off alert markers, old
-trips); stops, parts, purchases, photos and email records are never trimmed. Settings → General → Log: detail
+trips); stops, parts, purchases, photos and email records are never trimmed. Settings → Log and backups: detail
 (info / debug), **View recent log** and **Download log**.
 
 On Unraid: Docker tab → JobHub icon → **Logs**, or `docker logs --tail 200 JobHub` (`docker logs -f JobHub` to follow).

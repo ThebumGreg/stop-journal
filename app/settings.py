@@ -221,7 +221,7 @@ SPEC += [
                   "visit result...). JobHub then checks the Recorder in the background during the work day."),
         dict(key="alert_late", label="Running late alert", kind="choice", choices=["on", "off"],
              help="Notify me when the drive time says I will be late for an on-site appointment on my calendar "
-                  "(Settings → Calendar). The alert never names the customer; tapping it opens JobHub, where "
+                  "(Settings → My calendar). The alert never names the customer; tapping it opens JobHub, where "
                   "“Tell the customer” emails your work AI agent a late notice. Nothing is sent without that tap."),
         dict(key="alert_late_min", label="Running late: alert when late by (min)", kind="int", lo=1, hi=120,
              help="How many minutes after the appointment start your arrival has to be."),
@@ -264,20 +264,60 @@ SPEC += [
              help="One snapshot of the database is saved each day. 0 turns automatic backups off."),
     ]),
 ]
-# Settings page tabs: one per integration, then the app's own settings. All tabs belong to one form.
-TABS = [
-    ("OwnTracks", ["Recorder"]),
-    ("Places", ["Business suggestions"]),
-    ("Pushover", ["Notifications (Pushover)", "Alerts"]),
-    ("Road distance", ["Road distance (OSRM)"]),
-    ("Calendar", ["Calendar (Outlook)"]),
-    ("Receipts", ["Receipts"]),
-    ("AI", ["AI (Claude)"]),
-    ("Email", ["Email (Gmail)"]),
-    ("Notes", ["Quick phrases", "Grammar check (LanguageTool)"]),
-    ("General", ["Technician", "Pay rules", "Parts import", "Stop detection", "Backups", "Log"]),
+# Settings page layout (2026-11-25): "My settings" (what belongs to the person) and "App settings" (the whole JobHub).
+# Every value is still stored once for the whole app; the "user" section lists exactly the keys that move to per-user
+# storage if more technicians are ever added (USER_KEYS), and "app" ones would become admin-only. Groups are made of
+# field keys (SPEC only holds the field definitions). Keys in ADVANCED sit under "Show advanced" in their group.
+LAYOUT = [
+    ("user", "My settings", [
+        ("Me", ["tech_name", "tech_email", "followup_owners"]),
+        ("Work hours", ["work_days", "work_start", "work_end"]),
+        ("My phone (OwnTracks)", ["recorder_user", "recorder_device", "auto_sync_min"]),
+        ("My calendar", ["calendar_url", "calendar_keyword", "calendar_invites", "calendar_invite_min"]),
+        ("My alerts", ["notify_channel", "alert_no_data", "alert_no_data_min", "alert_drafts", "alert_left_stop",
+                       "alert_late", "alert_late_min", "alert_low_stock", "alert_repeat_min", "pushover_user"]),
+        ("My notes", ["note_phrases", "ai_notes"]),
+    ]),
+    ("app", "App settings", [
+        ("Work AI agent", ["mail_to", "late_notice_to", "message_format", "report_signing_key"]),
+        ("Email", ["smtp_user", "smtp_password", "mail_from", "smtp_host", "smtp_port"]),
+        ("Address and access", ["app_url"]),
+        ("Pay rules", ["lunch_paid"]),
+        ("OwnTracks Recorder", ["recorder_url", "recorder_auth"]),
+        ("Places", ["places_provider", "google_places_key", "google_daily_cap", "places_radius_m",
+                    "google_fallback_min", "overpass_url"]),
+        ("AI", ["anthropic_key", "ai_monthly_cap"]),
+        ("Receipts", ["receipt_reader", "receipt_key", "receipt_monthly_cap"]),
+        ("Pushover", ["pushover_token"]),
+        ("Road distance and grammar", ["routing_url", "languagetool_url"]),
+        ("Parts import", ["qbo_service_with_sku"]),
+        ("Stop detection", ["stop_min_minutes", "stop_short_min_s", "stop_radius_m", "stop_max_gap_min",
+                            "stop_merge_gap_min", "max_acc_m"]),
+        ("Log and backups", ["log_level", "backup_keep"]),
+    ]),
 ]
+ADVANCED = {"auto_sync_min", "calendar_invite_min", "alert_repeat_min", "mail_from", "smtp_host", "smtp_port",
+            "places_radius_m", "google_fallback_min", "overpass_url", "stop_short_min_s", "stop_max_gap_min",
+            "stop_merge_gap_min", "max_acc_m"}
+USER_KEYS = {k for scope, _, groups in LAYOUT if scope == "user" for _, keys in groups for k in keys}
+
+
+def slug(title):
+    import re
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+
+
+def split_help(text):
+    """First sentence shown; the rest goes under "More" (e.g. / i.e. are not sentence ends)."""
+    import re
+    m = re.search(r"(?<!e\.g)(?<!i\.e)(?<!etc)\.\s+(?=[A-Z“\"(0-9])", text or "")
+    if not m or m.end() >= len(text):
+        return text or "", ""
+    return text[:m.start() + 1], text[m.end():]
+
+
 FIELDS = {f["key"]: f for _, fs in SPEC for f in fs}
+GROUPS = [(scope, title, [(g, [FIELDS[k] for k in keys]) for g, keys in groups]) for scope, title, groups in LAYOUT]
 
 
 def overrides(conn):

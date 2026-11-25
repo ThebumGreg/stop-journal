@@ -25,7 +25,9 @@ and add or update a section there when you build something. This file holds only
   requirements-dev.txt`). Keep the README current (features, settings table, security section).
 - Never hardcode credentials or the user's addresses in the repo. User data (their parts CSV, real days, logs) stays
   out of the repo: use the scratchpad.
-- Settings are environment variables with Settings-page overrides (`app/config.py`, `app/settings.py` SPEC/TABS).
+- Settings are environment variables with Settings-page overrides (`app/config.py`, `app/settings.py`: SPEC = field
+  definitions, LAYOUT = where each sits). Put every new setting in LAYOUT: under "My settings" if it belongs to the
+  person (it would move to per-user storage if technicians are ever added: `USER_KEYS`), else under "App settings".
   Secrets are write-only (`settings.SECRETS`).
 - Agent JSON comes in two formats: "1" (report, invoice request, late notice) and "2" (`app/message_v2.py`, the agent's
   spec, chosen by Settings → Email → Message format). Within a format only ever ADD fields, never rename or remove

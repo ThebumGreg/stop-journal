@@ -7,13 +7,29 @@
 <style>
   main { max-width:640px; }
   .field { margin:14px 0; }
-  .field > label { font-size:15px; font-weight:600; color:var(--fg); margin-bottom:4px; }
+  .field > label { font-size:15px; font-weight:600; color:var(--fg); margin-bottom:4px; display:block; }
   .chk input { width:22px; }
-  .tabs { display:flex; gap:6px; overflow-x:auto; margin:8px 0 14px; padding-bottom:4px; -webkit-overflow-scrolling:touch; }
-  .tabs button { flex:none; white-space:nowrap; }
-  .tabs button[aria-selected=true] { background:var(--acc); color:#fff; border-color:transparent; font-weight:600; }
-  .tabpanel[hidden] { display:none; }
-  .tabs .dot { color:#c01c28; margin-left:4px; }
+  h2.sect { margin:22px 0 2px; }
+  .sect-help { margin:0 0 8px; }
+  details.grp { border:1px solid var(--line); border-radius:10px; margin:8px 0; background:var(--bg); }
+  details.grp > summary { list-style:none; cursor:pointer; padding:12px 14px; display:flex; gap:10px; align-items:baseline;
+                          flex-wrap:wrap; min-height:24px; }
+  details.grp > summary::-webkit-details-marker { display:none; }
+  details.grp > summary::before { content:'▸'; color:var(--muted); width:12px; }
+  details.grp[open] > summary::before { content:'▾'; }
+  details.grp > summary b { font-size:16px; }
+  details.grp > summary .st { font-size:13px; color:var(--muted); margin-left:auto; text-align:right; }
+  details.grp > summary .st.ok { color:var(--ok); }
+  details.grp > summary .st.warn { color:#b35900; }
+  details.grp > summary .dot { color:var(--err); }
+  details.grp > .body { padding:0 14px 12px; }
+  details.more, details.adv { margin-top:2px; }
+  details.more > summary, details.adv > summary { cursor:pointer; color:var(--acc); font-size:13px; }
+  details.adv > summary { font-size:14px; margin:6px 0; }
+  .savebar { position:sticky; bottom:0; background:var(--bg); padding:10px 0 calc(10px + env(safe-area-inset-bottom));
+             border-top:1px solid var(--line); margin-top:16px; display:flex; gap:10px; align-items:center; }
+  .savebar button { white-space:nowrap; flex:none; }
+  @media (prefers-color-scheme: dark) { details.grp > summary .st.warn { color:#f0a040; } }
 </style>
 </head>
 <body>
@@ -21,149 +37,164 @@
 <main>
   <h1 class="page-title">Settings</h1>
   {% if saved %}<div class="box ok">Settings saved.</div>{% endif %}
-  {% if errors %}<div class="box err">Some values need fixing – see below. Nothing was saved.</div>{% endif %}
+  {% if errors %}<div class="box err">Some values need fixing – see the group marked ●. Nothing was saved.</div>{% endif %}
   {% if not has_password %}
   <div class="box err">JobHub has no login yet, so anyone on your network can open it. <a href="/account">Create your login</a> before using it anywhere else (the Cloudflare tunnel refuses everyone until you do).</div>
   {% endif %}
-  <div class="row" style="margin:4px 0 8px"><a class="btn" href="/account">Account and password</a>
-    {% if has_password %}<form method="post" action="/logout" style="margin:0"><button type="submit">Sign out</button></form>{% endif %}</div>
 
-  <form method="post">
-    <div class="tabs" role="tablist">
-      {% for tab, groups in tabs %}<button type="button" role="tab" data-tab="{{ loop.index0 }}" aria-selected="false">{{ tab }}{% set ns = namespace(bad=false) %}{% for g, fs in groups %}{% for f in fs %}{% if errors.get(f.key) %}{% set ns.bad = true %}{% endif %}{% endfor %}{% endfor %}{% if ns.bad %}<span class="dot">●</span>{% endif %}</button>{% endfor %}
+  {% macro field(f) -%}
+    {% set h = (f.help | split_help) %}
+    <div class="field">
+      <label for="{{ f.key }}">{{ f.label }}</label>
+      {% if f.kind == 'secret' %}
+        {% set info = secret_info[f.key] %}
+        <input id="{{ f.key }}" name="{{ f.key }}" type="password" autocomplete="off" autocapitalize="off"
+               placeholder="Paste a value to set or replace it">
+        <div class="help">Currently: <strong>{{ info.hint }}</strong>{% if info.from_env %} (from the server's .env){% endif %}. {{ h[0] }}</div>
+        <label class="chk help"><input type="checkbox" name="clear_{{ f.key }}" value="1"> Remove the saved value</label>
+      {% elif f.kind in ('lines', 'owners') %}
+        <textarea id="{{ f.key }}" name="{{ f.key }}" rows="6" placeholder="{{ defaults[f.key] }}">{{ values[f.key] }}</textarea>
+        <div class="help">{{ h[0] }}</div>
+      {% elif f.kind == 'choice' %}
+        <select id="{{ f.key }}" name="{{ f.key }}">
+          <option value="" {% if not values[f.key] %}selected{% endif %}>Default ({{ defaults[f.key] }})</option>
+          {% for c in f.choices %}<option value="{{ c }}" {% if values[f.key] == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+        <div class="help">{{ h[0] }}</div>
+      {% else %}
+        <input id="{{ f.key }}" name="{{ f.key }}" value="{{ values[f.key] }}"
+               placeholder="Default: {{ defaults[f.key] if defaults[f.key] not in ('', None) else 'none' }}" autocapitalize="off" autocorrect="off"
+               {% if f.kind == 'int' %}inputmode="numeric"{% elif f.kind == 'url' %}inputmode="url"{% elif f.kind == 'email' %}inputmode="email"{% endif %}>
+        <div class="help">{{ h[0] }}</div>
+      {% endif %}
+      {% if h[1] %}<details class="more help"><summary>More</summary>{{ h[1] }}</details>{% endif %}
+      {% if errors.get(f.key) %}<div class="err">{{ errors[f.key] }}</div>{% endif %}
     </div>
-    {% for tab, groups in tabs %}
-    <section class="tabpanel" id="tab{{ loop.index0 }}" hidden>
-    {% for group, fields in groups %}
-      <h2>{{ group }}</h2>
-      {% for f in fields %}
-        <div class="field">
-          <label for="{{ f.key }}">{{ f.label }}</label>
-          {% if f.kind == 'secret' %}
-            {% set info = secret_info[f.key] %}
-            <input id="{{ f.key }}" name="{{ f.key }}" type="password" autocomplete="off" autocapitalize="off"
-                   placeholder="Paste a value to set or replace it">
-            <div class="help">Currently: <strong>{{ info.hint }}</strong>{% if info.from_env %} (from environment){% endif %}. {{ f.help }}</div>
-            <label class="chk"><input type="checkbox" name="clear_{{ f.key }}" value="1"> Remove the saved value</label>
-          {% elif f.kind in ('lines', 'owners') %}
-            <textarea id="{{ f.key }}" name="{{ f.key }}" rows="6" placeholder="{{ defaults[f.key] }}">{{ values[f.key] }}</textarea>
-            <div class="help">{{ f.help }} Leave empty to use the defaults.</div>
-          {% elif f.kind == 'choice' %}
-            <select id="{{ f.key }}" name="{{ f.key }}">
-              <option value="" {% if not values[f.key] %}selected{% endif %}>Default ({{ defaults[f.key] }})</option>
-              {% for c in f.choices %}<option value="{{ c }}" {% if values[f.key] == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
-            </select>
-            <div class="help">{{ f.help }} Leave on default to use the .env value.</div>
-          {% else %}
-            <input id="{{ f.key }}" name="{{ f.key }}" value="{{ values[f.key] }}"
-                   placeholder="Default: {{ defaults[f.key] }}" autocapitalize="off" autocorrect="off"
-                   {% if f.kind == 'int' %}inputmode="numeric"{% elif f.kind == 'url' %}inputmode="url"{% elif f.kind == 'email' %}inputmode="email"{% endif %}>
-            <div class="help">{{ f.help }} Leave blank to use the default.</div>
-          {% endif %}
-          {% if errors.get(f.key) %}<div class="err">{{ errors[f.key] }}</div>{% endif %}
+  {%- endmacro %}
+
+  <form method="post" id="settingsform">
+  {% for scope, title, sect_groups in groups %}
+    <h2 class="sect">{{ title }}</h2>
+    {% if scope == 'user' %}
+      <p class="help sect-help">Yours: who you are, your phone, calendar, alerts and notes.</p>
+      <div class="box">
+        <div class="row">
+          <span>{% if me_name %}Signed in as <strong>{{ me_name }}</strong>{% else %}No login yet{% endif %} ·
+            notifications on {{ n_devices }} device{{ '' if n_devices == 1 else 's' }}</span>
+          <a class="btn" href="/account">Account, password and notifications</a>
         </div>
-      {% endfor %}
-      {% if group == 'Recorder' %}
-        <div class="box">
-          <div class="row"><button type="button" id="finder">Find on Recorder</button><span id="findmsg"></span></div>
-          <div id="foundlist"></div>
-          <div class="help">Looks up the users and devices on the address above (even if not saved yet). Tap a device to fill in both fields, then Save settings.</div>
-        </div>
-      {% endif %}
-      {% if group == 'Grammar check (LanguageTool)' %}
-        <div class="box">
-          <div class="row"><button type="button" id="testgram">Test grammar server</button><span id="gramtestmsg"></span></div>
-          <div class="help">Sends one made-up sentence (not your notes) to the address above, even if it is not saved yet.</div>
-        </div>
-      {% endif %}
-      {% if group == 'Email (Gmail)' %}
-        <div class="box">
-          <div class="row"><button type="button" id="testmail">Send test email</button><span id="mailmsg"></span></div>
-          <div class="help">Uses the values above, even before you save them. Reports are only sent when you tap Email report on the Reports page.</div>
-          <div class="row" style="margin-top:8px"><button type="button" id="testinvite">Send test calendar invite</button><span id="invitemsg"></span></div>
-          <div class="help">Uses the saved settings: a 15-minute “JobHub · Test event” starting in 5 minutes.</div>
-        </div>
-      {% endif %}
-      {% if group == 'Log' %}
-        <div class="box">
-          <div class="row"><a class="btn" href="/settings/log" target="_blank">View recent log</a>
-            <a class="btn" href="/settings/log?download=1&amp;n=1000" data-file="log">Download log</a></div>
-          <div class="help">The last 300 lines since the app started (the full log is in Unraid: Docker → JobHub → Logs, or
-            <code>docker logs --tail 200 JobHub</code>). Errors show a short code, like “error 3f9a1c2b”, that you can find here.</div>
-        </div>
-      {% endif %}
-      {% if group == 'Calendar (Outlook)' %}
-        <div class="box">
-          <div class="row"><button type="button" id="testcal">Test calendar</button><span id="calmsg"></span></div>
-          <div class="help">Reads the calendar once (the link pasted above, else the saved one) and counts this week's events. Nothing is saved until you press Save settings.</div>
-        </div>
-      {% endif %}
-      {% if group == 'Backups' %}
-        <div class="box">
-          {% if backups %}
-            {% for b in backups[:5] %}
-              <div class="help"><a href="/settings/backup/{{ b.name }}" data-file="backup">{{ b.name }}</a> · {{ (b.size / 1024) | round | int }} KB · {{ b.mtime | int | ts_local }}</div>
-            {% endfor %}
-            {% if backups | length > 5 %}<div class="help">…and {{ backups | length - 5 }} older.</div>{% endif %}
-          {% else %}<div class="help">No backups yet.</div>{% endif %}
-          <div class="row" style="margin-top:8px"><button type="button" id="backupnow">Back up now</button><span id="backupmsg"></span></div>
-          <div class="help">The database is saved every day in the data folder under <code>backups/</code> (Daily backups to keep, default 7). Those copies do not include photos.</div>
-          <div class="row" style="margin-top:8px"><a class="btn" href="/settings/backup-full.zip" data-file="full backup">Download everything (database + photos)</a></div>
-          <div class="help">One zip with the database and every photo and receipt. Keep it somewhere other than the server (Files, iCloud, a PC); a disk failure would take the server's copies too. To restore, put <code>stop_journal.db</code> and the <code>photos</code> folder back in the data folder.</div>
-        </div>
-      {% endif %}
-      {% if group == 'Business suggestions' %}
-        <div class="box">
-          Google requests today (UTC): <strong>{{ usage }}</strong> of <strong>{{ cap }}</strong> allowed.
-          Active provider: <strong>{{ provider }}</strong>.
-          <div class="row" style="margin-top:8px">
-            <button type="button" id="testg">Test Google key (1 request)</button>
-            <span id="testmsg"></span>
+      </div>
+    {% else %}
+      <p class="help sect-help">For the whole JobHub: the agent, email, services and tuning.</p>
+    {% endif %}
+    {% for group, fields in sect_groups %}
+      {% set st = status.get(group, ('', '')) %}
+      {% set ns = namespace(bad=false) %}{% for f in fields %}{% if errors.get(f.key) %}{% set ns.bad = true %}{% endif %}{% endfor %}
+      <details class="grp" id="{{ group | slug }}" {% if ns.bad %}open{% endif %}>
+        <summary><b>{{ group }}</b>{% if ns.bad %}<span class="dot">●</span>{% endif %}<span class="st {{ st[0] }}">{{ st[1] }}</span></summary>
+        <div class="body">
+        {% for f in fields if f.key not in advanced %}{{ field(f) }}{% endfor %}
+        {% set adv = fields | selectattr('key', 'in', advanced) | list %}
+        {% if adv %}
+          {% set ns2 = namespace(bad=false) %}{% for f in adv %}{% if errors.get(f.key) %}{% set ns2.bad = true %}{% endif %}{% endfor %}
+          <details class="adv" {% if ns2.bad %}open{% endif %}><summary>Show advanced</summary>
+            {% for f in adv %}{{ field(f) }}{% endfor %}
+          </details>
+        {% endif %}
+
+        {% if group == 'My phone (OwnTracks)' %}
+          <div class="box">
+            <div class="row"><button type="button" id="finder">Find on Recorder</button><span id="findmsg"></span></div>
+            <div id="foundlist"></div>
+            <div class="help">Lists the users and devices on the Recorder (App settings → OwnTracks Recorder, even if not saved yet). Tap your phone to fill in both fields, then Save.</div>
           </div>
-          <div class="help">Needs the <em>Places API (New)</em> enabled on a billing-enabled Google Cloud project. Restrict the key to that API and set a budget alert in Google Cloud. Save first, then test.</div>
-        </div>
-      {% endif %}
-      {% if group == 'Notifications (Pushover)' %}
-        <div class="box">
-          Status: <strong>{{ 'ready' if pushover_ready else 'not set up' }}</strong>.
-          <div class="row" style="margin-top:8px">
-            <button type="button" id="testp">Send test notification</button>
-            <span id="testpmsg"></span>
+        {% endif %}
+        {% if group == 'My calendar' %}
+          <div class="box">
+            <div class="row"><button type="button" id="testcal">Test calendar</button><span id="calmsg"></span></div>
+            <div class="help">Reads the calendar once (the link pasted above, else the saved one) and counts this week's events. Invites need Email set up (App settings → Email).</div>
           </div>
-          <div class="help">Save first, then test. Notification text never includes locations or addresses, because it passes through Pushover’s servers.</div>
-          {% if recent %}
-            <div class="help" style="margin-top:8px"><strong>Recent notifications</strong></div>
-            {% for n in recent %}
-              <div class="help">{{ n.ts | ts_local }} · {{ n.title }} · {% if n.ok %}delivered{% else %}<span class="err">failed: {{ n.error }}</span>{% endif %}</div>
-            {% endfor %}
-          {% endif %}
+        {% endif %}
+        {% if group == 'My alerts' %}
+          <div class="box">
+            <div class="help"><strong>iPhone notifications:</strong> turned on per device in <a href="/account">Account</a> (needs the https address). <strong>Pushover:</strong> your user key above, the app token in App settings → Pushover.</div>
+            <div class="row" style="margin-top:8px">
+              <button type="button" id="testp">Test Pushover</button>
+              <a class="btn" href="/account#push">Test iPhone notifications</a>
+              <span id="testpmsg"></span>
+            </div>
+            <div class="help">Save first, then test. Notification text never includes locations, customers or tickets: it passes through Apple's or Pushover's servers.</div>
+            {% if recent %}
+              <div class="help" style="margin-top:8px"><strong>Recent notifications</strong></div>
+              {% for n in recent %}
+                <div class="help">{{ n.ts | ts_local }} · {{ n.title }} · {% if n.ok %}delivered{% else %}<span class="err">failed: {{ n.error }}</span>{% endif %}</div>
+              {% endfor %}
+            {% endif %}
+          </div>
+        {% endif %}
+        {% if group == 'Email' %}
+          <div class="box">
+            <div class="row"><button type="button" id="testmail">Send test email</button><span id="mailmsg"></span></div>
+            <div class="help">Uses the values above (and the agent address in Work AI agent), even before you save them.</div>
+            <div class="row" style="margin-top:8px"><button type="button" id="testinvite">Send test calendar invite</button><span id="invitemsg"></span></div>
+            <div class="help">Uses the saved settings: a 15-minute “JobHub · Test event” starting in 5 minutes.</div>
+          </div>
+        {% endif %}
+        {% if group == 'Places' %}
+          <div class="box">
+            Google requests today (UTC): <strong>{{ usage }}</strong> of <strong>{{ cap }}</strong> allowed.
+            Active provider: <strong>{{ provider }}</strong>.
+            <div class="row" style="margin-top:8px">
+              <button type="button" id="testg">Test Google key (1 request)</button>
+              <span id="testmsg"></span>
+            </div>
+            <div class="help">Needs the <em>Places API (New)</em> enabled on a billing-enabled Google Cloud project. Restrict the key to that API and set a budget alert in Google Cloud. Save first, then test.</div>
+          </div>
+        {% endif %}
+        {% if group == 'Road distance and grammar' %}
+          <div class="box">
+            <div class="row"><button type="button" id="testgram">Test grammar server</button><span id="gramtestmsg"></span></div>
+            <div class="help">Sends one made-up sentence (not your notes) to the address above, even if it is not saved yet.</div>
+          </div>
+        {% endif %}
+        {% if group == 'Log and backups' %}
+          <div class="box">
+            <div class="row"><a class="btn" href="/settings/log" target="_blank">View recent log</a>
+              <a class="btn" href="/settings/log?download=1&amp;n=1000" data-file="log">Download log</a></div>
+            <div class="help">The last 300 lines since the app started (the full log: Unraid → Docker → JobHub → Logs). Errors show a short code, like “error 3f9a1c2b”, that you can find here.</div>
+          </div>
+          <div class="box">
+            {% if backups %}
+              {% for b in backups[:5] %}
+                <div class="help"><a href="/settings/backup/{{ b.name }}" data-file="backup">{{ b.name }}</a> · {{ (b.size / 1024) | round | int }} KB · {{ b.mtime | int | ts_local }}</div>
+              {% endfor %}
+              {% if backups | length > 5 %}<div class="help">…and {{ backups | length - 5 }} older.</div>{% endif %}
+            {% else %}<div class="help">No backups yet.</div>{% endif %}
+            <div class="row" style="margin-top:8px"><button type="button" id="backupnow">Back up now</button><span id="backupmsg"></span></div>
+            <div class="help">The database is saved every day in the data folder under <code>backups/</code>. Those copies do not include photos.</div>
+            <div class="row" style="margin-top:8px"><a class="btn" href="/settings/backup-full.zip" data-file="full backup">Download everything (database + photos)</a></div>
+            <div class="help">Keep it somewhere other than the server (Files, iCloud, a PC). To restore, put <code>stop_journal.db</code> and the <code>photos</code> folder back in the data folder.</div>
+          </div>
+        {% endif %}
         </div>
-      {% endif %}
+      </details>
     {% endfor %}
-    </section>
-    {% endfor %}
-    <div class="row" style="margin-top:20px"><button class="primary" type="submit">Save settings</button></div>
-    <div class="help">One Save button covers every tab.</div>
+  {% endfor %}
+    <div class="savebar"><button class="primary" type="submit">Save settings</button>
+      <span class="help">One Save covers every group. A blank field uses the default.</span></div>
   </form>
   {% if has_password %}
-  <form method="post" action="/logout" style="margin-top:28px"><button type="submit">Sign out</button></form>
+  <form method="post" action="/logout" style="margin-top:20px"><button type="submit">Sign out</button></form>
   {% endif %}
-  <p class="help" style="margin-top:24px">Recorder login (RECORDER_AUTH), timezone and the app password are set in <code>.env</code> and not editable here.</p>
+  <p class="help" style="margin-top:20px">The timezone is set in the server's <code>.env</code> and not editable here.</p>
 </main>
 <script>
 (function () {
-  const tabs = [...document.querySelectorAll('.tabs button')], panels = [...document.querySelectorAll('.tabpanel')];
-  function show(i) {
-    tabs.forEach((b, k) => b.setAttribute('aria-selected', k === i));
-    panels.forEach((p, k) => { p.hidden = k !== i; });
-    tabs[i].scrollIntoView({inline: 'center', block: 'nearest'});
-    try { history.replaceState(null, '', '#' + tabs[i].textContent.replace('●', '').trim().toLowerCase().replace(/\s+/g, '-')); } catch (e) {}
-  }
-  tabs.forEach((b, k) => { b.onclick = () => show(k); });
-  const want = location.hash.slice(1);
-  let first = tabs.findIndex(b => b.textContent.includes('●'));
-  if (first < 0) first = tabs.findIndex(b => b.textContent.replace('●', '').trim().toLowerCase().replace(/\s+/g, '-') === want);
-  show(first < 0 ? 0 : first);
+  const open = id => { const d = document.getElementById(id); if (d && d.tagName === 'DETAILS') { d.open = true; d.scrollIntoView({block: 'start'}); } };
+  const bad = document.querySelector('details.grp[open]');
+  if (bad) bad.scrollIntoView({block: 'start'});
+  else if (location.hash) open(location.hash.slice(1));
+  window.addEventListener('hashchange', () => open(location.hash.slice(1)));
 })();
 function wire(btnId, msgId, url) {
   document.getElementById(btnId).onclick = async () => {

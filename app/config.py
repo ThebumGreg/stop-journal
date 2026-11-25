@@ -69,9 +69,9 @@ class Config:
     qbo_service_with_sku: str = "on"   # QuickBooks import: Service items with a SKU are parts
     lunch_paid: str = "on"         # off: lunch is unpaid (left out of paid time)
     followup_owners: str = "Me"     # one per line: "Label = email" (Me = the technician email)
-    log_level: str = "info"        # info | debug (Settings → General → Log)
+    log_level: str = "info"        # info | debug (Settings → Log and backups)
     report_signing_key: str = ""   # secret: emailed reports carry an HMAC-SHA256 of the JSON file
-    calendar_invites: str = "off"   # today's stops as invites to mail_to (Settings → Email)
+    calendar_invites: str = "off"   # today's stops as invites to mail_to (Settings → My calendar)
     calendar_invite_min: int = 10
 
     @classmethod

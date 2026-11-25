@@ -120,7 +120,7 @@ async function fill(box) {
 
 function nextCard(d) {
   if (!d.calendar_on) {
-    const a = el('a', null, 'Settings → Calendar'); a.href = '/settings';
+    const a = el('a', null, 'Settings → My calendar'); a.href = '/settings#my-calendar';
     const s = el('div', 'sub'); s.append('Connect your Outlook calendar in ', a, ' to see your next on-site appointment and drive time here.');
     return card('Next appointment', s);
   }

@@ -1,4 +1,4 @@
-// Page-side logging into the JobHub log (Settings → General → Log), for problems that happen on the phone.
+// Page-side logging into the JobHub log (Settings → Log and backups), for problems that happen on the phone.
 // Always sent: page errors and failed requests. Sent only with Log detail = debug: jhLog('debug', …) steps.
 // Text only, 300 characters, at most 40 lines a minute; the server blanks anything that looks like a coordinate.
 (function () {

@@ -57,7 +57,7 @@ def test_email_report_sends_json_and_pdf_and_logs(tmp_path):
     c = make(tmp_path)
     assert c.get(f"/api/export/emails?from={D}").json["ready"] is False
     r = c.post(f"/api/export/email?from={D}", json={"pdf": True, "json": True})
-    assert r.status_code == 400 and "Settings → Email" in r.json["error"]
+    assert r.status_code == 400 and "Settings → Work AI agent" in r.json["error"]
     setup_mail(tmp_path)
     info = c.get(f"/api/export/emails?from={D}").json
     assert info["ready"] and info["to"] == "me@work.example" and info["history"] == []

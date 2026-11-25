@@ -121,7 +121,7 @@ def send(conn, cfg, date, uid, now, live, search, note=""):
     from . import service, summary
     to = cfg.late_notice_to or cfg.mail_to
     if not to:
-        raise ValueError("Add where late notices go in Settings → Email (Send late notices to, or Send reports to).")
+        raise ValueError("Add where late notices go in Settings → Work AI agent (Send late notices to, or Send reports to).")
     ev = next((e for e in service.day_payload(conn, cfg, date).get("calendar", []) if e.get("uid") == uid), None)
     if not ev:
         raise ValueError("That appointment is no longer on your calendar for today.")
