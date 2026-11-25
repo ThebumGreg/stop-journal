@@ -103,7 +103,7 @@ and add or update a section there when you build something. This file holds only
   `podman run --rm --network host mcr.microsoft.com/playwright/python:v1.49.0-noble` (`pip install playwright==1.49.0`
   inside), Firefox desktop and the iPhone 13 WebKit profile. Do this for any change to page scripts.
 
-## Action plan (updated 2026-11-23)
+## Action plan (updated 2026-11-25)
 QuickBooks makes estimates and invoices; a HubSpot service ticket holds the job. Match on the HubSpot ticket number
 (calendar `Ticket:` line, then the stop's ticket); the QuickBooks estimate number is info.
 
@@ -111,7 +111,10 @@ A. User status: deployed through the router fix; test invite works; Anthropic ke
    Testing next: calendar invites over a work day, Outlook appointments, the phone app, Bought here, running late, Send
    for invoice (checklist 7, 7b, 7c). User to do: parts clean-up, HubSpot company IDs CSV, QuickBooks parts import.
 
-B. Built 2026-11-24: message format 2 (agent's spec; setting, test send, samples in docs/sample-report/v2/), stable
+B. Built 2026-11-25: login + Cloudflare tunnel readiness (checklist 10), iPhone Share/Save on https, native
+   notifications (checklist 11; Pushover off after a week on both), Settings page My/App layout (USER_KEYS for
+   per-user storage later; a Users page only when technicians are added). User to do: sections 10 and 11.
+   Built 2026-11-24: message format 2 (agent's spec; setting, test send, samples in docs/sample-report/v2/), stable
    uids on lines/follow-ups/photos/purchases, address parts + QuickBooks customer ID + billing email on places,
    Waiting split into parts/customer, billing email on Send for invoice. Next: user tests (checklist 7d), agent checks
    a real format 2 day, user switches the setting; remove format 1 a week later when the user says so.
@@ -134,7 +137,9 @@ C. Next, when the user is ready (they will review first):
 D. Suggested, not chosen: weekly/monthly summary; yearly mileage log and year-end package; arrival prompt; missing-receipt
    reminders; security check before any outside access. Parked: reading HubSpot directly (read-only token), Microsoft
    Graph instead of invites (IT approval), Auris / QuickBooks time cross-check, off-site photo backup (costs money:
-   ask), cleanup of photos from deleted stops (the user keeps them).
+   ask), cleanup of photos from deleted stops (the user keeps them). Later, only if technicians are added: Users page
+   (admin role, invite by email) and per-user settings storage (consent rule above still applies). Optional: badge
+   count on the Home Screen icon.
 
 E. Refactor for a quiet day (no behaviour change; test every page in Firefox and iPhone WebKit afterwards):
    1. One shared `app/static/common.js` for the helpers each page script copies today: `el`, `api`/`post` with the
