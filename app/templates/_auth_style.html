@@ -1,0 +1,11 @@
+<style>
+  :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --line:#d8dee4; --acc:#0b66d0; --err:#d1242f; --ok:#1a7f37; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14181d; --fg:#e6e9ec; --muted:#98a2ad; --line:#2c333b; --acc:#5aa2ff; --err:#ff7b72; --ok:#3fb950; } }
+  body { margin:0; font:16px/1.4 -apple-system,system-ui,sans-serif; background:var(--bg); color:var(--fg); display:grid; place-items:center; min-height:100vh; }
+  form.auth { width:min(340px, 90vw); display:grid; gap:10px; }
+  form.auth label { font-size:14px; color:var(--muted); display:grid; gap:4px; }
+  input, button { font:inherit; padding:10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  button { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .err { color:var(--err); } .ok { color:var(--ok); } .muted { color:var(--muted); font-size:14px; }
+  a { color:var(--acc); }
+</style>

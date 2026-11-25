@@ -1,4 +1,4 @@
-# JobHub setup and test checklist (updated 2026-11-23 evening)
+# JobHub setup and test checklist (updated 2026-11-25)
 
 Work down the list. Items marked **Tell Claude** are results to report back. Ticked items are ones you reported done.
 
@@ -110,6 +110,31 @@ Work down the list. Items marked **Tell Claude** are results to report back. Tic
       ask how it would contact the customer.
 
 ## 9. Later
-- [ ] **https** for JobHub (so Share works in the Home Screen app). You use a VPN for now; the long-term choice is open.
 - [ ] Optional: Pushover alerts, the LanguageTool container.
 - [ ] When you are ready: estimates (sample estimate email, quoted vs actual) and the agent's "Invoiced #…" reply on the stop.
+
+## 10. Public access: login, then the Cloudflare tunnel (built 2026-11-25)
+Do these **in order**, and the first part on your home network.
+- [ ] Update the server (section 1). On your home network open JobHub → Settings → **Account and password** →
+      create your username and password (12+ characters; a few words together is easiest) and your email for resets.
+      `APP_PASSWORD` stops working from then on (you can remove it from `.env`).
+- [ ] Sign out, sign in again on the PC and in the iPhone Home Screen app (both stay signed in for 30 days).
+- [ ] Settings → Email must be set up for **Forgot password?** to work. Try it once: the link arrives, works once.
+- [ ] Note the console reset, in case: `docker exec -it JobHub python -m app.auth reset <username>`.
+- [ ] Cloudflare Zero Trust → Networks → Tunnels: create a tunnel, run `cloudflared` as a container on Unraid, and add a
+      public hostname (e.g. `jobhub.<your domain>`) → service `http://192.168.128.245:8000`. Leave the Host header as is.
+- [ ] Zero Trust → Access → Applications: a self-hosted app for that hostname, policy **Allow** = your email only.
+      Session duration: 1 month (the Home Screen app then rarely asks). Do **not** add a Bypass rule for JobHub paths
+      (not even `/health`): JobHub uses `/health` to notice an expired Cloudflare sign-in and reload the page.
+- [ ] JobHub Settings → Pushover → **App address**: `https://jobhub.<your domain>` (notification links and reset
+      emails use it, and it is accepted as JobHub's own site for changes).
+- [ ] Test from the phone on cellular (Wi-Fi off): Cloudflare sign-in, then JobHub sign-in; open a day, add a part, add a
+      photo, Email report. Then on the iPhone delete the old Home Screen icon and add it again from the https address
+      (Share → Add to Home Screen). **Tell Claude** if anything says "came from another website".
+- [ ] OwnTracks: its own hostname (e.g. `owntracks.<your domain>`) through the tunnel to NPM, with NPM's login (basic
+      auth) on everything. In Cloudflare Access that hostname needs a **Bypass** policy (the OwnTracks app can't do the
+      Cloudflare sign-in), so NPM's login is its only lock: use a long password. In OwnTracks: Mode HTTP, URL
+      `https://owntracks.<your domain>/pub`, user and password. JobHub keeps reading the Recorder on the home network
+      (Settings → Recorder stays as it is).
+- [ ] Keep the VPN as a way in if Cloudflare is ever down.
+

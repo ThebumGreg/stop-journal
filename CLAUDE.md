@@ -11,7 +11,8 @@ and add or update a section there when you build something. This file holds only
 - One user ("Greg"), testing on an iPhone Home Screen app and on desktop Firefox on Windows. Both home and office use
   UniFi routers.
 - The app runs in Docker on Unraid as the container "JobHub": gunicorn, 1 worker, 8 threads, port 8000, server
-  192.168.128.245. Remote access is a VPN for now; https is undecided.
+  192.168.128.245. Remote access: Cloudflare tunnel + Cloudflare Access + JobHub login (built 2026-11-25); the VPN
+  stays as a backup. OwnTracks goes through the tunnel to NPM (basic auth); JobHub reads the Recorder on the LAN.
 - The user deploys with `git pull`, rebuilds and restarts the container, reloads the browser and reopens the phone app.
   So when a change is done and tested: commit and push it (on main), then tell the user it needs that update.
 - `docs/SETUP-CHECKLIST.md` is the user's setup and test list; `docs/sample-report/` is what the agent was given
@@ -44,7 +45,9 @@ and add or update a section there when you build something. This file holds only
   - Calendar invites (when turned on): each stop's type, customer, address, ticket, times. Never notes, parts or prices.
 - Logs: path only, never the query string; every line passes `logs.scrub` (numbers with 4+ decimals are blanked).
   Never log coordinates, customer names or places. No analytics or telemetry.
-- Do not expose the app to the internet without auth (LAN, VPN, or a reverse proxy with auth and https).
+- Public access is a Cloudflare tunnel with Cloudflare Access in front AND JobHub's own login (`app/auth.py`). Every new
+  route needs the login (only `OPEN_ENDPOINTS` skip it); new changes must be POST from our own pages (Origin check).
+  Never add a Cloudflare bypass for JobHub paths. Password reset emails go only to the account's own email.
 - Technicians other than the owner would need written consent and work-hours-only tracking: do not build it.
 
 ## Hard-won gotchas (keep these)
@@ -61,6 +64,8 @@ and add or update a section there when you build something. This file holds only
   purchases), delete and Undo (`service.snapshot_day` / `undo_last`).
 - `email_log` counts report versions ("(update n)"): log other emails in their own tables (late_notices,
   invoice_requests).
+- The Settings form and pages are plain same-origin POSTs; a "came from another website" 403 means the Origin host is
+  not the request host / X-Forwarded-Host / App address (check the tunnel's Host header and Settings → App address).
 - Calendar matching: a stop that ended before an appointment began only matches it if it has the appointment's name.
 - Don't `pkill -f`/`pgrep -f` with a pattern that also matches your own shell command (it kills that shell): stop a
   test server in a separate command from the one that started it, with a pattern like `"[g]unicorn --bind 127..."`.
@@ -79,6 +84,7 @@ and add or update a section there when you build something. This file holds only
   `equipment.py` (tools), `receipts.py` + `ai.py` (receipt reading, Polish notes), `receipt_inbox.py` (Truck → Receipts),
   `photos.py`.
 - `app/places/` (known sites, OSM/Google providers, ranking, cache), `routing.py` (OSRM), `grammar.py` (LanguageTool).
+- `app/auth.py`: accounts, sign-in throttle, password reset tokens, console (`python -m app.auth`).
 - `app/alerts.py` (background thread, every 60 s: Pushover alerts, invites, weekly `housekeeping.maybe_prune`),
   `notify.py` (Pushover), `logs.py` (logging, watchdog, freeze detector), `backup.py`, `db.py` (schema + MIGRATIONS).
 - Pages: `app/templates/*.html` and `app/static/{day,truck,places,tools,home}.js` (vanilla JS, each with its own copy of
@@ -114,7 +120,10 @@ C. Next, when the user is ready (they will review first):
       automatic); report quoted vs actual per job (all visits with the same ticket).
    2. The agent's reply to an invoice request ("Invoiced #1234, $480") shown on the stop (needs the same Gmail reading).
    3. Send for invoice for quoted projects (from the QuickBooks estimate), if the user wants it.
-   4. https (Tailscale serve or a reverse proxy), then the offline app shell.
+   4. The offline app shell (https now comes from the tunnel).
+   5. Walk-through estimate stop type (planned 2026-11-25, on hold by the user): details box, proposed parts kept out of
+      stock, floor plan file, a format 2 "JobHub Estimate Request" so the agent drafts the QuickBooks estimate. Open
+      questions: which floor plan app, eighth work category or not.
 
 D. Suggested, not chosen: weekly/monthly summary; yearly mileage log and year-end package; arrival prompt; missing-receipt
    reminders; security check before any outside access. Parked: reading HubSpot directly (read-only token), Microsoft

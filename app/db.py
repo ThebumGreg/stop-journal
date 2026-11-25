@@ -405,6 +405,8 @@ def connect(data_dir):
     conn = sqlite3.connect(os.path.join(data_dir, "stop_journal.db"))
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    from . import auth              # sign-in accounts and password reset links
+    conn.executescript(auth.SCHEMA)
     _migrate(conn)
     from . import photos             # pictures stored in the database by the first version move to files
     photos.move_to_files(conn, data_dir)

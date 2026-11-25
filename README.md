@@ -71,7 +71,7 @@ You need Docker with Compose, and an OwnTracks Recorder reachable from the serve
 
 ```bash
 git clone https://github.com/ThebumGreg/stop-journal.git jobhub && cd jobhub
-cp .env.example .env          # optional: set APP_PASSWORD (see the table below)
+cp .env.example .env          # then open JobHub on your network and create your login (Settings → Account)
 docker compose pull           # or: docker compose up -d --build  to build locally
 docker compose up -d
 ```
@@ -124,7 +124,7 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | --- | --- | --- |
 | `RECORDER_URL`, `RECORDER_USER`, `RECORDER_DEVICE`, `RECORDER_AUTH` | | optional: normally set in the app (Settings → Recorder → Find on Recorder). Env values are only the starting default |
 | `APP_TZ` | `America/Los_Angeles` | everything is shown in this zone, stored as UTC |
-| `APP_PASSWORD` | | **set this.** Enables the login page |
+| `APP_PASSWORD` | | only until you create your login (Settings → Account); ignored after that |
 | `STOP_MIN_MINUTES`, `STOP_RADIUS_M`, `STOP_MAX_GAP_MIN`, `STOP_MERGE_GAP_MIN`, `STOP_SHORT_MIN_S`, `MAX_ACC_M` | 10, 100, 15, 60, 180, 100 | detection tuning (STOP_SHORT_MIN_S: pauses shorter than this, like traffic lights, are ignored) |
 | `PLACES_PROVIDER` | `osm` | `osm`, `osm_google` (OSM first, Google only when OSM comes up short) or `google` |
 | `GOOGLE_PLACES_KEY`, `GOOGLE_DAILY_CAP` | | Google is optional and costs money; the cap limits requests per day |
@@ -217,7 +217,20 @@ Settings → Docker (Docker log rotation) so the container log cannot fill the d
 ## Security and privacy
 
 - Do **not** expose the app to the internet without protection. Safe options: LAN only, a VPN
-  (WireGuard/Tailscale), or a reverse proxy with authentication and HTTPS. Always set `APP_PASSWORD`.
+  (WireGuard/Tailscale), or a Cloudflare tunnel with Cloudflare Access in front (the setup the owner uses; see
+  `docs/SETUP-CHECKLIST.md` section 10).
+- **Sign-in:** a username and password (Settings → Account), stored only as a salted scrypt hash. You stay signed in
+  for 30 days after your last visit. Changing the password, or **Sign out everywhere else**, signs out every other
+  device. Ten wrong tries from one address pause sign-in from it for 15 minutes; thirty for one username pause that
+  username for outside addresses (the home network can still sign in); a pause sends one Pushover note with no names.
+  **Forgot password?** emails a one-time link, valid 30 minutes, to the account's email (through the Gmail account in
+  Settings → Email); the page never says whether an account exists. From the server console:
+  `docker exec -it JobHub python -m app.auth reset <username>` (also `list`, `create`).
+- Until a login exists, anything arriving through the Cloudflare tunnel is refused. Changes (POST) coming from another
+  website are refused. The sign-in cookie is Secure over https, HttpOnly and SameSite=Lax; pages can't be framed by
+  other sites. Accounts are a table, so more logins can be added later (only one is offered today).
+- Safari download links ("Copy link for Safari", 10 minutes) work for reports, exports and the log only, never for
+  backups.
 - The only outbound calls are place lookups (coordinates and search text go to the provider you
   choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, reading your published calendar (only if you set the link), Google Vision for receipts and Claude for Polish notes (only if
   turned on; receipt photos and the note text respectively), map tiles, and Pushover notifications (whose text never contains locations).

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "_head.html" %}
+<title>JobHub – New password</title>
+{% include "_auth_style.html" %}
+</head>
+<body>
+<form class="auth" method="post">
+  <h1 style="margin:0;color:var(--acc)">New password</h1>
+  {% if bad %}
+    <div class="err">This reset link has expired or was already used.</div>
+    <a href="/forgot">Ask for a new one</a>
+  {% else %}
+    <div class="muted">For {{ username }}. At least 12 characters; a few words together is easiest.</div>
+    <input type="hidden" name="username" value="{{ username }}" autocomplete="username">
+    <input type="password" name="password" placeholder="New password" autocomplete="new-password" autofocus required>
+    <input type="password" name="password2" placeholder="New password again" autocomplete="new-password" required>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <button type="submit">Save new password</button>
+  {% endif %}
+</form>
+</body>
+</html>

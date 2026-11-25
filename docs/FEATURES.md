@@ -791,3 +791,27 @@ stop departed 12:21, and listed billable parts with no cost.
 - QuickBooks import keeps the QuickBooks product/service name in `qbo_item` (format 2 `qbo_item_name`).
 - Lunch stays paid by default (user decision): the setting is in Settings → General → Pay rules.
 
+## Sign-in and public access (built 2026-11-25)
+For the Cloudflare tunnel (Cloudflare Access in front, JobHub's own login behind it). `app/auth.py`, routes in
+`app/__init__.py` (gate, `/login`, `/logout`, `/forgot`, `/reset/<token>`, `/account`).
+- Accounts: `users` table (username, email, scrypt hash, `session_gen`, active) so more logins can come later; one is
+  offered now. The session holds uid + gen; changing the password or Sign out everywhere bumps gen (the device that
+  did it is kept signed in). Permanent cookie, 30 days rolling, named `jobhub_session`, Secure when the request came
+  over https (`ProxyFix` reads X-Forwarded-Proto from the tunnel), HttpOnly, SameSite=Lax.
+- Start-up path: with no account, the old `APP_PASSWORD` still signs in (so an update never locks the owner out) and
+  the Account page creates the login; once it exists `APP_PASSWORD` is ignored. With no account and no APP_PASSWORD the
+  app is open on the home network only: a request with Cloudflare's headers (`Cf-Connecting-Ip` / `Cf-Ray`) gets 403.
+- Throttle (memory, per process): 10 failures / 15 min per address (Cloudflare's visitor address), 30 per username
+  except from private addresses; reset emails 3 an hour per address and per user. One generic Pushover note when a
+  pause starts; the log says "wrong sign-in attempt" with no username or address.
+- Reset: `/forgot` always answers the same; a one-time token (only its SHA-256 stored, 30 min, a new one cancels the
+  old, a password change cancels all) is emailed to the account email through the Gmail settings; the link uses
+  Settings → App address, else the address the request came in on. Console: `python -m app.auth list|create|reset`.
+- Every POST/PATCH/PUT/DELETE must have an Origin (or Referer) of JobHub itself (the request host, X-Forwarded-Host or
+  App address); none at all is allowed (not a browser page; the cookie is still needed). Headers on every response:
+  nosniff, X-Frame-Options SAMEORIGIN, CSP `frame-ancestors 'self'` (share.js frames our own PDF view), Referrer-Policy
+  same-origin. Sign-in pages are no-store.
+- `clientlog.js` wraps `fetch`: when a request fails like a lost connection it asks `/health` without following
+  redirects; a redirect (Cloudflare Access expired) reloads the page once a minute at most, so Cloudflare can sign in.
+- Safari download tokens no longer cover backups (`FILE_PATHS`).
+

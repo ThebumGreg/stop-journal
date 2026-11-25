@@ -12,9 +12,11 @@ from flask import (Flask, Response, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
 
 from itsdangerous import BadSignature, URLSafeTimedSerializer
+from flask.sessions import SecureCookieSessionInterface
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
-from . import ai, equipment, invoice_request, kits, late, logs, mailer, message_v2, photos, receipt_inbox, receipts, summary, vendors
+from . import ai, auth, equipment, invoice_request, kits, late, logs, mailer, message_v2, photos, receipt_inbox, receipts, summary, vendors
 from . import report as reports
 from .config import Config
 from .geo import haversine_m
@@ -29,8 +31,17 @@ TEXT_SEARCH_FALLOFF_M = 50000  # free-text hits: nearer-to-stop still ranks firs
 
 FILE_TOKEN_S = 600       # a download link made for Safari works for 10 minutes
 FILE_PATHS = ("/api/export.", "/api/debug/", "/api/parts/template.csv", "/api/parts/export.csv", "/api/tools/export.csv",
-              "/api/tools/template.csv", "/api/places/export.csv", "/settings/log",
-              "/settings/backup")
+              "/api/tools/template.csv", "/api/places/export.csv", "/settings/log")
+# (backups are not on this list: a leaked link must never hand out the whole database)
+OPEN_ENDPOINTS = ("health", "login", "logout", "static", "manifest", "forgot", "reset_password")
+SESSION_DAYS = 30        # stay signed in this long after the last visit (the Home Screen app would otherwise ask daily)
+
+class _Sessions(SecureCookieSessionInterface):
+    """The sign-in cookie is marked Secure when the visitor came over https (the tunnel), so it is never sent over plain
+    http; on the home network (http) it still works."""
+    def get_cookie_secure(self, app):
+        return request.is_secure
+
 
 def create_app(cfg=None, client=None, provider=None, start_background=None):
     base = cfg or Config.from_env()
@@ -52,10 +63,13 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             if m in ("DELETE", "PUT", "PATCH"):
                 environ["REQUEST_METHOD"] = m
         return inner_wsgi(environ, start_response)
-    app.wsgi_app = method_override
+    # Behind the Cloudflare tunnel: X-Forwarded-Proto says the visitor used https (for the Secure cookie)
+    app.wsgi_app = ProxyFix(method_override, x_for=0, x_proto=1, x_host=0)
+    app.session_interface = _Sessions()
     tz = ZoneInfo(base.app_tz)
     app.jinja_env.filters["ts_local"] = lambda t: datetime.fromtimestamp(t, tz).strftime("%b %-d, %-I:%M %p")
     app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
+                      SESSION_COOKIE_NAME="jobhub_session", PERMANENT_SESSION_LIFETIME=SESSION_DAYS * 86400,
                       MAX_CONTENT_LENGTH=4 * 1024 * 1024,
                       SEND_FILE_MAX_AGE_DEFAULT=0)   # browsers re-check the page scripts, so an update is used at once
 
@@ -136,12 +150,66 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return jsonify(error=msg), 500
         return Response(f"<p style='font:16px sans-serif;padding:16px'>{msg}</p>", status=500, mimetype="text/html")
 
+    throttle = auth.Throttle()
+    app.extensions["jobhub_throttle"] = throttle
+    seclog = logs.get("security")
+
+    def _db():
+        return db.connect(base.data_dir)
+
+    def _same_site():
+        """A change (POST etc.) must come from JobHub's own pages. Browsers always send Origin (or Referer) on those;
+        a request without either is not from a browser page and still needs the sign-in cookie."""
+        src = request.headers.get("Origin")
+        if not src or src == "null":
+            src = request.headers.get("Referer") or (src or "")
+        if not src:
+            return True
+        if src == "null":
+            return False
+        from urllib.parse import urlsplit
+        host = urlsplit(src).netloc.lower()
+        ok = {request.host.lower()}
+        if request.headers.get("X-Forwarded-Host"):
+            ok.add(request.headers["X-Forwarded-Host"].split(",")[0].strip().lower())
+        app_url = eff().app_url
+        if app_url:
+            ok.add(urlsplit(app_url).netloc.lower())
+        return host in ok
+
+    def _signed_in(conn):
+        """The signed-in user row, True (old APP_PASSWORD sign-in, before an account exists), or None."""
+        uid = session.get("uid")
+        if uid:
+            u = auth.get(conn, uid)
+            if u and session.get("gen") == u["session_gen"]:
+                return u
+            session.clear()
+            return None
+        if session.get("auth") == 1 and base.app_password and not auth.has_users(conn):
+            return True
+        return None
+
     @app.before_request
     def gate():
-        if not base.app_password or request.endpoint in ("health", "login", "logout", "static", "manifest"):
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_site():
+            seclog.warning("refused a %s to %s from another site", request.method, request.path)
+            return jsonify(error="This request came from another website, so it was refused."), 403
+        if request.endpoint in OPEN_ENDPOINTS:
             return None
-        if session.get("auth") == 1:
-            return None
+        conn = _db()
+        try:
+            users = auth.has_users(conn)
+            if not users and not base.app_password:
+                if auth.via_tunnel(request.headers):     # never open to the internet without a login
+                    return Response("<p style='font:16px sans-serif;padding:16px'>JobHub has no login yet. Create it "
+                                    "on your home network first (Settings → Account), then use this address.</p>",
+                                    status=403, mimetype="text/html")
+                return None                              # home network, no login set up (first install)
+            if _signed_in(conn):
+                return None
+        finally:
+            conn.close()
         if request.method == "GET" and request.args.get("ft") and request.path.startswith(FILE_PATHS):
             try:                     # a short-lived download link (Home Screen app -> Safari, which has no login cookie)
                 URLSafeTimedSerializer(app.secret_key, salt="file").loads(request.args["ft"], max_age=FILE_TOKEN_S)
@@ -150,29 +218,200 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                 pass
         if request.path.startswith("/api/") or request.method != "GET":
             return jsonify(error="login required"), 401
-        return redirect(url_for("login", next=request.path))
+        return redirect(url_for("login", next=request.full_path.rstrip("?") if request.query_string else request.path))
+
+    @app.after_request
+    def _security_headers(resp):
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        resp.headers.setdefault("Referrer-Policy", "same-origin")
+        resp.headers.setdefault("Content-Security-Policy", "frame-ancestors 'self'; base-uri 'self'; form-action 'self'")
+        resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=(self)")
+        if request.endpoint in ("login", "forgot", "reset_password", "account_page"):
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.get("/api/file-token")
     def file_token():
         """For share.js: lets a download open in Safari for a few minutes (downloads only, nothing else)."""
         return jsonify(token=URLSafeTimedSerializer(app.secret_key, salt="file").dumps("dl"), ttl=FILE_TOKEN_S)
 
+    def _safe_next(nxt):
+        return nxt if nxt and nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt else "/"
+
+    def _start_session(u):
+        session.clear()                                   # a fresh cookie at every sign-in
+        session.permanent = True
+        session["uid"], session["gen"] = u["id"], u["session_gen"]
+
+    def _alert(text):
+        """Generic Pushover note (no names, no places)."""
+        try:
+            cfg = eff()
+            if notify.configured(cfg):
+                notify.send(cfg, "JobHub", text, 0, cfg.app_url or None)
+        except Exception as e:
+            seclog.warning("security alert not sent (%s)", type(e).__name__)
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
-        err = None
+        conn = _db()
+        try:
+            users = auth.has_users(conn)
+        finally:
+            conn.close()
+        legacy = not users and bool(base.app_password)
+        if not users and not legacy:
+            return redirect(url_for("account_page"))
+        err, status, username = None, 200, ""
+        msg = {"reset": "Your password was changed. Sign in with the new one.",
+               "out": "You are signed out."}.get(request.args.get("m", ""))
         if request.method == "POST":
-            if hmac.compare_digest(request.form.get("password", "").encode(),
-                                   base.app_password.encode()):
-                session["auth"] = 1
-                nxt = request.args.get("next", "/")
-                return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else "/")
-            err = "Wrong password."
-        return render_template("login.html", error=err), (401 if err else 200)
+            username = request.form.get("username", "").strip()[:80]
+            pw = request.form.get("password", "")
+            ip = auth.client_ip(request.headers, request.remote_addr)
+            wait = throttle.wait_s(ip, username)
+            if wait:
+                err, status = f"Too many wrong tries. Try again in {max(1, round(wait / 60))} min.", 429
+            else:
+                conn = _db()
+                try:
+                    u = auth.verify(conn, username, pw) if users else None
+                    if legacy and hmac.compare_digest(pw.encode(), base.app_password.encode()):
+                        session.clear()
+                        session.permanent = True
+                        session["auth"] = 1
+                        return redirect(_safe_next(request.args.get("next")))
+                    if u:
+                        throttle.succeeded(ip)
+                        auth.touch_login(conn, u["id"])
+                        _start_session(u)
+                        seclog.info("signed in")
+                        return redirect(_safe_next(request.args.get("next")))
+                finally:
+                    conn.close()
+                seclog.warning("wrong sign-in attempt")
+                if throttle.failed(ip, username):
+                    seclog.warning("sign-in paused for 15 minutes after repeated wrong attempts")
+                    _alert("Several wrong JobHub sign-in attempts. Sign-in is paused for 15 minutes.")
+                err, status = ("Wrong password." if legacy else "Wrong username or password."), 401
+        return render_template("login.html", error=err, message=msg, legacy=legacy, username=username,
+                               can_reset=users), status
 
     @app.post("/logout")
     def logout():
         session.clear()
-        return redirect(url_for("login"))
+        return redirect(url_for("login", m="out"))
+
+    def _reset_base():
+        cfg = eff()
+        return (cfg.app_url or request.host_url).rstrip("/")
+
+    @app.route("/forgot", methods=["GET", "POST"])
+    def forgot():
+        """Password reset by email: always the same answer, so it never tells whether an account exists."""
+        sent = False
+        if request.method == "POST":
+            sent = True
+            who = request.form.get("who", "").strip()[:120]
+            ip = auth.client_ip(request.headers, request.remote_addr)
+            conn = _db()
+            try:
+                u = auth.find(conn, who)
+                if u and u["email"] and throttle.reset_allowed(ip, u["id"]):
+                    cfg = eff()
+                    token = auth.new_reset(conn, u["id"])
+                    link = f"{_reset_base()}/reset/{token}"
+                    try:
+                        msg = mailer._message(cfg, "JobHub password reset", auth.reset_email(u["username"], link))
+                        msg.replace_header("To", u["email"])
+                        mailer.send(cfg, msg)
+                        seclog.info("password reset email sent")
+                    except mailer.MailError as e:
+                        seclog.warning("password reset email failed: %s", str(e)[:120])
+                elif u and not u["email"]:
+                    seclog.warning("password reset asked for an account with no email")
+                elif not u:
+                    throttle.reset_allowed(ip)              # count it, so guessing names is slow too
+            finally:
+                conn.close()
+        return render_template("forgot.html", sent=sent)
+
+    @app.route("/reset/<token>", methods=["GET", "POST"])
+    def reset_password(token):
+        conn = _db()
+        try:
+            u = auth.reset_user(conn, token)
+            if not u:
+                return render_template("reset.html", bad=True, error=None), 404
+            err = None
+            if request.method == "POST":
+                pw, pw2 = request.form.get("password", ""), request.form.get("password2", "")
+                try:
+                    auth.check_password_rules(pw, pw2, u["username"])
+                    auth.set_password(conn, u["id"], pw)
+                    session.clear()
+                    seclog.info("password changed with a reset link")
+                    _alert("Your JobHub password was changed (reset link).")
+                    return redirect(url_for("login", m="reset"))
+                except auth.AuthError as e:
+                    err = str(e)
+            return render_template("reset.html", bad=False, error=err, username=u["username"]), (400 if err else 200)
+        finally:
+            conn.close()
+
+    @app.route("/account", methods=["GET", "POST"])
+    def account_page():
+        """Create the first login, or change the password / email, or sign out everywhere."""
+        conn = _db()
+        try:
+            cfg = eff()
+            me = _signed_in(conn)
+            user = me if me is not None and me is not True else None
+            users = auth.has_users(conn)
+            if users and not user:
+                return redirect(url_for("login", next="/account"))
+            msg, err = request.args.get("m", ""), None
+            if request.method == "POST":
+                action = request.form.get("action", "")
+                try:
+                    if action == "create" and not users:
+                        pw = request.form.get("password", "")
+                        auth.check_password_rules(pw, request.form.get("password2", ""),
+                                                  request.form.get("username", ""))
+                        uid = auth.create(conn, request.form.get("username", ""), pw, request.form.get("email", ""))
+                        _start_session(auth.get(conn, uid))
+                        seclog.info("account created")
+                        return redirect(url_for("account_page", m="created"))
+                    if action == "password" and user:
+                        if not auth.verify(conn, user["username"], request.form.get("current", "")):
+                            raise auth.AuthError("The current password is wrong.")
+                        pw = request.form.get("password", "")
+                        auth.check_password_rules(pw, request.form.get("password2", ""), user["username"])
+                        gen = auth.set_password(conn, user["id"], pw)
+                        session["gen"] = gen                     # this device stays signed in, the others are not
+                        seclog.info("password changed")
+                        _alert("Your JobHub password was changed.")
+                        return redirect(url_for("account_page", m="password"))
+                    if action == "email" and user:
+                        auth.set_email(conn, user["id"], request.form.get("email", ""))
+                        return redirect(url_for("account_page", m="email"))
+                    if action == "everywhere" and user:
+                        session["gen"] = auth.sign_out_everywhere(conn, user["id"])
+                        seclog.info("signed out on every other device")
+                        return redirect(url_for("account_page", m="everywhere"))
+                    raise auth.AuthError("Nothing to do.")
+                except auth.AuthError as e:
+                    err = str(e)
+            if user:
+                user = auth.get(conn, user["id"])
+            return render_template("account.html", user=user, users=users, msg=msg, error=err,
+                                   legacy=bool(base.app_password) and not users, form=request.form,
+                                   tech_email=cfg.tech_email, mail_ready=bool(cfg.smtp_user and cfg.smtp_password),
+                                   app_url=cfg.app_url, min_pw=auth.MIN_PASSWORD,
+                                   tunnel=auth.via_tunnel(request.headers)), (400 if err else 200)
+        finally:
+            conn.close()
 
     started = time.time()
 
@@ -1353,6 +1592,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         try:
             ov = settings.overrides(conn)
             recent = notify.recent(conn)
+            has_users = auth.has_users(conn)
         finally:
             conn.close()
         cfg = eff()
@@ -1368,7 +1608,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                     cap=cfg.google_daily_cap, provider=cfg.places_provider,
                     pushover_ready=notify.configured(cfg), recent=recent,
                     backups=backup.list_backups(base.data_dir),
-                    has_password=bool(base.app_password), **extra)
+                    has_password=bool(base.app_password) or has_users, **extra)
 
     @app.get("/settings")
     def settings_page():

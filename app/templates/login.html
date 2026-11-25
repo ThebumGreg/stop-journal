@@ -3,22 +3,22 @@
 <head>
 {% include "_head.html" %}
 <title>JobHub – Sign in</title>
-<style>
-  :root { --bg:#fff; --fg:#1b1f23; --muted:#6a737d; --line:#d8dee4; --acc:#0b66d0; --err:#d1242f; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#14181d; --fg:#e6e9ec; --muted:#98a2ad; --line:#2c333b; --acc:#5aa2ff; --err:#ff7b72; } }
-  body { margin:0; font:16px/1.4 -apple-system,system-ui,sans-serif; background:var(--bg); color:var(--fg); display:grid; place-items:center; min-height:100vh; }
-  form { width:min(320px, 90vw); display:grid; gap:10px; }
-  input, button { font:inherit; padding:10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); }
-  button { background:var(--acc); color:#fff; border-color:var(--acc); }
-  .err { color:var(--err); }
-</style>
+{% include "_auth_style.html" %}
 </head>
 <body>
-<form method="post">
+<form class="auth" method="post">
   <h1 style="margin:0;color:var(--acc)">JobHub</h1>
-  <input type="password" name="password" placeholder="Password" autofocus required>
+  {% if message %}<div class="ok">{{ message }}</div>{% endif %}
+  {% if not legacy %}
+  <input name="username" placeholder="Username" value="{{ username }}" autocomplete="username" autocapitalize="off"
+         autocorrect="off" {% if not username %}autofocus{% endif %} required>
+  {% endif %}
+  <input type="password" name="password" placeholder="Password" autocomplete="current-password"
+         {% if legacy or username %}autofocus{% endif %} required>
   {% if error %}<div class="err">{{ error }}</div>{% endif %}
   <button type="submit">Sign in</button>
+  {% if can_reset %}<a class="muted" href="/forgot">Forgot password?</a>{% endif %}
+  {% if legacy %}<div class="muted">After signing in, create your username and password in Settings → Account.</div>{% endif %}
 </form>
 </body>
 </html>

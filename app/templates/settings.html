@@ -23,8 +23,10 @@
   {% if saved %}<div class="box ok">Settings saved.</div>{% endif %}
   {% if errors %}<div class="box err">Some values need fixing – see below. Nothing was saved.</div>{% endif %}
   {% if not has_password %}
-  <div class="box">No <code>APP_PASSWORD</code> is set, so anyone who can reach this page can change these settings. Set one in your <code>.env</code> before using this beyond localhost.</div>
+  <div class="box err">JobHub has no login yet, so anyone on your network can open it. <a href="/account">Create your login</a> before using it anywhere else (the Cloudflare tunnel refuses everyone until you do).</div>
   {% endif %}
+  <div class="row" style="margin:4px 0 8px"><a class="btn" href="/account">Account and password</a>
+    {% if has_password %}<form method="post" action="/logout" style="margin:0"><button type="submit">Sign out</button></form>{% endif %}</div>
 
   <form method="post">
     <div class="tabs" role="tablist">

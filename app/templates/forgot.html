@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "_head.html" %}
+<title>JobHub – Reset password</title>
+{% include "_auth_style.html" %}
+</head>
+<body>
+<form class="auth" method="post">
+  <h1 style="margin:0;color:var(--acc)">Reset password</h1>
+  {% if sent %}
+    <div class="ok">If that account has an email address, a reset link is on its way. It works once, for 30 minutes.</div>
+    <div class="muted">Nothing arrived? Check spam, or reset it from the server console:
+      <code>docker exec -it JobHub python -m app.auth reset &lt;username&gt;</code></div>
+    <a href="/login">Back to sign in</a>
+  {% else %}
+    <label>Username or email
+      <input name="who" autocomplete="username" autocapitalize="off" autocorrect="off" autofocus required></label>
+    <button type="submit">Email me a reset link</button>
+    <a class="muted" href="/login">Back to sign in</a>
+  {% endif %}
+</form>
+</body>
+</html>

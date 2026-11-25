@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "_head.html" %}
+<title>JobHub – Account</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
+<style>
+  main { max-width:520px; }
+  form.acc { display:grid; gap:8px; margin:8px 0 18px; }
+  form.acc label { font-size:14px; color:var(--muted); display:grid; gap:4px; }
+</style>
+</head>
+<body>
+{% include "_header.html" %}
+<main>
+  <h1 class="page-title">Account</h1>
+  {% set notes = {"created": "Your login is set up. You are signed in on this device.",
+                  "password": "Password changed. Every other device is signed out.",
+                  "email": "Email saved.",
+                  "everywhere": "Every other device is signed out."} %}
+  {% if notes.get(msg) %}<div class="box ok">{{ notes[msg] }}</div>{% endif %}
+  {% if error %}<div class="box err">{{ error }}</div>{% endif %}
+
+  {% if not users %}
+    <h2>Create your login</h2>
+    <p class="help">JobHub will ask for this username and password on every device (you stay signed in for
+      30 days). {% if legacy %}The <code>APP_PASSWORD</code> from the server settings stops working once this is
+      saved.{% endif %} Add an email so “Forgot password?” can send you a reset link.</p>
+    <form class="acc" method="post">
+      <input type="hidden" name="action" value="create">
+      <label>Username <input name="username" value="{{ form.get('username', '') }}" autocomplete="username"
+             autocapitalize="off" autocorrect="off" required></label>
+      <label>Email (for password reset) <input name="email" type="email" value="{{ form.get('email', tech_email) }}"
+             autocomplete="email"></label>
+      <label>Password (at least {{ min_pw }} characters) <input name="password" type="password" autocomplete="new-password" required></label>
+      <label>Password again <input name="password2" type="password" autocomplete="new-password" required></label>
+      <button class="primary" type="submit">Create login</button>
+    </form>
+  {% else %}
+    <p>Signed in as <strong>{{ user.username }}</strong>{% if user.last_login_ts %} · last sign-in {{ user.last_login_ts | ts_local }}{% endif %}.</p>
+
+    <h2>Change password</h2>
+    <form class="acc" method="post">
+      <input type="hidden" name="action" value="password">
+      <input type="hidden" name="username" value="{{ user.username }}" autocomplete="username">
+      <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
+      <label>New password (at least {{ min_pw }} characters) <input name="password" type="password" autocomplete="new-password" required></label>
+      <label>New password again <input name="password2" type="password" autocomplete="new-password" required></label>
+      <button class="primary" type="submit">Change password</button>
+      <div class="help">Every other signed-in device (phone app, other browsers) is signed out.</div>
+    </form>
+
+    <h2>Email for password reset</h2>
+    <form class="acc" method="post">
+      <input type="hidden" name="action" value="email">
+      <label>Email <input name="email" type="email" value="{{ user.email }}" autocomplete="email"></label>
+      <button class="primary" type="submit">Save email</button>
+      <div class="help">“Forgot password?” on the sign-in page sends a one-time link here.
+        {% if not mail_ready %}<strong>Email is not set up yet (Settings → Email), so no link can be sent.</strong>{% endif %}
+        {% if not app_url %}The link uses the address you used to open JobHub; set Settings → Pushover → “App address”
+        to your public https address so it always points there.{% endif %}</div>
+    </form>
+
+    <h2>Devices</h2>
+    <div class="row">
+      <form method="post" style="margin:0"><input type="hidden" name="action" value="everywhere">
+        <button type="submit">Sign out everywhere else</button></form>
+      <form method="post" action="/logout" style="margin:0"><button type="submit">Sign out</button></form>
+    </div>
+    <p class="help">Locked out? From the Unraid console: <code>docker exec -it JobHub python -m app.auth reset {{ user.username }}</code></p>
+  {% endif %}
+</main>
+</body>
+</html>
