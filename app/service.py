@@ -14,6 +14,7 @@ Totals rules (documented here because the UI and PDF rely on them):
     are counted separately).
 """
 import json
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -1743,6 +1744,29 @@ def station_history(conn, cfg, key, limit=200):
 
 # ---- calendar: on-site appointments next to the stops ------------------------------
 CAL_SLACK_S = 30 * 60      # a stop up to 30 min before or after an appointment still matches it
+CAL_NAMED_SLACK_S = 2 * 3600   # ... up to 2 hours when the stop has the appointment's name or address
+_CAL_FILLER = {"inc", "llc", "co", "corp", "company", "ltd", "the", "and", "of"}
+
+
+def _cal_words(text):
+    return [w for w in re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).split() if w not in _CAL_FILLER]
+
+
+def _cal_affinity(st, ev):
+    """2 = the stop has the appointment's name, 1 = its name or street address appears in the appointment, 0 = none."""
+    sn, en = _cal_words(st.get("business_name")), _cal_words(ev.get("name"))
+    if sn and sn == en:
+        return 2
+    text = " " + " ".join(en + _cal_words(ev.get("location"))) + " "
+    if sn and (f" {' '.join(sn)} " in text or (len(sn) >= 2 and len(" ".join(sn[:2])) >= 6
+                                                 and f" {' '.join(sn[:2])} " in text)):
+        return 1
+    if en and len(" ".join(en)) >= 4 and f" {' '.join(en)} " in " " + " ".join(sn) + " ":
+        return 1
+    a = _cal_words(st.get("address"))
+    if len(a) >= 2 and a[0].isdigit() and f" {a[0]} {a[1]} " in text:
+        return 1
+    return 0
 
 
 def _keep_calendar(conn, stops, events):
@@ -1784,25 +1808,38 @@ def calendar_for_day(cfg, date, stops, now):
         return [], str(e)
     except Exception as e:          # a calendar problem must never break the day page
         return [], f"Could not read the calendar ({type(e).__name__})."
-    taken = set()
-    out = []
-    for ev in evs:
-        best, best_o = None, 0
+    # Pair appointments and stops over the whole day, best pairs first: a stop with the appointment's name or address
+    # beats one that only overlaps in time (Largo Concrete 8:30 must not go to the 9:24 stop next door in time just
+    # because the overlap is longer). Each stop and each appointment is used once.
+    pairs = []
+    for i, ev in enumerate(evs):
         for st in stops:
-            if st["id"] in taken or st["kind"] != "stop" or st["status"] in ("Personal", "Lunch", "Traffic"):
+            if st["kind"] != "stop" or st["status"] in ("Personal", "Lunch", "Traffic"):
                 continue
-            # a stop that ended before the appointment began is the job before it (leaving at 9:45 for a 10:00
-            # appointment), unless it carries the appointment's name (you got there, then had to leave)
-            if st["depart_ts"] <= ev["start_ts"] and \
-                    (st["business_name"] or "").strip().lower() != (ev["name"] or "").strip().lower():
-                continue
-            o = min(st["depart_ts"], ev["end_ts"] + CAL_SLACK_S) - max(st["arrive_ts"], ev["start_ts"] - CAL_SLACK_S)
-            if o > best_o:
-                best, best_o = st, o
+            aff = _cal_affinity(st, ev)
+            if not aff:
+                # time alone never ties an on-site appointment to your office, a supplier or a fill-up
+                if st.get("stop_type") in ("office", "vendor", "gas") or st.get("site_kind") in ("office", "vendor", "home"):
+                    continue
+                # a stop that ended before the appointment began is the job before it (leaving at 9:45 for 10:00)
+                if st["depart_ts"] <= ev["start_ts"]:
+                    continue
+            slack = CAL_NAMED_SLACK_S if aff else CAL_SLACK_S
+            o = min(st["depart_ts"], ev["end_ts"] + slack) - max(st["arrive_ts"], ev["start_ts"] - slack)
+            if o > 0:
+                pairs.append((aff, o, i, st))
+    pairs.sort(key=lambda p: (-p[0], -p[1], p[2]))
+    taken, chosen = set(), {}
+    for aff, o, i, st in pairs:
+        if i not in chosen and st["id"] not in taken:
+            chosen[i] = st
+            taken.add(st["id"])
+    out = []
+    for i, ev in enumerate(evs):
+        best = chosen.get(i)
         e = dict(ev, start=fmt_time(cfg, ev["start_ts"]), end=fmt_time(cfg, ev["end_ts"]),
                  stop_id=best["id"] if best else None)
         if best:
-            taken.add(best["id"])
             e["state"] = "here" if best.get("here_now") else "done"
             cat = next((c for c in WORK_CATEGORIES if c.lower() == (ev.get("category") or "").strip().lower()), "")
             best["calendar"] = {"uid": ev.get("uid") or "", "name": ev["name"], "location": ev["location"], "ticket": ev["ticket"],
@@ -1810,6 +1847,7 @@ def calendar_for_day(cfg, date, stops, now):
                                 "start": e["start"], "end": e["end"], "contact": ev.get("contact", ""),
                                 "work": ev.get("work", ""), "category": cat,
                                 # "Use calendar" is offered while the stop's name differs from the appointment's
+                                # (on the card only when the stop is not at a saved place; the sheet always)
                                 "offer": (best["business_name"] or "").strip().lower() != ev["name"].strip().lower()}
         else:
             e["state"] = "upcoming" if ev["end_ts"] > now else "missed"

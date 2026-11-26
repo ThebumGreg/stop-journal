@@ -403,7 +403,7 @@ stop departed 12:21, and listed billable parts with no cost.
   title, location, notes and categories. All-day and cancelled events skipped; recurring events expanded
   (`recurring-ical-events`); Outlook's Windows time zone blocks work. Feed cached 10 min in memory. Event notes are only
   searched for the keyword and a ticket number, never stored. `day_payload.calendar` lists the day's on-site events with the
-  matched stop (most overlap, +/- 30 min, one event per stop, never Personal/Lunch/Traffic) and state done | here | upcoming |
+  matched stop (see Calendar matching below; one event per stop, never Personal/Lunch/Traffic) and state done | here | upcoming |
   missed; a matched stop whose name differs gets `calendar` {name, location, ticket}, shown as "📅 Use <name>" on the card and
   "Use calendar" in the sheet (fills name, address, ticket if empty; an untyped stop becomes a Job). Calendar errors only show a
   message (`calendar_error`), never break the day. Settings has "Test calendar". Address format: to be confirmed by the user.
@@ -412,6 +412,14 @@ stop departed 12:21, and listed billable parts with no cost.
   matched stop always carries `calendar` {name, location, ticket, contact, work, category, start, end, offer}; the sheet shows an
   Appointment box (planned work, contact with 📞 Call), and "Use calendar" (offer = names differ) also fills an empty category.
   Recommended event format: title "Onsite – <customer>", Location = full street address, those labelled lines at the top of notes.
+- **Calendar matching** (`service.calendar_for_day`, changed 2026-11-25: on a real day an appointment went to the next stop
+  because it overlapped longer, and the following meeting landed on the office stop). Appointments and stops are paired over
+  the whole day, best pairs first: a stop with the appointment's name beats one whose name or street address only appears in
+  it, which beats time overlap alone (`_cal_affinity`; company suffixes such as Inc / LLC are ignored). Within the same
+  rank the longer overlap wins. A name or address match may be up to 2 hours from the appointment
+  (`CAL_NAMED_SLACK_S`), otherwise 30 minutes (`CAL_SLACK_S`). On time alone, office, supplier and gas stops and saved
+  office / supplier / home places never match. The "📅 Use <name>" button is not shown on the card of a stop at a saved
+  place (it has its name already); the stop sheet still offers "Use calendar".
 - **Receipt reading** (`app/receipts.py`, Settings → Receipts; `RECEIPT_READER` off | google_vision, `RECEIPT_KEY` blank = the
   Google Places key, `RECEIPT_MONTHLY_CAP` 300, counted in `api_usage` provider "receipts"). On a receipt upload the reader runs once
   and stores `photos.read_json` {ok, total, gallons, price_per_gallon, checks | error, dismissed}; plain photos are never sent.
@@ -705,7 +713,7 @@ stop departed 12:21, and listed billable parts with no cost.
   "Send an updated late notice". The page skips its minute refresh while the late box has focus.
 - Agent docs: `docs/sample-report/README.md` "Late notices", `late-notice-sample.json`, `late-notice-body.txt`.
 - Calendar matching fix: a stop that ended before an appointment began only matches it when it has the appointment's
-  name (the job before it no longer "uses up" the next appointment, which hid it from Home and the late alert).
+  name or address (the job before it no longer "uses up" the next appointment, which hid it from Home and the late alert).
 
 ## Send for invoice (built 2026-11-23, user decisions)
 - Goal: the work agent invoices a visit while the technician is still on site so the customer can pay there. User

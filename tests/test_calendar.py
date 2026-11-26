@@ -111,3 +111,38 @@ def test_clean_title():
 def test_labelled_lines():
     got = calendar_feed.labelled("Ticket: 1\nContact: Bob 555-0100\nWork: Fix it\nWork: second\nnot a label\nCategory: Quoted project")
     assert got == {"ticket": "1", "contact": "Bob 555-0100", "work": "Fix it", "category": "Quoted project"}
+
+
+def test_name_and_address_beat_time_overlap(tmp_path, feed):
+    """A real day (2026-11-25): Largo Concrete's appointment went to the next stop because it overlapped longer, and
+    the Systems Source meeting then landed on the office stop. Names and addresses come first; offices never match on
+    time alone."""
+    c = make(tmp_path, calendar_url="https://outlook.office365.com/owa/calendar/x/calendar.ics")
+    s1, s2, s3 = c.get(f"/api/day/{D}").json["stops"]                   # 9:00-10:00, 10:20-11:20, 12:00-12:45
+    c.patch(f"/api/stops/{s1['id']}", json={"business_name": "Largo Concrete"})
+    c.patch(f"/api/stops/{s2['id']}", json={"business_name": "Systems Source - Haworth Dealer"})
+    c.patch(f"/api/stops/{s3['id']}", json={"business_name": "ComDirect, Inc.", "stop_type": "office"})
+    feed["ics"] = ics(
+        ev("l", "20261118T100500", "20261118T110000", "Onsite - Largo Concrete"),          # booked after you left
+        ev("o", "20261118T113000", "20261118T123000", "Onsite Weekly OAC - Systems Source #700", "4695 MacArthur Court"),
+    )
+    calendar_feed.clear_cache()
+    d = c.get(f"/api/day/{D}").json
+    by = {e["name"]: e["stop_id"] for e in d["calendar"]}
+    assert by == {"Largo Concrete": s1["id"], "Weekly OAC - Systems Source #700": s2["id"]}
+    stops = {s["id"]: s for s in d["stops"]}
+    assert stops[s1["id"]]["calendar"]["offer"] is False and "calendar" not in stops[s3["id"]]
+    # an appointment with no name or address in common never goes to the office, even right on top of it
+    feed["ics"] = ics(ev("x", "20261118T120000", "20261118T124500", "Onsite - Somebody Else"))
+    calendar_feed.clear_cache()
+    assert c.get(f"/api/day/{D}").json["calendar"][0]["stop_id"] is None
+
+
+def test_affinity():
+    from app.service import _cal_affinity as aff
+    st = {"business_name": "ComDirect, Inc.", "address": "100 Main St, Irvine"}
+    assert aff(st, {"name": "ComDirect", "location": ""}) == 2
+    assert aff(st, {"name": "Network check", "location": "100 Main Street"}) == 1
+    assert aff({"business_name": "Systems Source - Haworth Dealer"}, {"name": "OAC - Systems Source #700"}) == 1
+    assert aff({"business_name": "Largo Concrete"}, {"name": "Weekly OAC - Systems Source #700"}) == 0
+    assert aff({"business_name": ""}, {"name": "Acme"}) == 0

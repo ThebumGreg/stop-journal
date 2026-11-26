@@ -1382,7 +1382,8 @@ function stopCard(s, i) {
     go.onclick = stop(() => { setSel(s.id, true); openSheet(s.id); });
     btns.append(go);
   }
-  if (s.calendar && s.calendar.offer) {
+  // a saved place already has its name: the card does not offer another (the stop sheet still does)
+  if (s.calendar && s.calendar.offer && !s.known_site_id) {
     const cb = el('button', 'quick', '📅 Use ' + s.calendar.name); cb.type = 'button';
     cb.title = 'From your calendar (' + s.calendar.start + '–' + s.calendar.end + '): fills in the name and address';
     cb.onclick = stop(() => {

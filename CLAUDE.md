@@ -74,7 +74,8 @@ and add or update a section there when you build something. This file holds only
   invoice_requests).
 - The Settings form and pages are plain same-origin POSTs; a "came from another website" 403 means the Origin host is
   not the request host / X-Forwarded-Host / App address (check the tunnel's Host header and Settings → App address).
-- Calendar matching: a stop that ended before an appointment began only matches it if it has the appointment's name.
+- Calendar matching: name or street address beats time overlap; on time alone, offices, suppliers, gas and saved Home
+  never match, nor does a stop that ended before the appointment began.
 - Don't `pkill -f`/`pgrep -f` with a pattern that also matches your own shell command (it kills that shell): stop a
   test server in a separate command from the one that started it, with a pattern like `"[g]unicorn --bind 127..."`.
 
