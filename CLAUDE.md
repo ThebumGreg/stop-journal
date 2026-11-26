@@ -63,6 +63,9 @@ and add or update a section there when you build something. This file holds only
   whether `navigator.canShare` exists.
 - **Part search** picks on pointerup (finger-up), then `swallowNextClick(rect)` eats the browser's following click only
   inside where the list was (else it lands on a link underneath, or eats a quick tap on Add).
+- OpenStreetMap tiles need a Referer (else every tile is "Access blocked", found 2026-11-25). The page-wide
+  `Referrer-Policy: same-origin` strips it, so the tile layer sets `referrerPolicy: 'strict-origin-when-cross-origin'`.
+  Any new map must do the same.
 - Static files are served with no-cache (`SEND_FILE_MAX_AGE_DEFAULT=0`) so phones pick up new scripts at once.
 - `.btn` is a LINK style: `.btn:not([href])` has pointer-events off. Use `<button class="primary">` for buttons.
 - New per-stop tables must be handled by merge, re-detect (re-attach by the old stop's middle time, like photos and

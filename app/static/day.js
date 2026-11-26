@@ -10,8 +10,11 @@ const listEl = document.getElementById('list');
 const footEl = document.getElementById('foot');
 
 const map = L.map('map');
+// OpenStreetMap refuses tiles without a Referer (its usage policy). The page-wide Referrer-Policy is same-origin, so
+// the tile images alone send just our address (origin only: never the page path or query).
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+  {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
+   referrerPolicy: 'strict-origin-when-cross-origin'}).addTo(map);
 map.setView([39, -98], 4);
 const pathLayer = L.layerGroup().addTo(map);
 const candLayer = L.layerGroup().addTo(map);
