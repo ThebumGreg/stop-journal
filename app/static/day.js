@@ -123,11 +123,8 @@ async function loadCands(s, box, q, pick, google) {
   candLayer.clearLayers();
   const lat = s.lat != null ? s.lat : map.getCenter().lat;
   const lon = s.lon != null ? s.lon : map.getCenter().lng;
-  const u = new URLSearchParams({lat, lon, minutes: s.minutes});
-  if (q) u.set('q', q);
-  if (google) u.set('google', '1');
   let d;
-  try { d = await api('GET', '/api/suggest?' + u); }
+  try { d = await api('POST', '/api/suggest', {lat, lon, minutes: s.minutes, q: q || '', google: !!google}); }
   catch (e) { box.replaceChildren(el('div', 'err', 'Lookup failed (' + e.message + ').')); return; }
   box.replaceChildren();
   if (d.error) box.append(el('div', 'err', d.error));

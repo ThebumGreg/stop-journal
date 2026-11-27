@@ -26,7 +26,7 @@ def test_tools_crud_files_totals_and_vendor(tmp_path):
     assert (tmp_path / "photos" / "tools").is_dir()
     u = c.patch(f"/api/tools/{t['id']}", json={"location": "repair", "notes": "chuck slips"}).json
     assert u["location_label"] == "In for repair"
-    v = c.get("/api/vendors/detail?name=Home Depot").json          # a vendor you only bought a tool from
+    v = c.post("/api/vendors/detail", json={"name": "Home Depot"}).json          # a vendor you only bought a tool from
     assert v["tools"][0]["name"] == "Cordless drill" and "Home Depot" in c.get("/api/parts/choices").json["vendors"]
     assert c.delete(f"/api/tool-files/{fid}").json["files"] == []
     assert c.delete(f"/api/tools/{t['id']}").status_code == 200

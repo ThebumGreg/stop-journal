@@ -113,10 +113,10 @@ def test_suggest_endpoint(tmp_path):
     c = create_app(cfg, client=object(), provider=p).test_client()
     assert c.post("/api/places", json={
         "name": "My Client", "lat": LAT, "lon": LON}).status_code == 200
-    r = c.get(f"/api/suggest?lat={LAT}&lon={LON}&minutes=30").json
+    r = c.post("/api/suggest", json={"lat": LAT, "lon": LON, "minutes": 30}).json
     assert r["candidates"][0]["name"] == "My Client"
     assert {x["name"] for x in r["candidates"]} >= {"Acme Hardware"}
-    assert c.get("/api/suggest").status_code == 400
+    assert c.post("/api/suggest").status_code == 400
 
 
 def test_suggest_survives_provider_failure(tmp_path):
@@ -129,7 +129,7 @@ def test_suggest_survives_provider_failure(tmp_path):
     cfg = replace(CFG, data_dir=str(tmp_path))
     c = create_app(cfg, client=object(), provider=Boom()).test_client()
     c.post("/api/places", json={"name": "My Client", "lat": LAT, "lon": LON})
-    r = c.get(f"/api/suggest?lat={LAT}&lon={LON}").json
+    r = c.post("/api/suggest", json={"lat": LAT, "lon": LON}).json
     assert r["candidates"][0]["name"] == "My Client" and "failed" in r["error"]
 
 
@@ -142,7 +142,7 @@ def test_text_search_prefers_nearby_over_far(tmp_path):
     p, _ = provider(tmp_path, nominatim=[far, near])
     cfg = replace(CFG, data_dir=str(tmp_path))
     c = create_app(cfg, client=object(), provider=p).test_client()
-    r = c.get(f"/api/suggest?lat={LAT}&lon={LON}&q=hardware").json
+    r = c.post("/api/suggest", json={"lat": LAT, "lon": LON, "q": "hardware"}).json
     assert r["candidates"][0]["lat"] == 34.06
 
 

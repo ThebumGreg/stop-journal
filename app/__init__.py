@@ -229,7 +229,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         resp.headers.setdefault("Referrer-Policy", "same-origin")
         resp.headers.setdefault("Content-Security-Policy", "frame-ancestors 'self'; base-uri 'self'; form-action 'self'")
         resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=(self)")
-        if request.endpoint in ("login", "forgot", "reset_password", "account_page"):
+        # Nothing behind the sign-in is kept by a browser or a proxy (Cloudflare caches .pdf and .csv by default).
+        # Photos say "private" themselves, so the phone may keep those.
+        if (request.endpoint not in ("static", "manifest", "service_worker")
+                and "private" not in resp.headers.get("Cache-Control", "")):
             resp.headers["Cache-Control"] = "no-store"
         return resp
 
@@ -272,7 +275,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             username = request.form.get("username", "").strip()[:80]
             pw = request.form.get("password", "")
             ip = auth.client_ip(request.headers, request.remote_addr)
-            wait = throttle.wait_s(ip, username)
+            wait = throttle.wait_s(ip, username, home=auth.at_home(request.headers, request.remote_addr))
             if wait:
                 err, status = f"Too many wrong tries. Try again in {max(1, round(wait / 60))} min.", 429
             else:
@@ -1352,15 +1355,21 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                 "google_used": "google" in sources,
                 "google_available": bool(cfg.google_places_key) or isinstance(provider, dict)}
 
-    @app.get("/api/suggest")
+    def body_dict():
+        """The JSON body of a lookup. Coordinates, search text and names are sent this way, never in the address:
+        proxies in front of JobHub log addresses."""
+        b = request.get_json(silent=True)
+        return b if isinstance(b, dict) else {}
+
+    @app.post("/api/suggest")
     def suggest():
+        b = body_dict()
         try:
-            lat, lon = float(request.args["lat"]), float(request.args["lon"])
-        except (KeyError, ValueError):
+            lat, lon = float(b["lat"]), float(b["lon"])
+            minutes = int(b.get("minutes") or 0)
+        except (KeyError, TypeError, ValueError):
             return jsonify(error="lat and lon are required"), 400
-        return jsonify(run_suggest(lat, lon, request.args.get("minutes", 0, type=int),
-                                   request.args.get("q", "").strip(),
-                                   request.args.get("google") == "1"))
+        return jsonify(run_suggest(lat, lon, minutes, str(b.get("q") or "").strip(), bool(b.get("google"))))
 
     # ---- places: home / office / vendors / clients ----------------------
     def current_position(conn):
@@ -1550,10 +1559,11 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return known.site_dict(known.get_site(conn, sid))
         return catalog(go)
 
-    @app.get("/api/places/search")
+    @app.post("/api/places/search")
     def places_search():
         """Address / business search for adding a place, biased to where the phone is."""
-        q = request.args.get("q", "").strip()
+        b = body_dict()
+        q = str(b.get("q") or "").strip()
         if len(q) < 3:
             return jsonify(error="Type at least 3 letters."), 400
 
@@ -1562,7 +1572,7 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                 lat, lon = current_position(conn)
             except service.EditError:
                 lat, lon = 39.5, -98.35
-            r = run_suggest(lat, lon, 0, q, request.args.get("google") == "1")
+            r = run_suggest(lat, lon, 0, q, bool(b.get("google")))
             r["candidates"] = [c for c in r["candidates"] if c["source"] != "known"]
             return r
         return catalog(go)
@@ -1575,28 +1585,31 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def vendors_list():
         return catalog(lambda conn: {"vendors": vendors.list_vendors(conn)})
 
-    @app.get("/api/vendors/detail")
+    @app.post("/api/vendors/detail")
     def vendors_detail():
-        return with_conn(lambda conn, cfg: jsonify(vendors.detail(conn, cfg, request.args.get("name", ""))))
+        name = str(body_dict().get("name") or "")
+        return with_conn(lambda conn, cfg: jsonify(vendors.detail(conn, cfg, name)))
 
     @app.put("/api/vendors")
     def vendors_save():
         b = request.get_json(silent=True) or {}
         return catalog(lambda conn: {"name": vendors.save(conn, b.get("name", ""), b)})
 
-    @app.get("/api/places/group-history")
+    @app.post("/api/places/group-history")
     def places_group_history():
-        a = request.args
+        b = body_dict()
+        name, group = str(b.get("name") or ""), str(b.get("group") or "")
         return with_conn(lambda conn, cfg: jsonify(service.group_history(
-            conn, cfg, a.get("name", ""), int(a["group"]) if a.get("group", "").isdigit() else None)))
+            conn, cfg, name, int(group) if group.isdigit() else None)))
 
     @app.get("/api/gas-stations")
     def gas_stations():
         return with_conn(lambda conn, cfg: jsonify(stations=service.gas_stations(conn, cfg)))
 
-    @app.get("/api/gas-stations/history")
+    @app.post("/api/gas-stations/history")
     def gas_station_history():
-        return with_conn(lambda conn, cfg: jsonify(service.station_history(conn, cfg, request.args.get("key", ""))))
+        key = str(body_dict().get("key") or "")
+        return with_conn(lambda conn, cfg: jsonify(service.station_history(conn, cfg, key)))
 
     @app.patch("/api/places/<int:sid>")
     def places_patch(sid):

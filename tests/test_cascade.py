@@ -30,8 +30,8 @@ def client(tmp_path, osm, google, mode="osm_google", **kw):
     return create_app(cfg, client=object(), provider={"osm": osm, "google": google}).test_client()
 
 
-def q(c, extra=""):
-    return c.get(f"/api/suggest?lat={LAT}&lon={LON}{extra}").json
+def q(c, **extra):
+    return c.post("/api/suggest", json={"lat": LAT, "lon": LON, **extra}).json
 
 
 def test_osm_enough_results_skips_google(tmp_path):
@@ -64,7 +64,7 @@ def test_known_site_nearby_skips_google(tmp_path):
 
 def test_manual_google_button(tmp_path):
     osm, g = Fake([biz("A"), biz("B"), biz("C")]), Fake([biz("G", .0004, "google")])
-    r = q(client(tmp_path, osm, g), "&google=1")
+    r = q(client(tmp_path, osm, g), google=True)
     assert g.calls == 1 and r["google_used"] and "G" in {c["name"] for c in r["candidates"]}
 
 
@@ -72,7 +72,7 @@ def test_osm_only_mode_never_auto_google_but_allows_button(tmp_path):
     osm, g = Fake(), Fake([biz("G", src="google")])
     c = client(tmp_path, osm, g, mode="osm")
     assert g.calls == 0 and q(c)["candidates"] == [] and g.calls == 0
-    assert q(c, "&google=1")["candidates"][0]["name"] == "G"
+    assert q(c, google=True)["candidates"][0]["name"] == "G"
 
 
 def test_fallback_threshold_zero_means_button_only(tmp_path):

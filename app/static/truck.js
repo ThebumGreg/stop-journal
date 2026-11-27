@@ -583,7 +583,7 @@ async function vendorsView() {
 }
 
 async function vendorPage(name) {
-  const d = await api('GET', '/api/vendors/detail?name=' + encodeURIComponent(name));
+  const d = await api('POST', '/api/vendors/detail', {name});
   const back = el('a', 'back', '‹ All vendors'); back.href = '#vendors';
   const err = el('div', 'err');
   const i = d.info;

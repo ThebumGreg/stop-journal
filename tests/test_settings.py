@@ -119,5 +119,5 @@ def test_suggest_reports_google_error_and_still_lists_known(tmp_path):
     c = app_for(tmp_path).test_client()
     c.post("/settings", data={"places_provider": "google"})  # no key set
     c.post("/api/places", json={"name": "My Client", "lat": LAT, "lon": LON})
-    r = c.get(f"/api/suggest?lat={LAT}&lon={LON}").json
+    r = c.post("/api/suggest", json={"lat": LAT, "lon": LON}).json
     assert "no API key" in r["error"] and r["candidates"][0]["name"] == "My Client"

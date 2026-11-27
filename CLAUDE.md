@@ -12,7 +12,8 @@ and add or update a section there when you build something. This file holds only
   UniFi routers.
 - The app runs in Docker on Unraid as the container "JobHub": gunicorn, 1 worker, 8 threads, port 8000, server
   192.168.128.245. Remote access: Cloudflare tunnel + Cloudflare Access + JobHub login (built 2026-11-25); the VPN
-  stays as a backup. OwnTracks goes through the tunnel to NPM (basic auth); JobHub reads the Recorder on the LAN.
+  stays as a backup. At home, split DNS sends the same hostname to NPM (https) → JobHub; the tunnel goes to JobHub
+  directly. OwnTracks goes through the tunnel to NPM (basic auth); JobHub reads the Recorder on the LAN.
 - The user deploys with `git pull`, rebuilds and restarts the container, reloads the browser and reopens the phone app.
   So when a change is done and tested: commit and push it (on main), then tell the user it needs that update.
 - `docs/SETUP-CHECKLIST.md` is the user's setup and test list; `docs/sample-report/` is what the agent was given
@@ -46,6 +47,7 @@ and add or update a section there when you build something. This file holds only
   - Email report (full report): only when the user taps Email report.
   - Send for invoice (one stop) and Tell the customer (late notice): only on that tap, after a confirm.
   - Calendar invites (when turned on): each stop's type, customer, address, ticket, times. Never notes, parts or prices.
+- Never put coordinates, search text or names in a web address (proxies log them): POST them in a JSON body.
 - Logs: path only, never the query string; every line passes `logs.scrub` (numbers with 4+ decimals are blanked).
   Never log coordinates, customer names or places. No analytics or telemetry.
 - Public access is a Cloudflare tunnel with Cloudflare Access in front AND JobHub's own login (`app/auth.py`). Every new
@@ -101,7 +103,7 @@ and add or update a section there when you build something. This file holds only
   the helpers: see plan E), `clientlog.js` (page errors to `/api/client-log`), `share.js`.
 
 ## Testing
-- `pytest -q` (about 350 tests; fixture days in `tests/`; `scripts/make_sample_report.py` builds the full sample day
+- `pytest -q` (about 400 tests; fixture days in `tests/`; `scripts/make_sample_report.py` builds the full sample day
   used by several tests).
 - Browser checks: run the app with gunicorn on 127.0.0.1 (DATA_DIR in the scratchpad) and Playwright from
   `podman run --rm --network host mcr.microsoft.com/playwright/python:v1.49.0-noble` (`pip install playwright==1.49.0`

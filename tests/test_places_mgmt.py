@@ -146,9 +146,9 @@ def test_from_last_location_and_search(tmp_path):
     assert r.status_code == 200 and r.json["kind"] == "office"
     last = revisit_day()[-1]
     assert abs(r.json["lat"] - last["lat"]) < 1e-9
-    s = c.get("/api/places/search?q=acme").json
+    s = c.post("/api/places/search", json={"q": "acme"}).json
     assert s["candidates"][0]["name"] == "Acme Supply" and all(x["source"] != "known" for x in s["candidates"])
-    assert c.get("/api/places/search?q=ab").status_code == 400
+    assert c.post("/api/places/search", json={"q": "ab"}).status_code == 400
     empty, _ = make(tmp_path / "e", points=[])
     assert empty.post("/api/places/from-last", json={}).status_code == 400   # nothing to use yet
 
@@ -156,7 +156,7 @@ def test_from_last_location_and_search(tmp_path):
 def test_suggestions_label_special_places(tmp_path):
     c, _ = make(tmp_path)
     place(c, name="Home", kind="home")
-    r = c.get(f"/api/suggest?lat={HOME[0]}&lon={HOME[1]}").json
+    r = c.post("/api/suggest", json={"lat": HOME[0], "lon": HOME[1]}).json
     assert r["candidates"][0]["name"] == "Home" and r["candidates"][0]["kind"] == "home"
 
 
@@ -235,7 +235,7 @@ def test_place_history_and_gas_stations(tmp_path):
     c.put(f"/api/stops/{b['id']}/fuel", json={"gallons": 10, "total": 40})
     st = c.get("/api/gas-stations").json["stations"]
     assert st[0]["name"] == "Corner Fuel" and st[0]["fills"] == 1 and st[0]["total"] == 40
-    g = c.get("/api/gas-stations/history?key=corner fuel").json
+    g = c.post("/api/gas-stations/history", json={"key": "corner fuel"}).json
     assert g["totals"]["avg_price_per_gallon"] == 4.0 and g["visits"][0]["fuel"]["total"] == 40
     page = c.get("/places").data.decode()
     assert 'aria-current="page"' in page and ">Places<" in page.split('aria-current="page"')[1][:20]
@@ -280,10 +280,10 @@ def test_group_history_across_locations(tmp_path):
     c.patch(f"/api/stops/{b['id']}", json={"business_name": "Acme Dental", "address": "9 New Ave", "status": "Confirmed", "notes": "Set up"})
     places = [p for p in c.get("/api/places").json["places"] if p["name"] == "Acme Dental"]
     assert len(places) == 2                                           # old and new address
-    g = c.get("/api/places/group-history?name=acme dental").json
+    g = c.post("/api/places/group-history", json={"name": "acme dental"}).json
     assert g["totals"]["visits"] == 2 and len(g["places"]) == 2
     assert [v["address"] for v in g["visits"]] == ["9 New Ave", "1 Old Rd"]
-    assert c.get("/api/places/group-history?name=nobody").status_code == 400
+    assert c.post("/api/places/group-history", json={"name": "nobody"}).status_code == 400
 
 
 def test_link_old_and_new_address(tmp_path):
@@ -298,7 +298,7 @@ def test_link_old_and_new_address(tmp_path):
     assert c.patch(f"/api/places/{old['id']}", json={"link_to": new["id"], "old_address": True}).status_code == 200
     pl = {p["name"]: p for p in c.get("/api/places").json["places"]}
     assert pl["Acme Dental"]["link_id"] == pl["Acme Dental Group"]["link_id"] and pl["Acme Dental"]["old_address"]
-    g = c.get(f"/api/places/group-history?group={pl['Acme Dental']['link_id']}").json
+    g = c.post("/api/places/group-history", json={"group": pl['Acme Dental']['link_id']}).json
     assert [x["name"] for x in g["places"]] == ["Acme Dental Group", "Acme Dental"]      # current address first
     assert g["totals"]["visits"] == 2
     # a third place joins; unlinking leaves the other two linked; unlinking the last pair clears the group

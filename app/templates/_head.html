@@ -10,7 +10,8 @@
 <meta name="format-detection" content="telephone=no">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon-192.png') }}">
-<link rel="manifest" href="{{ url_for('manifest') }}">
+{# use-credentials: Cloudflare Access refuses a manifest request that comes without its sign-in cookie #}
+<link rel="manifest" href="{{ url_for('manifest') }}" crossorigin="use-credentials">
 <meta name="jobhub-log" content="{{ jobhub_log_level }}">
 <script src="{{ url_for('static', filename='clientlog.js') }}"></script>
 <script src="{{ url_for('static', filename='share.js') }}" defer></script>

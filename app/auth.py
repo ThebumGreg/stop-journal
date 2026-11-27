@@ -193,6 +193,12 @@ def is_private(ip):
         return False
 
 
+def at_home(headers, remote_addr):
+    """True for a request from the home network. Judged by the connection itself, never by Cf-Connecting-Ip: only
+    Cloudflare can be trusted to set that header, and anything that reaches JobHub another way can make it up."""
+    return not via_tunnel(headers) and is_private((remote_addr or "").strip())
+
+
 # ---- sign-in throttle --------------------------------------------------------------------------------------------
 class Throttle:
     """Counts failed sign-ins (in memory; a restart clears it).
@@ -221,14 +227,14 @@ class Throttle:
             store.pop(key, None)
         return v
 
-    def wait_s(self, ip, username):
-        """Seconds until sign-in is allowed again (0 = allowed now)."""
+    def wait_s(self, ip, username, home=False):
+        """Seconds until sign-in is allowed again (0 = allowed now). `home` (see at_home) skips the username pause."""
         with self.lock:
             now, waits = self.clock(), [0]
             ips = self._recent(self.fail, ("ip", ip), self.WINDOW_S)
             if len(ips) >= self.PER_IP:
                 waits.append(ips[-self.PER_IP] + self.WINDOW_S - now)
-            if not is_private(ip):
+            if not home:
                 us = self._recent(self.fail, ("user", (username or "").lower()), self.WINDOW_S)
                 if len(us) >= self.PER_USER:
                     waits.append(us[-self.PER_USER] + self.WINDOW_S - now)

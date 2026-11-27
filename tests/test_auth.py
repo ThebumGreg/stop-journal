@@ -100,9 +100,48 @@ def test_throttle_per_username_spares_home_network():
     for i in range(30):
         t.failed(f"44.1.2.{i}", "greg")
     assert t.wait_s("44.1.2.200", "greg") > 0                        # new outside address: paused
-    assert t.wait_s("192.168.1.20", "greg") == 0                         # home network: allowed
+    assert t.wait_s("192.168.1.20", "greg", home=True) == 0              # home network: allowed
     clock[0] += 15 * 60 + 1
     assert t.wait_s("44.1.2.200", "greg") == 0
+
+
+def test_made_up_cloudflare_address_does_not_skip_the_throttle(tmp_path):
+    """Something that reaches JobHub without Cloudflare can invent Cf-Connecting-Ip, a new private one each try."""
+    app = with_user(tmp_path)
+    c = app.test_client()
+    codes = [sign_in(c, pw=f"wrong password {i}", headers={"Cf-Connecting-Ip": f"10.0.0.{i}"}).status_code
+             for i in range(31)]
+    assert codes == [401] * 30 + [429]
+    assert sign_in(c).status_code == 302                                 # a real home request still gets in
+
+
+def test_at_home_goes_by_the_connection():
+    assert auth.at_home({}, "192.168.128.10") and auth.at_home({}, "127.0.0.1")
+    assert not auth.at_home({}, "44.1.2.3") and not auth.at_home({}, None)
+    assert not auth.at_home({"Cf-Connecting-Ip": "192.168.1.2"}, "192.168.128.10")
+    assert not auth.at_home({"Cf-Ray": "abc"}, "192.168.128.10")
+
+
+def test_nothing_signed_in_is_cached_and_manifest_sends_the_cookie(tmp_path):
+    c = with_user(tmp_path).test_client()
+    sign_in(c)
+    for path in ("/", "/day", "/api/places", "/api/parts/export.csv", "/api/parts/template.csv", "/settings",
+                 "/settings/log", "/settings/backup-full.zip", "/health"):
+        r = c.get(path)
+        assert r.status_code == 200 and r.headers["Cache-Control"] == "no-store", path
+    assert 'crossorigin="use-credentials"' in c.get("/").data.decode()
+    assert c.get("/sw.js").headers["Cache-Control"] == "no-cache"
+    assert "no-store" not in c.get("/static/day.js").headers["Cache-Control"]
+
+
+def test_lookups_take_nothing_from_the_address(tmp_path):
+    """Coordinates, search text and names are posted: a proxy's access log only ever sees the path."""
+    c = make(tmp_path).test_client()
+    for path in ("/api/suggest?lat=34.1&lon=-118.2", "/api/places/search?q=acme", "/api/vendors/detail?name=x",
+                 "/api/places/group-history?name=x", "/api/gas-stations/history?key=x"):
+        assert c.get(path).status_code == 405, path
+    assert c.post("/api/suggest?lat=34.1&lon=-118.2").status_code == 400
+    assert c.post("/api/suggest", json=["not", "a", "dict"]).status_code == 400
 
 
 def test_change_password_signs_out_other_devices(tmp_path):

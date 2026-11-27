@@ -397,7 +397,7 @@ stop departed 12:21, and listed billable parts with no cost.
 - **Places history**: tapping a place shows its visits first (`GET /api/places/<id>/history`: stops linked to the place, plus
   unlinked same-name stops within 300 m), newest first, totals, 10 then "Show all"; each visit links to `/day/<date>?stop=<id>`.
   "Edit place" is folded below. Gas stations are not saved places: the filter "Gas stations (from fill-ups)" lists them from
-  Gas stops grouped by name (`/api/gas-stations`, `/api/gas-stations/history?key=`), with fill-ups, spend and avg $/gal.
+  Gas stops grouped by name (`/api/gas-stations`, POST `/api/gas-stations/history` {key}), with fill-ups, spend and avg $/gal.
 - **Calendar** (`app/calendar_feed.py`): Office 365 / Outlook "Publish a calendar" ICS link in Settings → My calendar (secret,
   write-only, up to 1000 chars, webcal:// accepted) and a keyword (default `onsite`; on-site / on site match) searched in
   title, location, notes and categories. All-day and cancelled events skipped; recurring events expanded
@@ -499,7 +499,7 @@ stop departed 12:21, and listed billable parts with no cost.
   jobs). `known.learn` gives a NEW place the stop's type (vendor/office) or the kind of a same-name vendor/office place
   (`branch_kind`); before this, a new branch of a vendor was saved as a client ("from Client" in the PDF). `repair_vendor_branches`
   fixed existing data once on connect (marker setting `_fix_vendor_branches`); customer places are never changed.
-- Places page groups same-name places: "Name · n locations" → all visits across them (`GET /api/places/group-history?name=`,
+- Places page groups same-name places: "Name · n locations" → all visits across them (`POST /api/places/group-history` {name or group},
   each visit with its address), then each location (address as the title) with its own history and Edit place.
 - **Linked places** (`known_sites.link_id`, `old_address`): Edit place → "Linked to" another place (any name) and "Old address
   (the customer moved from here)". A group is the places sharing link_id (`known.link`; linking two groups merges them,
@@ -810,7 +810,8 @@ For the Cloudflare tunnel (Cloudflare Access in front, JobHub's own login behind
   the Account page creates the login; once it exists `APP_PASSWORD` is ignored. With no account and no APP_PASSWORD the
   app is open on the home network only: a request with Cloudflare's headers (`Cf-Connecting-Ip` / `Cf-Ray`) gets 403.
 - Throttle (memory, per process): 10 failures / 15 min per address (Cloudflare's visitor address), 30 per username
-  except from private addresses; reset emails 3 an hour per address and per user. One generic Pushover note when a
+  except from the home network (`auth.at_home`: a private connection with no Cloudflare headers; a made-up
+  `Cf-Connecting-Ip` never counts as home); reset emails 3 an hour per address and per user. One generic Pushover note when a
   pause starts; the log says "wrong sign-in attempt" with no username or address.
 - Reset: `/forgot` always answers the same; a one-time token (only its SHA-256 stored, 30 min, a new one cancels the
   old, a password change cancels all) is emailed to the account email through the Gmail settings; the link uses
@@ -818,7 +819,15 @@ For the Cloudflare tunnel (Cloudflare Access in front, JobHub's own login behind
 - Every POST/PATCH/PUT/DELETE must have an Origin (or Referer) of JobHub itself (the request host, X-Forwarded-Host or
   App address); none at all is allowed (not a browser page; the cookie is still needed). Headers on every response:
   nosniff, X-Frame-Options SAMEORIGIN, CSP `frame-ancestors 'self'` (share.js frames our own PDF view), Referrer-Policy
-  same-origin. Sign-in pages are no-store.
+  same-origin. Everything but static files, the manifest and `sw.js` is `Cache-Control: no-store` (Cloudflare would
+  otherwise cache .pdf/.csv downloads); photos stay `private`.
+- Nothing sensitive in a web address (proxies log them): lookups with coordinates, search text or names are POSTs with a
+  JSON body (`/api/suggest`, `/api/places/search`, `/api/places/group-history`, `/api/gas-stations/history`,
+  `/api/vendors/detail`; 2026-11-26).
+- The manifest link has `crossorigin="use-credentials"` so Cloudflare Access gets its cookie with that request.
+- Home network (the owner's setup, 2026-11-26): split DNS points the public hostname at NPM (https) → JobHub; away,
+  Cloudflare Access → tunnel → JobHub directly. One address and one Home Screen app for both. OwnTracks: tunnel → NPM,
+  only `/pub` exposed.
 - `clientlog.js` wraps `fetch`: when a request fails like a lost connection it asks `/health` without following
   redirects; a redirect (Cloudflare Access expired) reloads the page once a minute at most, so Cloudflare can sign in.
 - Safari download tokens no longer cover backups (`FILE_PATHS`).

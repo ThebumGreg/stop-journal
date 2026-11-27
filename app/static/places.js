@@ -72,7 +72,7 @@ function groupRow(ps) {
   const load_ = async () => {
     hist.replaceChildren(el('div', 'hint', 'Loading visits…'));
     try {
-      const d = await api('GET', '/api/places/group-history?' + (linked ? 'group=' + linked : 'name=' + encodeURIComponent(ps[0].name)));
+      const d = await api('POST', '/api/places/group-history', linked ? {group: linked} : {name: ps[0].name});
       const t = d.totals;
       historyList(hist, d, t.visits ? t.visits + ' visit' + (t.visits === 1 ? '' : 's') + ' at ' + ps.length + ' locations' +
         (t.minutes ? ' · ' + dur(t.minutes) + ' on site' : '') + ' · last ' + niceDate(t.last) : 'No visits yet', true);
@@ -150,7 +150,7 @@ function stationRow(g) {
     box.dataset.loaded = '1';
     box.replaceChildren(el('div', 'hint', 'Loading fill-ups…'));
     try {
-      const d = await api('GET', '/api/gas-stations/history?key=' + encodeURIComponent(g.key));
+      const d = await api('POST', '/api/gas-stations/history', {key: g.key});
       const t = d.totals;
       historyList(box, d, t.visits + ' fill-up' + (t.visits === 1 ? '' : 's') + ' · ' + money(t.total) +
         (t.gallons ? ' · ' + t.gallons + ' gal' : '') + (t.avg_price_per_gallon ? ' · avg $' + t.avg_price_per_gallon.toFixed(3) + '/gal' : ''));
@@ -270,7 +270,7 @@ document.getElementById('searchform').onsubmit = async ev => {
   ev.preventDefault();
   addErr.textContent = ''; results.replaceChildren(el('div', 'hint', 'Searching…'));
   try {
-    const d = await api('GET', '/api/places/search?q=' + encodeURIComponent(document.getElementById('q').value.trim()) + (forceGoogle ? '&google=1' : ''));
+    const d = await api('POST', '/api/places/search', {q: document.getElementById('q').value.trim(), google: forceGoogle});
     forceGoogle = false;
     results.replaceChildren();
     if (d.error) addErr.textContent = d.error;

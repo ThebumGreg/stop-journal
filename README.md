@@ -228,6 +228,13 @@ Settings → Docker (Docker log rotation) so the container log cannot fill the d
   **Forgot password?** emails a one-time link, valid 30 minutes, to the account's email (through the Gmail account in
   Settings → Email); the page never says whether an account exists. From the server console:
   `docker exec -it JobHub python -m app.auth reset <username>` (also `list`, `create`).
+- At home the same https address can go through your own reverse proxy (split DNS: the local DNS answers with the
+  proxy's address). Don't forward a router port to it: that way in skips Cloudflare Access. Set the proxy not to cache
+  JobHub's files. Details: `docs/SETUP-CHECKLIST.md` section 10.
+- Expose only `/pub` of the OwnTracks Recorder to the internet, behind a password.
+- Nothing behind the sign-in is cached by browsers or proxies (photos only on your own device). Coordinates, search
+  text and names are never put in a web address, so a proxy's access log doesn't collect them.
+- Backups and the data folder hold your Gmail app password, API keys and sign-in key: keep them private.
 - Until a login exists, anything arriving through the Cloudflare tunnel is refused. Changes (POST) coming from another
   website are refused. The sign-in cookie is Secure over https, HttpOnly and SameSite=Lax; pages can't be framed by
   other sites. Accounts are a table, so more logins can be added later (only one is offered today).

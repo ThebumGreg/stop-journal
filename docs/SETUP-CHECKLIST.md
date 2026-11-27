@@ -126,11 +126,27 @@ Do these **in order**, and the first part on your home network.
 - [ ] Zero Trust → Access → Applications: a self-hosted app for that hostname, policy **Allow** = your email only.
       Session duration: 1 month (the Home Screen app then rarely asks). Do **not** add a Bypass rule for JobHub paths
       (not even `/health`): JobHub uses `/health` to notice an expired Cloudflare sign-in and reload the page.
+- [ ] On the JobHub public hostname → Additional application settings → Access: turn on **Protect with Access**, so the
+      tunnel refuses requests even if the Access policy is ever removed or set wrong. Cloudflare → SSL/TLS → Edge
+      Certificates: **Always Use HTTPS** on. Only these two hostnames through the tunnel (no wildcard).
 - [ ] JobHub Settings → Address and access → **App address**: `https://jobhub.<your domain>` (notification links and reset
       emails use it, and it is accepted as JobHub's own site for changes).
-- [ ] Test from the phone on cellular (Wi-Fi off): Cloudflare sign-in, then JobHub sign-in; open a day, add a part, add a
-      photo, Email report. Then on the iPhone delete the old Home Screen icon and add it again from the https address
-      (Share → Add to Home Screen). **Tell Claude** if anything says "came from another website".
+- [ ] **Home network (split DNS + NPM)**: your local DNS sends `jobhub.<your domain>` to NPM. NPM proxy host → forward
+      `http` `192.168.128.245:8000`, a Let's Encrypt certificate (DNS challenge), Force SSL on, **Cache Assets off** (it
+      keeps old page scripts after an update), no access list. At home you then get JobHub's login with no Cloudflare
+      screen; if Cloudflare appears, the device is getting public DNS (IPv6 or HTTPS-type records, iCloud Private Relay,
+      a private DNS profile). No router port forward may reach NPM: Cloudflare Access would not be in that path.
+- [ ] Optional, NPM → JobHub host → Advanced: `access_log off;` (no record of visits in NPM; JobHub keeps its own log).
+      Old NPM log files (`/data/logs/proxy-host-*_access.log`) from before this update (built 2026-11-26) can hold coordinates and search
+      text: delete them once.
+- [ ] On home Wi-Fi, delete the old Home Screen icon and add it again from `https://jobhub.<your domain>` (Share → Add to
+      Home Screen). Use this one address at home and away.
+- [ ] Test from the phone on cellular (Wi-Fi off): Cloudflare sign-in (type the emailed code into the app; a link in the
+      email opens Safari instead), then JobHub sign-in; open a day, add a part, add a photo, Email report. Switch to Mail
+      while the code screen is up and check it is still there when you return (if it is not, use Google as the Cloudflare
+      sign-in method). Close the app fully and reopen: no new sign-in. Zero Trust → revoke your session, then tap
+      something: the Cloudflare sign-in comes back and returns you to JobHub. **Tell Claude** if anything says "came from
+      another website" or the sign-in loops.
 - [ ] In the new Home Screen app: Reports → Download PDF → **View here** (every page, with **Share / Save** at the top)
       and **Share / Save to Files** (Save to Files, Mail, AirDrop). Also Truck → shopping list → Share.
 - [ ] OwnTracks: its own hostname (e.g. `owntracks.<your domain>`) through the tunnel to NPM, with NPM's login (basic
@@ -138,6 +154,15 @@ Do these **in order**, and the first part on your home network.
       Cloudflare sign-in), so NPM's login is its only lock: use a long password. In OwnTracks: Mode HTTP, URL
       `https://owntracks.<your domain>/pub`, user and password. JobHub keeps reading the Recorder on the home network
       (Settings → OwnTracks Recorder stays as it is).
+- [ ] On the OwnTracks public hostname set **Path** to `^/pub$` (catch-all rule: 404), so the internet reaches only the
+      upload address, never the Recorder's pages and location history. From cellular: uploads still arrive and
+      `https://owntracks.<your domain>/` does not load. If NPM forces SSL on that host, point the tunnel at
+      `https://<NPM>:443` with Origin Server Name = the hostname (port 80 would loop and uploads would fail).
+- [ ] Two-factor sign-in on Cloudflare and Gmail. NPM admin login changed from the default, port 81 home only. Guest and
+      IoT networks can't reach the Unraid server. Backups and `appdata/jobhub` not on an open share (they hold the Gmail
+      app password and API keys). Remove `APP_PASSWORD` from the container.
+- [ ] Lost phone: JobHub → Account → **Sign out everywhere else**, remove its notification device, revoke its Cloudflare
+      session, change the OwnTracks password.
 - [ ] Keep the VPN as a way in if Cloudflare is ever down.
 
 ## 11. iPhone notifications instead of Pushover (built 2026-11-25)

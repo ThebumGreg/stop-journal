@@ -282,7 +282,7 @@ def test_purchase_log_last_cost_and_totals(tmp_path):
     assert [v["vendor"] for v in d["by_vendor"]] == ["Graybar", "Home Depot"]
     assert d["purchases"][0]["each"] == 2.0 and len(d["purchases"]) == 2
     assert c.get("/api/purchases?vendor=graybar").json["total"] == 12.5
-    assert c.get("/api/vendors/detail?name=Graybar").json["totals"]["purchased"] == 12.5
+    assert c.post("/api/vendors/detail", json={"name": "Graybar"}).json["totals"]["purchased"] == 12.5
     assert c.get("/api/purchases?from=junk").status_code == 400
     c.post("/api/parts/bought", json={"vendor": "Graybar", "items": [{"id": nuts["id"], "packs": 1}]})   # price optional
     assert c.get("/api/purchases").json["unpriced"] == 1
