@@ -150,7 +150,89 @@ Everything is an environment variable (`.env`). Many of these can also be change
 | `LANGUAGETOOL_URL` | blank (off) | your own LanguageTool server, e.g. `http://192.168.1.10:8010`; adds a **Check grammar** button to the notes sheet. Only the note text is sent, to that address. Also a Settings value |
 | `ROUTING_URL` | public OSRM server | road distance used only to document miles from where the day ended to Home; coordinates are rounded to ~100 m; blank = off (estimate) |
 | `BACKUP_KEEP` | 7 | daily database snapshots to keep (0 = off) |
+| `STATUS_TOKEN` | blank (off) | secret bearer token for the status API (see Status API); set it only as an environment variable |
 | `PUID`, `PGID` | 1000 | compose only: the user the container runs as |
+
+## Status API (dashboard and uptime monitor)
+
+Two read-only addresses, for a [Homepage](https://gethomepage.dev) widget and Uptime Kuma. They work without the
+JobHub sign-in, use no cookie, and hold no names, places or addresses. GET only (anything else answers 405).
+
+| Address | Sign-in | Answer |
+| --- | --- | --- |
+| `/healthz` | none | `200 {"status":"ok"}`, or `503 {"status":"down"}` when the database cannot be read |
+| `/api/status` | `Authorization: Bearer <STATUS_TOKEN>` | `200` (ok or degraded) or `503` (down) with the JSON below; `401` for a wrong token; `404` while `STATUS_TOKEN` is unset |
+
+Make a token with `openssl rand -hex 32` and set it as `STATUS_TOKEN` (`.env`, or a variable on the Unraid
+container). Never commit it.
+
+```json
+{
+  "app": "jobhub",
+  "version": "2.0.0",
+  "status": "ok",
+  "checked_at": "2026-11-27T16:51:00Z",
+  "uptime_seconds": 86400,
+  "checks": {
+    "database": {"status": "ok", "latency_ms": 3},
+    "recorder": {"status": "ok", "latency_ms": 41}
+  },
+  "metrics": {
+    "stops_today": 6,
+    "unfinished_stops": 2,
+    "reports_pending": 0,
+    "last_point_at": "2026-11-27T16:49:10Z",
+    "last_stop_at": "2026-11-27T16:40:12Z",
+    "last_backup_at": "2026-11-27T08:00:03Z"
+  }
+}
+```
+
+- `status` is the worst of `checks`. `database` down means `down`. The `recorder` check is there only when OwnTracks
+  is set up; a failing Recorder means `degraded` (JobHub still shows stored days).
+- `stops_today`: stops recorded for today. JobHub adds them when the day page is open, or in the background during
+  work hours with the "stop not finished" alert on.
+- `unfinished_stops`: stops still in Draft, today and the 14 days before.
+- `reports_pending`: past days (14) with confirmed stops that no successful Email report covers; `null` while email is
+  not set up.
+- `last_point_at`: newest OwnTracks point (the Recorder's, else the newest stored). `last_stop_at`: newest arrival.
+  `last_backup_at`: newest database snapshot. Times are UTC; `null` means unknown.
+- The result is cached for 15 seconds and each check gives up after 2 seconds. Requests are logged only with Log
+  detail = debug.
+
+Homepage (`services.yaml`; put the token in `HOMEPAGE_VAR_JOBHUB_STATUS_TOKEN` on the Homepage container):
+
+```yaml
+- JobHub:
+    icon: mdi-briefcase-outline
+    href: https://jobhub.example.com
+    siteMonitor: http://HOST:8000/healthz
+    widget:
+      type: customapi
+      url: http://HOST:8000/api/status
+      refreshInterval: 30000
+      headers:
+        Authorization: "Bearer {{HOMEPAGE_VAR_JOBHUB_STATUS_TOKEN}}"
+      mappings:
+        - field: status
+          label: Status
+          format: text
+        - field: metrics.stops_today
+          label: Stops today
+          format: number
+        - field: metrics.unfinished_stops
+          label: To finish
+          format: number
+        - field: metrics.last_point_at
+          label: Last location
+          format: relativeDate
+```
+
+Uptime Kuma:
+
+1. **HTTP(s)** monitor on `http://HOST:8000/healthz`, accepted status 200, every 60 s.
+2. Optional **HTTP(s) - Json Query** monitor on `http://HOST:8000/api/status` with the header
+   `{"Authorization": "Bearer <token>"}`, query `status`, expected value `ok` (it also alerts on `degraded`).
 
 ## Email reports (Gmail)
 

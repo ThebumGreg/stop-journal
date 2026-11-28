@@ -73,6 +73,7 @@ class Config:
     report_signing_key: str = ""   # secret: emailed reports carry an HMAC-SHA256 of the JSON file
     calendar_invites: str = "off"   # today's stops as invites to mail_to (Settings → My calendar)
     calendar_invite_min: int = 10
+    status_token: str = ""       # secret (env only): bearer token for /api/status; blank = that address is off
 
     @classmethod
     def from_env(cls):
@@ -134,6 +135,7 @@ class Config:
             mail_from=e("MAIL_FROM", "").strip(),
             mail_to=e("MAIL_TO", "").strip(),
             tech_name=e("TECH_NAME", "").strip(),
+            status_token=e("STATUS_TOKEN", "").strip(),
             qbo_service_with_sku=e("QBO_IMPORT_SERVICE_ITEMS_WITH_SKU", "on").strip() or "on",
             lunch_paid=e("LUNCH_PAID", "on").strip() or "on",
             tech_email=e("TECH_EMAIL", "").strip(),

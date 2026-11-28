@@ -835,6 +835,18 @@ For the Cloudflare tunnel (Cloudflare Access in front, JobHub's own login behind
   (Web Share needs https); "Copy link for Safari" moves under "Other". The PDF viewer's bar has **Share / Save**. On the
   http home address nothing changes (View here + Copy link for Safari).
 
+## Status API for a dashboard and uptime monitor (built 2026-11-28, the user's spec)
+`app/status.py`; the contract, metrics and Homepage / Uptime Kuma setup are in the README (Status API).
+- `/healthz` (open) and `/api/status` (env `STATUS_TOKEN` only, compared in constant time; 404 while unset). `gate`
+  lets both past the sign-in and answers 405 to anything but GET; no session cookie is read or sent. `/health` is
+  unchanged (the container health check and `clientlog.js` use it).
+- Read-only: SQLite opened `mode=ro` (not `db.connect`, which creates and migrates). No sync, no outbound calls except
+  the OwnTracks Recorder's `/api/0/last` on the home network, of which only the time is used.
+- Counts and UTC times only. Check details are fixed words (`unreadable`, `timeout`, `unreachable`, `sign-in refused`,
+  `error answer`, `unexpected answer`), never exception text.
+- Cached 15 s; each check ends after 2 s (`/healthz` waits at most 150 ms for a locked database).
+- Both are logged at debug only, in JobHub's log and (by a filter on `gunicorn.access`) the delivery log.
+
 ## Native notifications (Web Push, built 2026-11-25, the user approved the pywebpush package)
 Replaces Pushover over time. `app/webpush.py`, `app/notify.py`, `app/static/sw.js`, `app/static/account.js`.
 - `notify.send` is the one way out for every alert: it sends on each channel in `notify.channels(cfg)` (Settings →

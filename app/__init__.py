@@ -17,6 +17,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from . import alerts, backup, calendar_feed, db, grammar, live, notify, parts, pdf, places, points, sample, service, settings
 from . import ai, auth, webpush, equipment, invoice_request, kits, late, logs, mailer, message_v2, photos, receipt_inbox, receipts, summary, vendors
+from . import status as app_status
 from . import report as reports
 from .config import Config
 from .geo import haversine_m
@@ -41,6 +42,11 @@ class _Sessions(SecureCookieSessionInterface):
     http; on the home network (http) it still works."""
     def get_cookie_secure(self, app):
         return request.is_secure
+
+    def save_session(self, app, session, response):
+        if request.path in app_status.PATHS:          # monitors neither use nor renew a sign-in
+            return
+        super().save_session(app, session, response)
 
 
 def create_app(cfg=None, client=None, provider=None, start_background=None):
@@ -136,6 +142,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             ms = (time.monotonic() - request.environ.get("jobhub.t0", time.monotonic())) * 1000
             lvl = reqlog.warning if resp.status_code >= 500 or ms > 5000 else (
                 reqlog.debug if request.endpoint == "client_log" else reqlog.info)
+            if request.path in app_status.PATHS:       # asked every minute, and 503 is an answer there
+                lvl = reqlog.debug
             lvl("%s %s %s %.0fms %sB", request.method, request.path, resp.status_code, ms,
                 resp.calculate_content_length() if not resp.is_streamed else "?")
         return resp
@@ -194,6 +202,10 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
 
     @app.before_request
     def gate():
+        if request.path in app_status.PATHS:   # no sign-in: /healthz says ok or down, /api/status checks its own token
+            if request.method != "GET":
+                return jsonify(error="method not allowed"), 405, {"Allow": "GET"}
+            return None
         if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_site():
             seclog.warning("refused a %s to %s from another site", request.method, request.path)
             return jsonify(error="This request came from another website, so it was refused."), 403
@@ -486,6 +498,25 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
     def health():
         # uptime_s lets a restart loop be spotted by polling: it keeps dropping back to 0
         return jsonify(ok=True, uptime_s=int(time.time() - started))
+
+    # For a dashboard and an uptime monitor (app/status.py)
+    monitor = app_status.Status(base, lambda cfg: client if client_given else RecorderClient(cfg), started)
+    app_status.quiet_access_log()
+
+    @app.get("/healthz")
+    def healthz():
+        ok = monitor.healthy()
+        return jsonify(status="ok" if ok else "down"), 200 if ok else 503
+
+    @app.get("/api/status")
+    def api_status():
+        if not base.status_token:
+            return jsonify(error="not found"), 404
+        scheme, _, given = request.headers.get("Authorization", "").partition(" ")
+        if scheme.lower() != "bearer" or not hmac.compare_digest(given.strip().encode(), base.status_token.encode()):
+            return jsonify(error="unauthorized"), 401
+        body, code = monitor.report()
+        return jsonify(body), code
 
     @app.get("/")
     def index():

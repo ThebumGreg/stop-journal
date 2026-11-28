@@ -178,3 +178,10 @@ Needs section 10 done (the https address) and iOS 16.4 or later.
 - [ ] If notifications stop: iPhone Settings → Notifications → JobHub must be allowed; deleting the Home Screen icon
       turns them off (turn them on again after re-adding it).
 
+## 12. Dashboard and uptime monitor (built 2026-11-28)
+- [ ] On the server: `openssl rand -hex 32`, then add the result as the variable `STATUS_TOKEN` on the JobHub container
+      (Unraid: edit the container → Add another Path, Port, Variable; compose: in `.env`). Update the server (section 1).
+- [ ] `curl -i http://192.168.128.245:8000/healthz` answers 200 `{"status":"ok"}`; `/api/status` without the token 401;
+      with `-H "Authorization: Bearer <token>"` the status JSON.
+- [ ] Homepage widget and Uptime Kuma monitors: README → Status API. Put the token in Homepage's
+      `HOMEPAGE_VAR_JOBHUB_STATUS_TOKEN`, not in `services.yaml`.

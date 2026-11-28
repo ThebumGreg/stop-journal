@@ -52,6 +52,8 @@ and add or update a section there when you build something. This file holds only
   Never log coordinates, customer names or places. No analytics or telemetry.
 - Public access is a Cloudflare tunnel with Cloudflare Access in front AND JobHub's own login (`app/auth.py`). Every new
   route needs the login (only `OPEN_ENDPOINTS` skip it); new changes must be POST from our own pages (Origin check).
+  One user-approved exception (2026-11-28): `/healthz` (open, ok/down only) and `/api/status` (its own `STATUS_TOKEN`,
+  read-only, counts and times only: never names, places or addresses), both in `app/status.py`.
   Never add a Cloudflare bypass for JobHub paths. Password reset emails go only to the account's own email.
 - Technicians other than the owner would need written consent and work-hours-only tracking: do not build it.
 
@@ -90,7 +92,8 @@ and add or update a section there when you build something. This file holds only
   `app/message_v2.py` (format 2: envelope, Customer/Job/Stop/Line/Photo, all three messages), `app/address.py` (US
   address split/join), `app/version.py`, `app/pdf.py` (ReportLab PDFs), `app/pdfview.py` (PDF pages as images),
   `app/mailer.py` (Gmail, report email, signature), `app/invoice_request.py`, `app/late.py`, `app/calendar_out.py`
-  (invites), `app/calendar_feed.py` (Outlook ICS in), `app/summary.py` (Home page, shared ETA `summary.eta`).
+  (invites), `app/calendar_feed.py` (Outlook ICS in), `app/summary.py` (Home page, shared ETA `summary.eta`), `app/status.py`
+  (`/healthz`, `/api/status` for the dashboard and uptime monitor).
 - `app/parts.py` (catalog, stock, purchases, Bought here, CSV and QuickBooks import), `kits.py`, `vendors.py`,
   `equipment.py` (tools), `receipts.py` + `ai.py` (receipt reading, Polish notes), `receipt_inbox.py` (Truck → Receipts),
   `photos.py`.
