@@ -199,6 +199,20 @@ def at_home(headers, remote_addr):
     return not via_tunnel(headers) and is_private((remote_addr or "").strip())
 
 
+def is_home_host(host):
+    """True when a Host header can only name something on the home network: a private address, localhost, a bare name
+    or a .local / .lan / .home.arpa name."""
+    h = (host or "").strip().lower()
+    h = h[1:].split("]")[0] if h.startswith("[") else h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+    if not h:
+        return False
+    try:
+        ipaddress.ip_address(h)
+        return is_private(h)
+    except ValueError:
+        return "." not in h or h.endswith((".local", ".lan", ".home.arpa"))
+
+
 # ---- sign-in throttle --------------------------------------------------------------------------------------------
 class Throttle:
     """Counts failed sign-ins (in memory; a restart clears it).

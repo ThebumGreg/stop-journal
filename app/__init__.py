@@ -1,3 +1,4 @@
+import csv
 import hmac
 import io
 import json
@@ -6,6 +7,7 @@ import time
 import zipfile
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlsplit
 from zoneinfo import ZoneInfo
 
 from flask import (Flask, Response, jsonify, redirect, render_template, request,
@@ -35,6 +37,9 @@ FILE_PATHS = ("/api/export.", "/api/debug/", "/api/parts/template.csv", "/api/pa
               "/api/tools/template.csv", "/api/places/export.csv", "/settings/log")
 # (backups are not on this list: a leaked link must never hand out the whole database)
 OPEN_ENDPOINTS = ("health", "login", "logout", "static", "manifest", "forgot", "reset_password", "service_worker")
+# Only JobHub's own script files and the map library run: text that slipped into a page as HTML cannot run script
+CSP = ("script-src 'self' https://unpkg.com/leaflet@1.9.4/; object-src 'none'; frame-ancestors 'self'; "
+       "base-uri 'self'; form-action 'self'")
 SESSION_DAYS = 30        # stay signed in this long after the last visit (the Home Screen app would otherwise ask daily)
 
 class _Sessions(SecureCookieSessionInterface):
@@ -153,6 +158,8 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         from werkzeug.exceptions import HTTPException
         if isinstance(e, HTTPException):
             return e
+        if isinstance(e, csv.Error):
+            return jsonify(error="That CSV file could not be read. Save it again as CSV (UTF-8) and retry."), 400
         code = logs.ref()
         logs.get("error").exception("error %s on %s %s", code, request.method, request.path)
         msg = f"Something went wrong (error {code}). The details are in the JobHub log (Settings → Log and backups)."
@@ -177,7 +184,6 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             return True
         if src == "null":
             return False
-        from urllib.parse import urlsplit
         host = urlsplit(src).netloc.lower()
         ok = {request.host.lower()}
         if request.headers.get("X-Forwarded-Host"):
@@ -225,21 +231,38 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         finally:
             conn.close()
         if request.method == "GET" and request.args.get("ft") and request.path.startswith(FILE_PATHS):
-            try:                     # a short-lived download link (Home Screen app -> Safari, which has no login cookie)
-                URLSafeTimedSerializer(app.secret_key, salt="file").loads(request.args["ft"], max_age=FILE_TOKEN_S)
+            if _file_link_ok():      # a short-lived download link (Home Screen app -> Safari, which has no login cookie)
                 return None
-            except BadSignature:
-                pass
         if request.path.startswith("/api/") or request.method != "GET":
             return jsonify(error="login required"), 401
         return redirect(url_for("login", next=request.full_path.rstrip("?") if request.query_string else request.path))
+
+    def _file_key(path, args):
+        """What a download link is for: the path and its choices (ft = the token, inline only says show or save)."""
+        return [path, sorted([k, v] for k, v in args if k not in ("ft", "inline"))]
+
+    def _file_link_ok():
+        try:
+            t = URLSafeTimedSerializer(app.secret_key, salt="file").loads(request.args["ft"], max_age=FILE_TOKEN_S)
+            if t["file"] != _file_key(request.path, request.args.items(multi=True)):
+                return False
+        except (BadSignature, KeyError, TypeError):
+            return False
+        conn = _db()
+        try:                         # signing out everywhere or a new password ends the links too
+            if t["uid"] is None:
+                return not auth.has_users(conn)
+            u = auth.get(conn, t["uid"])
+            return bool(u) and u["session_gen"] == t["gen"]
+        finally:
+            conn.close()
 
     @app.after_request
     def _security_headers(resp):
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
-        resp.headers.setdefault("Content-Security-Policy", "frame-ancestors 'self'; base-uri 'self'; form-action 'self'")
+        resp.headers.setdefault("Content-Security-Policy", CSP)
         resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=(self)")
         # Nothing behind the sign-in is kept by a browser or a proxy (Cloudflare caches .pdf and .csv by default).
         # Photos say "private" themselves, so the phone may keep those.
@@ -248,13 +271,21 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             resp.headers["Cache-Control"] = "no-store"
         return resp
 
-    @app.get("/api/file-token")
+    @app.post("/api/file-token")
     def file_token():
-        """For share.js: lets a download open in Safari for a few minutes (downloads only, nothing else)."""
-        return jsonify(token=URLSafeTimedSerializer(app.secret_key, salt="file").dumps("dl"), ttl=FILE_TOKEN_S)
+        """For share.js: lets one download open in Safari for a few minutes. Body: {url: "/api/export.pdf?from=…"}."""
+        b = request.get_json(silent=True)
+        u = urlsplit(str(b.get("url") or "") if isinstance(b, dict) else "")
+        if u.scheme or u.netloc or not u.path.startswith(FILE_PATHS):
+            return jsonify(error="No download link is available for that."), 400
+        claim = {"file": _file_key(u.path, parse_qsl(u.query, keep_blank_values=True)),
+                 "uid": session.get("uid"), "gen": session.get("gen")}
+        return jsonify(token=URLSafeTimedSerializer(app.secret_key, salt="file").dumps(claim), ttl=FILE_TOKEN_S)
 
     def _safe_next(nxt):
-        return nxt if nxt and nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt else "/"
+        # isprintable: browsers drop tabs and line breaks, which would turn "/<tab>/host" into "//host"
+        ok = nxt and nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt and nxt.isprintable()
+        return nxt if ok else "/"
 
     def _start_session(u):
         session.clear()                                   # a fresh cookie at every sign-in
@@ -321,8 +352,14 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
         return redirect(url_for("login", m="out"))
 
     def _reset_base():
+        """The address a reset link points to: App address, else the one used to open JobHub if that is a home network
+        address. Never another Host header: anyone can send one, and the link carries the reset token."""
         cfg = eff()
-        return (cfg.app_url or request.host_url).rstrip("/")
+        if cfg.app_url:
+            return cfg.app_url.rstrip("/")
+        if auth.at_home(request.headers, request.remote_addr) and auth.is_home_host(request.host):
+            return request.host_url.rstrip("/")
+        return None
 
     @app.route("/forgot", methods=["GET", "POST"])
     def forgot():
@@ -335,10 +372,13 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
             conn = _db()
             try:
                 u = auth.find(conn, who)
-                if u and u["email"] and throttle.reset_allowed(ip, u["id"]):
+                base_url = _reset_base()
+                if u and u["email"] and not base_url:
+                    seclog.warning("password reset email not sent: set Settings → Address and access → App address")
+                elif u and u["email"] and throttle.reset_allowed(ip, u["id"]):
                     cfg = eff()
                     token = auth.new_reset(conn, u["id"])
-                    link = f"{_reset_base()}/reset/{token}"
+                    link = f"{base_url}/reset/{token}"
                     try:
                         msg = mailer._message(cfg, "JobHub password reset", auth.reset_email(u["username"], link))
                         msg.replace_header("To", u["email"])
@@ -473,7 +513,11 @@ def create_app(cfg=None, client=None, provider=None, start_background=None):
                         _alert("Your JobHub password was changed.")
                         return redirect(url_for("account_page", m="password"))
                     if action == "email" and user:
+                        if not auth.verify(conn, user["username"], request.form.get("current", "")):
+                            raise auth.AuthError("The current password is wrong.")
                         auth.set_email(conn, user["id"], request.form.get("email", ""))
+                        seclog.info("reset email changed")
+                        _alert("Your JobHub password reset email was changed.")
                         return redirect(url_for("account_page", m="email"))
                     if action == "everywhere" and user:
                         session["gen"] = auth.sign_out_everywhere(conn, user["id"])

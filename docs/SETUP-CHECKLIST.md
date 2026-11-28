@@ -185,3 +185,13 @@ Needs section 10 done (the https address) and iOS 16.4 or later.
       with `-H "Authorization: Bearer <token>"` the status JSON.
 - [ ] Homepage widget and Uptime Kuma monitors: README → Status API. Put the token in Homepage's
       `HOMEPAGE_VAR_JOBHUB_STATUS_TOKEN`, not in `services.yaml`.
+
+## 13. Security review update (built 2026-11-28)
+- [ ] Update the server (section 1). The rebuild installs newer packages. Reload the browser and reopen the phone app.
+- [ ] Day page: the map and numbered pins show; Find business → pick one → its name shows on the map.
+- [ ] Settings: the groups open from links, and a Test button (calendar, email) answers.
+- [ ] Home Screen app: Reports → a download → Other / Copy link for Safari → it opens in Safari.
+- [ ] Settings → Account: saving the reset email now asks for the current password. **App address** is set (without it,
+      “Forgot password?” sends a link only from a home network address).
+- [ ] Cloudflare: leave **Rocket Loader** off (JobHub's pages only run their own scripts). **Tell Claude** if a page
+      stops reacting to buttons.

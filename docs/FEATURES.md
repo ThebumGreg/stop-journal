@@ -847,6 +847,23 @@ For the Cloudflare tunnel (Cloudflare Access in front, JobHub's own login behind
 - Cached 15 s; each check ends after 2 s (`/healthz` waits at most 150 ms for a locked database).
 - Both are logged at debug only, in JobHub's log and (by a filter on `gunicorn.access`) the delivery log.
 
+## Security review (2026-11-28)
+Self-review of sign-in, uploads, downloads, page output, fetched addresses and packages. Fixed:
+- Find business: a picked name went into the map popup as HTML (OpenStreetMap names are anyone's input; confirmed in a
+  browser). Now an element with text.
+- `CSP` allows scripts from JobHub and the pinned Leaflet only (`settings.html`'s inline script moved to
+  `static/settings.js`); Leaflet tags carry `integrity` hashes.
+- `/login?next=` with a tab became an outside redirect (`_safe_next` now needs printable text).
+- The reset email could be changed without the password; now needs it and sends a generic alert.
+- With no App address a made-up Host header chose the reset link's address (`_reset_base`, `auth.is_home_host`).
+- A download token opened any export and the log, also after signing out everywhere. Now `POST /api/file-token`
+  {url} binds it to that path, its query (except `inline`) and the sign-in generation; share.js asks per file.
+- Places CSV export guards formulas; an unreadable CSV answers 400 instead of an error.
+- Pictures: only JPEG / PNG / WebP / GIF are decoded, 60 megapixels at most (a 23 KB file caused an error before).
+- Flask 3.1.3, requests 2.33.0 (dev: pytest 9.0.3, pypdf 6.21.4) for published advisories (`pip-audit` clean).
+Checked, unchanged: PDF text is escaped; photo, backup and zip file names are built by JobHub; server addresses that
+JobHub fetches (Recorder, grammar, routing, Overpass, calendar) can be set only by the signed-in owner.
+
 ## Native notifications (Web Push, built 2026-11-25, the user approved the pywebpush package)
 Replaces Pushover over time. `app/webpush.py`, `app/notify.py`, `app/static/sw.js`, `app/static/account.js`.
 - `notify.send` is the one way out for every alert: it sends on each channel in `notify.channels(cfg)` (Settings →

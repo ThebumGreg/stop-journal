@@ -230,10 +230,19 @@ def test_download_token_opens_files_only_for_a_while(tmp_path, monkeypatch):
     c = make(tmp_path, app_password="pw")
     assert c.get(f"/api/export.json?from={D}").status_code == 401
     c.post("/login", data={"password": "pw"})
-    tok = c.get("/api/file-token").json["token"]
+    link = lambda url: c.post("/api/file-token", json={"url": url})
+    tok = link(f"/api/export.json?from={D}").json["token"]
+    pdf_tok = link(f"/api/export.pdf?from={D}").json["token"]
+    for bad in ("/api/day/" + D, "/settings/backup-full.zip", "https://evil.example/api/export.json", "//evil/api/export.json", ""):
+        assert link(bad).status_code == 400, bad
     c.post("/logout")
+    assert link(f"/api/export.json?from={D}").status_code == 401               # making a link needs the sign-in
     assert c.get(f"/api/export.json?from={D}&ft={tok}").status_code == 200     # Safari: no cookie, token works
-    assert c.get(f"/api/export.pdf?from={D}&inline=1&ft={tok}").mimetype == "application/pdf"
+    assert c.get(f"/api/export.pdf?from={D}&inline=1&ft={pdf_tok}").mimetype == "application/pdf"
+    for other in (f"/api/export.pdf?from={D}", f"/api/export.json?from=2026-01-01",   # one file, the choices it was made for
+                  f"/api/export.json?from={D}&omit=costs", f"/api/export.json?from={D}&from=2026-01-01",
+                  f"/api/debug/{D}.json?x=1", "/settings/log?x=1", "/api/parts/export.csv?x=1"):
+        assert c.get(f"{other}&ft={tok}").status_code in (302, 401), other
     assert c.get(f"/api/day/{D}?ft={tok}").status_code == 401                 # downloads only
     assert c.get(f"/api/export.json?from={D}&ft=junk").status_code == 401
     import app as appmod

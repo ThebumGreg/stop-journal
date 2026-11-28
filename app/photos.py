@@ -21,6 +21,8 @@ from .errors import EditError
 MAX_SIDE = 1600          # px, longest side
 QUALITY = 80
 MAX_UPLOAD = 4 * 1024 * 1024   # matches the app's MAX_CONTENT_LENGTH
+FORMATS = ("JPEG", "PNG", "WEBP", "GIF")   # nothing else is decoded: less code exposed to a bad file
+MAX_PIXELS = 60_000_000        # a small file can unpack into gigabytes; 48 MP phone pictures fit
 KINDS = {"receipt": "Receipt", "photo": "Photo"}
 PER_STOP = 12
 
@@ -31,12 +33,16 @@ def normalize(raw):
     if len(raw) > MAX_UPLOAD:
         raise EditError("That picture is too large (4 MB at most).")
     try:
-        im = Image.open(io.BytesIO(raw))
+        im = Image.open(io.BytesIO(raw), formats=FORMATS)      # reads the header only
+        if im.width * im.height > MAX_PIXELS:
+            raise EditError("That picture has too many pixels (60 megapixels at most).")
         im = ImageOps.exif_transpose(im)
         im.thumbnail((MAX_SIDE, MAX_SIDE))
         if im.mode not in ("RGB", "L"):
             im = im.convert("RGB")
-    except (UnidentifiedImageError, OSError, ValueError):
+    except EditError:
+        raise
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError):
         raise EditError("That file is not a picture this app can read (use JPEG or PNG).")
     out = io.BytesIO()
     im.save(out, "JPEG", quality=QUALITY, optimize=True)     # no exif= argument: metadata is not written

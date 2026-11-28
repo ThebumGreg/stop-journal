@@ -137,7 +137,7 @@ async function loadCands(s, box, q, pick, google) {
       pick(c);
       candLayer.clearLayers();
       // Google's terms don't allow Places content on non-Google maps: no pin for those.
-      if (c.source !== 'google') L.marker([c.lat, c.lon]).addTo(candLayer).bindPopup(c.name).openPopup();
+      if (c.source !== 'google') L.marker([c.lat, c.lon]).addTo(candLayer).bindPopup(el('div', null, c.name)).openPopup();   // as text: OSM names are anyone's input
     };
     box.append(row);
   });

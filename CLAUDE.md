@@ -55,6 +55,11 @@ and add or update a section there when you build something. This file holds only
   One user-approved exception (2026-11-28): `/healthz` (open, ok/down only) and `/api/status` (its own `STATUS_TOKEN`,
   read-only, counts and times only: never names, places or addresses), both in `app/status.py`.
   Never add a Cloudflare bypass for JobHub paths. Password reset emails go only to the account's own email.
+- Outside text (OpenStreetMap, calendar, receipts, CSV) is shown as text, never HTML (Leaflet popups get an element,
+  not a string). Pages run no inline script (the Content-Security-Policy blocks it): put it in `app/static/`. An outside
+  script needs an `integrity` hash and a place in `CSP` (`app/__init__.py`). CSV exports guard formulas (`_safe`).
+- A download token (`/api/file-token`) opens one file with the choices it was made for; links into the app from email
+  never use an untrusted Host.
 - Technicians other than the owner would need written consent and work-hours-only tracking: do not build it.
 
 ## Hard-won gotchas (keep these)
@@ -106,13 +111,13 @@ and add or update a section there when you build something. This file holds only
   the helpers: see plan E), `clientlog.js` (page errors to `/api/client-log`), `share.js`.
 
 ## Testing
-- `pytest -q` (about 400 tests; fixture days in `tests/`; `scripts/make_sample_report.py` builds the full sample day
+- `pytest -q` (about 450 tests; fixture days in `tests/`; `scripts/make_sample_report.py` builds the full sample day
   used by several tests).
 - Browser checks: run the app with gunicorn on 127.0.0.1 (DATA_DIR in the scratchpad) and Playwright from
   `podman run --rm --network host mcr.microsoft.com/playwright/python:v1.49.0-noble` (`pip install playwright==1.49.0`
   inside), Firefox desktop and the iPhone 13 WebKit profile. Do this for any change to page scripts.
 
-## Action plan (updated 2026-11-25)
+## Action plan (updated 2026-11-28)
 QuickBooks makes estimates and invoices; a HubSpot service ticket holds the job. Match on the HubSpot ticket number
 (calendar `Ticket:` line, then the stop's ticket); the QuickBooks estimate number is info.
 
@@ -120,7 +125,10 @@ A. User status: deployed through the router fix; test invite works; Anthropic ke
    Testing next: calendar invites over a work day, Outlook appointments, the phone app, Bought here, running late, Send
    for invoice (checklist 7, 7b, 7c). User to do: parts clean-up, HubSpot company IDs CSV, QuickBooks parts import.
 
-B. Built 2026-11-25: login + Cloudflare tunnel readiness (checklist 10), iPhone Share/Save on https, native
+B. Built 2026-11-26 to 28: hardening for the tunnel plus split DNS, status API for Homepage / Uptime Kuma (checklist
+   12), security review fixes and package updates (checklist 13). User to test: the update, then checklist 10 (new items
+   first), 12, 11 and 13.
+   Built 2026-11-25: login + Cloudflare tunnel readiness (checklist 10), iPhone Share/Save on https, native
    notifications (checklist 11; Pushover off after a week on both), Settings page My/App layout (USER_KEYS for
    per-user storage later; a Users page only when technicians are added). User to do: sections 10 and 11.
    Built 2026-11-24: message format 2 (agent's spec; setting, test send, samples in docs/sample-report/v2/), stable
@@ -144,7 +152,8 @@ C. Next, when the user is ready (they will review first):
       questions: which floor plan app, eighth work category or not.
 
 D. Suggested, not chosen: weekly/monthly summary; yearly mileage log and year-end package; arrival prompt; missing-receipt
-   reminders; security check before any outside access. Parked: reading HubSpot directly (read-only token), Microsoft
+   reminders; ask for the password again before a backup download or a change of email / server settings (review
+   2026-11-28, not chosen); an independent penetration test (only self-checks so far). Parked: reading HubSpot directly (read-only token), Microsoft
    Graph instead of invites (IT approval), Auris / QuickBooks time cross-check, off-site photo backup (costs money:
    ask), cleanup of photos from deleted stops (the user keeps them). Later, only if technicians are added: Users page
    (admin role, invite by email) and per-user settings storage (consent rule above still applies). Optional: badge

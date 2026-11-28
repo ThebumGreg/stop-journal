@@ -241,6 +241,11 @@ def fill_stop_hubspot(conn, site_ids=None):
 CSV_COLUMNS = ["place_id", "name", "kind", "address", "hubspot_company_id"]
 
 
+def _safe(v):
+    t = "" if v is None else str(v)
+    return "'" + t if t[:1] in ("=", "+", "-", "@", "\t", "\r") else t  # spreadsheet formula guard (names come from OSM)
+
+
 def export_csv(conn):
     import csv
     import io
@@ -248,7 +253,7 @@ def export_csv(conn):
     w = csv.writer(buf)
     w.writerow(CSV_COLUMNS)
     for r in conn.execute("SELECT * FROM known_sites ORDER BY kind, lower(name), id"):
-        w.writerow([r["id"], r["name"], r["kind"] or "client", r["address"] or "", r["hubspot_company_id"] or ""])
+        w.writerow([r["id"], _safe(r["name"]), r["kind"] or "client", _safe(r["address"]), _safe(r["hubspot_company_id"])])
     return buf.getvalue()
 
 

@@ -12,18 +12,15 @@
 (function () {
   const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
   if (!standalone) return;
-  let token = null, tokenAt = 0;
-  async function getToken() {
-    try {
-      const r = await fetch('/api/file-token');
-      if (r.ok) { token = (await r.json()).token; tokenAt = Date.now(); }
-    } catch (e) { /* offline: no Safari link */ }
-    return token;
-  }
-  function withToken(href) {
+  // A token opens only the file it was made for, for 10 minutes.
+  async function getToken(href) {
     const u = new URL(href, location.href);
-    if (token) u.searchParams.set('ft', token);
-    return u.toString();
+    try {
+      const r = await fetch('/api/file-token', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                body: JSON.stringify({url: u.pathname + u.search})});
+      if (r.ok) return (await r.json()).token;
+    } catch (e) { /* offline: no Safari link */ }
+    return null;
   }
 
   const css = document.createElement('style');
@@ -91,10 +88,13 @@
     const linkMsg = document.createElement('div'); linkMsg.className = 'fmsg'; linkMsg.hidden = true;
     const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel';
     box.append(title, msg, view, share, copy, other, link, linkMsg, cancel); wrap.append(box);
+    let token = null, tokenAt = 0;
+    const renew = async () => { token = await getToken(href); tokenAt = Date.now(); };
+    renew();
     copy.onclick = async () => {
-      if (!token || Date.now() - tokenAt > 4 * 60 * 1000) await getToken();
+      if (!token || Date.now() - tokenAt > 4 * 60 * 1000) await renew();
       if (!token) { linkMsg.hidden = false; linkMsg.textContent = 'Could not make a link (no connection?). Try again.'; return; }
-      const u = new URL(withToken(href)); if (isPdf) u.searchParams.set('inline', '1');
+      const u = new URL(href, location.href); u.searchParams.set('ft', token); if (isPdf) u.searchParams.set('inline', '1');
       link.value = u.toString(); link.hidden = false; linkMsg.hidden = false;
       let copied = false;
       try { if (navigator.clipboard) { await navigator.clipboard.writeText(link.value); copied = true; } } catch (e) { /* http */ }

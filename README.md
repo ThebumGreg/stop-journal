@@ -320,8 +320,12 @@ Settings → Docker (Docker log rotation) so the container log cannot fill the d
 - Until a login exists, anything arriving through the Cloudflare tunnel is refused. Changes (POST) coming from another
   website are refused. The sign-in cookie is Secure over https, HttpOnly and SameSite=Lax; pages can't be framed by
   other sites. Accounts are a table, so more logins can be added later (only one is offered today).
-- Safari download links ("Copy link for Safari", 10 minutes) work for reports, exports and the log only, never for
-  backups.
+- Safari download links ("Copy link for Safari") open one file for 10 minutes: reports, exports and the log only,
+  never backups. Signing out everywhere or changing the password ends them.
+- Changing the reset email needs the password. Without an App address, a reset link is sent only when asked for from a
+  home network address.
+- Pages run only JobHub's own scripts and the map library (loaded from unpkg.com and checked against its fingerprint),
+  enforced by a Content-Security-Policy. Pictures are limited to JPEG, PNG, WebP and GIF up to 60 megapixels.
 - The only outbound calls are place lookups (coordinates and search text go to the provider you
   choose), grammar checks (only if you set `LANGUAGETOOL_URL`, sent to your own server), one road-distance lookup (rounded coordinates, `ROUTING_URL`) when a day ends away from home, reading your published calendar (only if you set the link), Google Vision for receipts and Claude for Polish notes (only if
   turned on; receipt photos and the note text respectively), map tiles, and notifications: Pushover and/or native ones through the push service of each phone or browser you turned

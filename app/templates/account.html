@@ -55,11 +55,12 @@
     <form class="acc" method="post">
       <input type="hidden" name="action" value="email">
       <label>Email <input name="email" type="email" value="{{ user.email }}" autocomplete="email"></label>
+      <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
       <button class="primary" type="submit">Save email</button>
       <div class="help">“Forgot password?” on the sign-in page sends a one-time link here.
         {% if not mail_ready %}<strong>Email is not set up yet (Settings → Email), so no link can be sent.</strong>{% endif %}
-        {% if not app_url %}The link uses the address you used to open JobHub; set Settings → Address and access → “App address”
-        to your public https address so it always points there.{% endif %}</div>
+        {% if not app_url %}Set Settings → Address and access → “App address” to your public https address: without it a link
+        is sent only when asked for from a home network address.{% endif %}</div>
     </form>
 
     <h2>Notifications</h2>

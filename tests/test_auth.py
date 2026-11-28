@@ -222,10 +222,15 @@ def test_safety_headers_and_no_backup_download_links(tmp_path):
     assert r.headers["X-Content-Type-Options"] == "nosniff" and r.headers["X-Frame-Options"] == "SAMEORIGIN"
     assert "frame-ancestors 'self'" in r.headers["Content-Security-Policy"] and r.headers["Cache-Control"] == "no-store"
     sign_in(c)
-    tok = c.get("/api/file-token").json["token"]
+    tok = c.post("/api/file-token", json={"url": "/settings/log"}).json["token"]
     anon = app.test_client()
     assert anon.get(f"/settings/backup-full.zip?ft={tok}").status_code == 302
+    assert anon.get(f"/api/parts/export.csv?ft={tok}").status_code == 401      # made for the log only
     assert anon.get(f"/settings/log?ft={tok}").status_code == 200
+    c.post("/account", data={"action": "everywhere"})
+    assert anon.get(f"/settings/log?ft={tok}").status_code == 302              # signing out everywhere ends links
+    csp = c.get("/").headers["Content-Security-Policy"]
+    assert "script-src 'self' https://unpkg.com/leaflet@1.9.4/;" in csp and "unsafe" not in csp
 
 
 def test_open_redirect_blocked(tmp_path):
@@ -254,3 +259,49 @@ def test_password_rules(pw, ok):
     else:
         with pytest.raises(auth.AuthError):
             auth.check_password_rules(pw, username="greg")
+
+
+@pytest.mark.parametrize("nxt", ["/%09/evil.example", "/%0a/evil.example", "/%0d%0a/evil.example", "/%0b/evil.example"])
+def test_redirect_with_hidden_characters_stays_here(tmp_path, nxt):
+    c = with_user(tmp_path).test_client()
+    r = c.post("/login?next=" + nxt, data={"username": "greg", "password": PW})
+    assert r.status_code == 302 and r.headers["Location"] == "/"
+
+
+def test_changing_the_reset_email_needs_the_password(tmp_path, monkeypatch):
+    app = with_user(tmp_path, pushover_token="t", pushover_user="u")
+    sent = []
+    monkeypatch.setattr(notify, "send", lambda cfg, title, text, *a, **k: sent.append(text))
+    c = app.test_client()
+    sign_in(c)
+    email = lambda: db.connect(str(tmp_path)).execute("SELECT email FROM users").fetchone()[0]
+    for form in ({}, {"current": "not the password"}):
+        r = c.post("/account", data={"action": "email", "email": "thief@example.com", **form})
+        assert r.status_code == 400 and email() == "me@example.com" and not sent
+    assert c.post("/account", data={"action": "email", "email": "new@example.com", "current": PW}).status_code == 302
+    assert email() == "new@example.com" and len(sent) == 1 and "new@" not in sent[0]
+    assert 'name="current"' in c.get("/account").data.decode().split('value="email"')[1].split("</form>")[0]
+
+
+def test_reset_link_never_uses_a_made_up_host(tmp_path, monkeypatch):
+    mails = []
+    monkeypatch.setattr(mailer, "send", lambda cfg, msg: mails.append(msg.get_content()))
+    gmail = {"smtp_user": "jobhub@gmail.com", "smtp_password": "app pw"}
+    app = with_user(tmp_path, **gmail)                                     # no App address saved
+    c = app.test_client()
+    ask = lambda host, **h: c.post("/forgot", data={"who": "greg"},
+                                   headers={"Host": host, "Origin": "http://" + host, **h})
+    for host, extra in (("evil.example", {}), ("evil.example:8000", {}), ("192.168.128.245:8000", TUNNEL)):
+        assert ask(host, **extra).status_code == 200 and not mails, host
+    assert ask("192.168.128.245:8000").status_code == 200
+    assert "http://192.168.128.245:8000/reset/" in mails[0]
+    fixed = with_user(tmp_path / "b", app_url="https://jobhub.example.com", **gmail).test_client()
+    fixed.post("/forgot", data={"who": "greg"}, headers={"Host": "evil.example", "Origin": "http://evil.example"})
+    assert "https://jobhub.example.com/reset/" in mails[1] and "evil" not in mails[1]
+
+
+def test_home_host_names():
+    for h in ("192.168.1.5:8000", "10.0.0.2", "localhost:8000", "tower", "tower.local:8000", "jobhub.home.arpa", "[::1]:8000"):
+        assert auth.is_home_host(h), h
+    for h in ("evil.example", "8.8.8.8", "192.168.1.5.evil.example", "evil.example:80", "[2001:4860:4860::8888]", ""):
+        assert not auth.is_home_host(h), h
